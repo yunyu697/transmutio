@@ -1185,10 +1185,10 @@ identifier（dark 反编译 `ShortcutProperty System.AppUserModel.ID`）、NSIS 
 
 | 变体 | 产物 | 字节 | SHA-256 |
 | --- | --- | --- | --- |
-| LGPL | MSI | 2 740 224 | `719ea68fd905a3d19a6cc0ba5c7c3aec5d47a0b0b94877be9fa25c38d07f0270` |
-| LGPL | NSIS setup | 1 876 069 | `7bd924afaf0c5ed94bcb7bcde14ae092777de26afd303b2fdc61bc7903bad1c2` |
-| GPL | MSI | 2 736 128 | `5394712a3a2e1adc09d081c6a74e8b2f341661b6c0f34acd9f65fd61c9527958` |
-| GPL | NSIS setup | 1 872 372 | `3668e6e397c0bd85f88bd848e9e77727d3bd19452b1fb806b6c1559734759262` |
+| LGPL | MSI | 2 736 128 | `2faadd038b8b43faabcc2888d31d1bf0c5078269a872c7b5c3f8187aa61a8c1f` |
+| LGPL | NSIS setup | 1 874 911 | `c54bb079372b2d0dacf9d4419e12213d8eb8d5dd43ee982d05408692867d7858` |
+| GPL | MSI | 2 736 128 | `ef16c95112e3c0ebb626ae8013b31da05b0010f85e75c28cd44968f537be72a3` |
+| GPL | NSIS setup | 1 872 453 | `7925bd8da190b734dfed8d2fb61a743d3afdd53595b9f6ae2ea08ce40fb59940` |
 
 ### 4.19.5 仍需人工开窗确认
 

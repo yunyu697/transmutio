@@ -7,10 +7,10 @@
 
 | 维度 | `lgpl`（默认） | `gpl` |
 | --- | --- | --- |
-| 产物名（productName） | `FormatForge` | `FormatForge GPL` |
-| 安装包文件名 | `FormatForge_0.1.0_x64_*.msi` / `FormatForge_0.1.0_x64-setup.exe` | `FormatForge GPL_0.1.0_x64_*.msi` / `FormatForge GPL_0.1.0_x64-setup.exe` |
-| 应用标识 identifier | `app.formatforge.desktop` | `app.formatforge.desktop.gpl` |
-| 应用数据目录 | `%APPDATA%\app.formatforge.desktop\` | `%APPDATA%\app.formatforge.desktop.gpl\` |
+| 产物名（productName） | `Transmutio` | `Transmutio GPL` |
+| 安装包文件名 | `Transmutio_0.1.0_x64_*.msi` / `Transmutio_0.1.0_x64-setup.exe` | `Transmutio GPL_0.1.0_x64_*.msi` / `Transmutio GPL_0.1.0_x64-setup.exe` |
+| 应用标识 identifier | `app.Transmutio.desktop` | `app.Transmutio.desktop.gpl` |
+| 应用数据目录 | `%APPDATA%\app.Transmutio.desktop\` | `%APPDATA%\app.Transmutio.desktop.gpl\` |
 | 更新通道 | `lgpl-stable` | `gpl-stable` |
 | 编译期开关 | `allowGpl=false`、`requireGplBuild=false` | `allowGpl=true`、`requireGplBuild=true`（不可被设置项/环境变量翻转） |
 | 接受的 FFmpeg 构建 | 仅 LGPL（拒绝 GPL；release 下无开发开关） | 仅 GPL（含 libx264/libx265；拒绝 LGPL） |
@@ -27,8 +27,8 @@
 ### 构建与验证入口
 
 ```bash
-npm run build:lgpl     # 默认：无 feature，FormatForge
-npm run build:gpl      # --features gpl + tauri.gpl.conf.json，FormatForge GPL
+npm run build:lgpl     # 默认：无 feature，Transmutio
+npm run build:gpl      # --features gpl + tauri.gpl.conf.json，Transmutio GPL
 npm run tauri build    # 等价于 lgpl（默认），避免误发 GPL 包
 npm run verify:flavor:lgpl
 npm run verify:flavor:gpl
@@ -143,7 +143,7 @@ FFmpeg 作为独立可执行文件（sidecar）分发时，需满足 LGPL 的可
    两个变体的产物互不覆盖由构建脚本复核。
 8. **nonfree** → 任何变体都不接受（`Flavor::accepts_build` 首条规则）。
 9. **首次启动引导** → `install_blocking` 接收 `Flavor`，LGPL 拒绝文案明确指向
-   「请改用 GPL 版（FormatForge GPL）」；GPL 版只接受 GPL 构建。
+   「请改用 GPL 版（Transmutio GPL）」；GPL 版只接受 GPL 构建。
 
 ## 首次启动引导的许可约束（当前实现）
 

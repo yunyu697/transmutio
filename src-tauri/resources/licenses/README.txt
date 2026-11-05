@@ -1,7 +1,7 @@
-FormatForge 合规文件说明
+Transmutio 合规文件说明
 ========================
 
-本目录随安装包分发。LGPL 版 (= FormatForge) 与 GPL 版 (= FormatForge GPL) 携带不同子集：
+本目录随安装包分发。LGPL 版 (= Transmutio) 与 GPL 版 (= Transmutio GPL) 携带不同子集：
 
 LGPL 版安装包应包含：
   LGPL-2.1.txt                      GNU LGPL v2.1 全文（FFmpeg 上游默认选项）

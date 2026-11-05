@@ -1,7 +1,7 @@
-FormatForge（LGPL 版）第三方组件声明
+Transmutio（LGPL 版）第三方组件声明
 ======================================
 
-适用范围：FormatForge / FormatForge GPL 两个发行变体中的 LGPL 版安装包。
+适用范围：Transmutio / Transmutio GPL 两个发行变体中的 LGPL 版安装包。
 本文件随安装包分发；同目录下另有许可证全文与 FFmpeg 获取说明。
 
 一、FFmpeg（不随安装包分发）
@@ -24,7 +24,7 @@ FormatForge（LGPL 版）第三方组件声明
 
 二、应用自身与其依赖
 --------------------
-FormatForge 应用本体（本仓库源码与二进制）的许可尚未最终确定，见仓库根目录 LICENSING.md。
+Transmutio 应用本体（本仓库源码与二进制）的许可尚未最终确定，见仓库根目录 LICENSING.md。
 
 运行时依赖（随应用二进制分发，均为宽松许可）：
   - Tauri 2            MIT / Apache-2.0

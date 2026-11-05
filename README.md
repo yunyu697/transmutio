@@ -26,20 +26,20 @@ GPU 能力矩阵与实测/文档/待验证标注见 [GPU-能力矩阵.md](GPU-�
 
 已实现（入口可用，真实转换）：
 
-- 视频：视频转码（容器 MP4 / MKV / WebM / MOV / TS / AVI，编码器按容器联动，H.264 / HEVC / AV1 / VP9 / VP8 / MPEG-4，分辨率、帧率、码控、音频、硬解、faststart）、压缩、旋转 / 比例裁剪、多文件合并、音视频混流、转 GIF
-- 图片：批量转换（JPG / PNG / WebP / BMP / TIFF）、批量缩放、批量裁剪（比例 / 自定义矩形）、网格拼图
+- 视频：视频转码（容器 MP4 / MKV / WebM / MOV / TS / AVI，编码器按容器联动，H.264 / HEVC / AV1 / VP9 / VP8 / MPEG-4，分辨率、帧率、码控、音频、硬解、faststart）、压缩、旋转 / 比例裁剪、多文件合并、音视频混流、转 GIF、变速（0.25–4.0，保持音高）、水印（图片 / 文字）、字幕（内嵌 / 烧录）、相对音量增益（−20…+20 dB，可静音）、按时间点分割（流复制 / 重编码）
+- 图片：批量转换（JPG / PNG / WebP / BMP / TIFF）、批量缩放、批量裁剪（比例 / 自定义矩形）、网格拼图、加水印、目标大小 / 固定质量压缩、多图转 GIF（palettegen + paletteuse）
 - 序列：图片序列 → 视频（fps / 起始编号 / 尺寸统一 / 编码器）、视频 → 图片序列
-- 音频：转码（MP3 / AAC→m4a / FLAC / WAV / OGG-Vorbis / Opus）、音量标准化（EBU R128）
+- 音频：转码（MP3 / AAC→m4a / FLAC / WAV / OGG-Vorbis / Opus）、音量标准化（EBU R128）、相对音量增益
 - 文档：PDF 合并、拆分（每页 / 页码范围，内置 lopdf，零外部依赖）、PDF 转图片（PNG / JPG + DPI，需外部 pdftoppm）
 - 配置：面板参数 + 输出策略的预设导入 / 导出（版本与字段严格校验，不含路径与凭据）
 - 任务：4 槽并发、暂停 / 继续、命名模板、冲突策略、自动重试（仅 hw-unavailable / 临时 IO）
 
 保留入口但**明确标注「未实现」**，点击只提示、不执行任何假转换：
 
-- 视频：水印、字幕
-- 图片：加水印、图片转 GIF
 - 文档：文档转 PDF、Office 互转
-- 光驱 / DVD / ISO、工具集（改名、校验、信息、截图等）全部未实现
+- 图片：EXIF 元数据写入、AVIF 编码
+- 光驱 / DVD / ISO、工具集（改名、校验、信息、截图等）
+- 更新器实装（接口与方案已就绪，未接真实发布通道）
 
 ### 格式清单与探测的关系
 
@@ -61,6 +61,37 @@ GPU 能力矩阵与实测/文档/待验证标注见 [GPU-能力矩阵.md](GPU-�
 - 「PDF 转图片」入口常驻可点：缺 `pdftoppm` 时进入面板会给出 Poppler 安装路径（设置页
   「PDF 工具目录」或 `PDFTOPPM_PATH`）与「重新检测」按钮，查找顺序仍是
   `PDFTOPPM_PATH → 设置目录 → TRANSMUTIO_PDF_TOOLS → PATH`。
+
+## 下载与许可（v0.1.0）
+
+- 发布页：<https://github.com/yunyu697/transmutio/releases/tag/v0.1.0>
+- **安装包不包含 FFmpeg / Poppler 二进制**。仓库与 Release 附件都不分发这两个二进制：
+  FFmpeg 由用户自行准备并在首次启动时经引导页校验（版本 / 构建配置 / SHA-256）后落位到
+  应用数据目录；「PDF 转图片」需用户自行安装 Poppler 的 `pdftoppm`。因此本项目不承担
+  FFmpeg/Poppler 二进制再分发的源码提供义务；若你要再分发它们，请自行履行对应许可证。
+- 两个安装包的区别与所选许可路线：
+
+  | 包 | 接受的 FFmpeg 构建 | 含义 |
+  | --- | --- | --- |
+  | `Transmutio_0.1.0_x64_*`（LGPL 变体，默认） | 仅 LGPL 构建（拒绝 `--enable-gpl` / `--enable-nonfree`） | 选择此包 = 只使用 LGPL 许可的 FFmpeg 与编码器（如 libopenh264 / libvpx / SVT-AV1 / aac / libmp3lame） |
+  | `Transmutio GPL_0.1.0_x64_*`（GPL 变体） | 仅 GPL 构建（含 libx264 / libx265） | 选择此包 = 接受 GPL 许可的 FFmpeg 构建，可用 x264 / x265 |
+
+  两包共用同一份应用源码，差异仅为编译期 `gpl` feature + Tauri overlay（独立应用标识与数据目录）。
+- **应用自身代码尚未附开源许可证**（默认版权保留）。上表的「LGPL / GPL」指两个包所接受的
+  **FFmpeg 许可路线**，不是应用代码本身的双许可；若要以 LGPL/GPL 对外授权应用代码，
+  需要先补充 `LICENSE` 并做一次明确的许可决定（当前未做）。
+- 许可证全文：`licenses/FFmpeg-LGPL.txt`（LGPL-2.1）、`licenses/FFmpeg-GPL.txt`（GPL-2.0）、
+  `licenses/Poppler.txt`（GPL-2.0+）。安装包内另附对应变体的许可证、第三方声明与源码获取说明
+  （`src-tauri/resources/licenses/`）。
+- 源码获取方式（本项目**未修改** FFmpeg 与 Poppler 源码）：
+  - FFmpeg：<https://ffmpeg.org/download.html>；源码 <https://git.ffmpeg.org/ffmpeg.git> 或
+    <https://github.com/FFmpeg/FFmpeg>。发布验证使用的参考构建：LGPL
+    `N-128352-gec887b13a8-20261103`（BtbN/FFmpeg-Builds，git 提交 `ec887b13a8`），
+    configure 参数全文见 `src-tauri/resources/licenses/SOURCE-ACQUISITION-LGPL.txt`；
+    GPL 参考构建（gyan.dev）见 `SOURCE-ACQUISITION-GPL.txt`。
+  - Poppler：<https://poppler.freedesktop.org/>；源码
+    <https://gitlab.freedesktop.org/poppler/poppler>。本仓库不分发其二进制。
+- **安装包未签名**（无 Authenticode / Apple 公证），Windows SmartScreen 可能提示未知发布者。
 
 ## 环境要求（本机实测版本）
 

@@ -1,9 +1,9 @@
-FormatForge GPL 版 FFmpeg 源码与二进制获取说明
+Transmutio GPL 版 FFmpeg 源码与二进制获取说明
 ==============================================
 
 结论（与实际行为一致，不要误读为源码要约）
 ------------------------------------------
-FormatForge GPL（FormatForge GPL）安装包 **不随包分发任何 ffmpeg / ffprobe 二进制**。
+Transmutio GPL（Transmutio GPL）安装包 **不随包分发任何 ffmpeg / ffprobe 二进制**。
 FFmpeg 由用户在本机自行下载、校验并落位（应用只在落位时读取版本、构建配置、
 哈希与编码器列表）。
 
