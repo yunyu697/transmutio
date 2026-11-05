@@ -869,7 +869,7 @@ identifier（dark 反编译 `ShortcutProperty System.AppUserModel.ID`）、NSIS 
 
 | 验证 | 结果 | 覆盖 |
 | --- | --- | --- |
-| `cargo test` | **74 / 74**（+11 条变速相关、+1 条默认值） | 1.0 不产生滤镜；1.5 单 `atempo=1.5`；0.25 双 0.5；4.0 双 2；2.5 = `2,1.25`；乘积 1e-6；变速+裁剪+旋转链顺序与 `setpts` 唯一；关音高走 `asetrate`；越界拒绝；缺 `keepPitch` 默认 true；`atempo` 在 `loudnorm` 之前 |
+| `cargo test` | **74 / 74**（原 63 + 11 条变速相关，含 1 条默认值） | 1.0 不产生滤镜；1.5 单 `atempo=1.5`；0.25 双 0.5；4.0 双 2；2.5 = `2,1.25`；乘积 1e-6；变速+裁剪+旋转链顺序与 `setpts` 唯一；关音高走 `asetrate`；越界拒绝；缺 `keepPitch` 默认 true；`atempo` 在 `loudnorm` 之前 |
 | `npm run verify:formats` | **13 / 13** | `speed.ts` 常量/预设/越界逻辑，两面板引用与「保持音高」，`args.rs` 含 `atempo_factors`/`setpts`/`validate_speed` |
 | `p2-check`（LGPL FFmpeg） | **13 / 13** | `speed-matrix`：`atempo_factors(2.5)` 乘积 2.5000；真实 1.5× → **1.37 s**（期望 2.00/1.5=1.33 s）、0.5× → **3.98 s**（期望 4.00 s），容差 0.1 s；两条产物音频 **48000 Hz / 2 声道**与原片一致 |
 | `npm run build` | 通过 | 69 modules，372.00 kB |
