@@ -1,0 +1,162 @@
+/**
+ * 预设与本地面板参数的桥接：导出时只收集白名单字段（与后端 preset.rs 的字段
+ * 白名单一致），导入时按面板写回 localStorage。路径、输出目录与凭据永不进入预设。
+ */
+import { readNamespaced, writeNamespaced } from "./storage";
+
+const PREFIX = "panel:";
+
+const FIELDS: Record<string, string[]> = {
+  video: [
+    "container", "codec", "encoder", "rateMode", "quality", "bitrateKbps", "resolution", "fps", "crop",
+    "rotation", "audioMode", "audioBitrateKbps", "hwDecode", "faststart",
+  ],
+  audio: ["format", "bitrateKbps", "sampleRate", "channels", "normalize"],
+  image: [
+    "format", "quality", "maxEdge", "rotation", "autoOrient", "cropMode", "cropRatio",
+    "cropX", "cropY", "cropW", "cropH",
+  ],
+  merge: ["mode", "resolution", "fps", "audioMode", "codec", "quality", "bitrateKbps"],
+  mux: ["mode", "audioMode", "audioBitrateKbps"],
+  gif: ["fps", "width", "startSec", "durationSec", "optimize"],
+  seq: ["fps", "startNumber", "sizeMode", "width", "height", "encoder", "quality", "bitrateKbps"],
+  frames: ["fps", "width", "format", "quality"],
+  collage: ["cols", "rows", "cellWidth", "cellHeight", "gap", "background", "fit", "format", "quality"],
+  pdf: ["mergeMode", "splitMode", "ranges", "imageFormat", "dpi"],
+};
+
+/** 每类面板导出时读取的本地键；同一面板类型有多个入口时取第一个作为代表。 */
+const SOURCE_KEYS: Record<string, string> = {
+  video: "video:video-mp4",
+  audio: "audio:audio-aac",
+  image: "image:image-convert",
+  merge: "video-video-merge",
+  mux: "video-video-mux",
+  gif: "video-video-gif",
+  seq: "seq:params",
+  frames: "frames:params",
+  collage: "collage:params",
+};
+
+/** 导入时写回的目标：面板参数键 + 需要同步命名策略的方法。 */
+const APPLY_TARGETS: Record<string, { panelKeys: string[]; namingMethods: string[] }> = {
+  video: {
+    panelKeys: ["video:video-mp4", "video:video-compress", "video:video-crop"],
+    namingMethods: ["video-mp4", "video-compress", "video-crop"],
+  },
+  audio: {
+    panelKeys: ["audio:audio-mp3", "audio:audio-aac", "audio:audio-volume"],
+    namingMethods: ["audio-mp3", "audio-aac", "audio-volume"],
+  },
+  image: {
+    panelKeys: ["image:image-convert", "image:image-resize", "image:image-crop"],
+    namingMethods: ["image-convert", "image-resize", "image-crop"],
+  },
+  merge: { panelKeys: ["video-video-merge"], namingMethods: ["video-merge"] },
+  mux: { panelKeys: ["video-video-mux"], namingMethods: ["video-mux"] },
+  gif: { panelKeys: ["video-video-gif"], namingMethods: ["video-gif"] },
+  seq: { panelKeys: ["seq:params"], namingMethods: [] },
+  frames: { panelKeys: ["frames:params"], namingMethods: [] },
+  collage: { panelKeys: ["collage:params"], namingMethods: ["image-collage"] },
+};
+
+function readObject(key: string): Record<string, unknown> | null {
+  try {
+    const raw = readNamespaced(PREFIX + key);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function pickFields(source: Record<string, unknown>, allowed: string[]): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const field of allowed) {
+    if (field in source) result[field] = source[field];
+  }
+  return result;
+}
+
+function writeObject(key: string, value: Record<string, unknown>): void {
+  try {
+    writeNamespaced(PREFIX + key, JSON.stringify(value));
+  } catch {
+    // 配额不足时导出/导入仍然成功，只是本次参数不持久化。
+  }
+}
+
+export interface CollectedPreset {
+  panels: Record<string, unknown>;
+  output: Record<string, unknown>;
+}
+
+/** 收集当前保存的面板参数与输出策略；没有保存过的面板不写入预设。 */
+export function collectPreset(afterAction: string): CollectedPreset {
+  const panels: Record<string, unknown> = {};
+  for (const [name, key] of Object.entries(SOURCE_KEYS)) {
+    const saved = readObject(key);
+    if (saved) panels[name] = pickFields(saved, FIELDS[name]);
+  }
+  const mode = readObject("pdf:mode")?.mode;
+  const ranges = readObject("pdf:ranges")?.ranges;
+  const imageFormat = readObject("pdf:format")?.format;
+  const dpi = readObject("pdf:dpi")?.dpi;
+  const pdf: Record<string, unknown> = {};
+  if (typeof mode === "string") pdf.splitMode = mode;
+  if (typeof ranges === "string") pdf.ranges = ranges;
+  if (typeof imageFormat === "string") pdf.imageFormat = imageFormat;
+  if (typeof dpi === "number") pdf.dpi = dpi;
+  if (Object.keys(pdf).length) panels.pdf = pdf;
+
+  // 输出策略来自面板的「输出命名」；取第一个保存过命名的入口作为代表。
+  let naming: { template?: unknown; conflict?: unknown } = {};
+  for (const method of ["video-mp4", "image-convert", "audio-mp3", "video-merge"]) {
+    const saved = readObject(`naming:${method}`);
+    if (saved) {
+      naming = saved;
+      break;
+    }
+  }
+  const output: Record<string, unknown> = {
+    conflict: typeof naming.conflict === "string" ? naming.conflict : "suffix",
+  };
+  if (typeof naming.template === "string") output.nameTemplate = naming.template;
+  if (afterAction) output.afterAction = afterAction;
+  return { panels, output };
+}
+
+/** 把校验通过的预设写回本地面板参数；返回写入的面板名称，便于提示。 */
+export function applyPreset(preset: {
+  panels: Record<string, unknown>;
+  output: Record<string, unknown>;
+}): string[] {
+  const applied: string[] = [];
+  for (const [name, value] of Object.entries(preset.panels)) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const fields = pickFields(value as Record<string, unknown>, FIELDS[name] ?? []);
+    if (name === "pdf") {
+      const pdf = fields as Record<string, unknown>;
+      if (typeof pdf.splitMode === "string") writeObject("pdf:mode", { mode: pdf.splitMode });
+      if (typeof pdf.ranges === "string") writeObject("pdf:ranges", { ranges: pdf.ranges });
+      if (typeof pdf.imageFormat === "string") writeObject("pdf:format", { format: pdf.imageFormat });
+      if (typeof pdf.dpi === "number") writeObject("pdf:dpi", { dpi: pdf.dpi });
+      applied.push("pdf");
+      continue;
+    }
+    const target = APPLY_TARGETS[name];
+    if (!target) continue;
+    for (const key of target.panelKeys) writeObject(key, fields);
+    applied.push(name);
+  }
+
+  const conflict = typeof preset.output.conflict === "string" ? preset.output.conflict : "suffix";
+  const template = typeof preset.output.nameTemplate === "string" ? preset.output.nameTemplate : "";
+  const namingMethods = Object.values(APPLY_TARGETS).flatMap((target) => target.namingMethods);
+  for (const method of namingMethods) {
+    writeObject(`naming:${method}`, { template, conflict });
+  }
+  return applied;
+}
