@@ -161,6 +161,10 @@ export interface VideoParams {
   audioBitrateKbps: number;
   hwDecode: boolean;
   faststart: boolean;
+  /** 播放倍速：0.25–4.0，1 表示不变 */
+  speed: number;
+  /** 变速时保持音高（默认 true：用 atempo 链） */
+  keepPitch: boolean;
 }
 
 export interface AudioParams {
@@ -171,6 +175,10 @@ export interface AudioParams {
   channels: "source" | "mono" | "stereo";
   /** EBU R128 响度归一化 */
   normalize: boolean;
+  /** 播放倍速：0.25–4.0，1 表示不变 */
+  speed: number;
+  /** 变速时保持音高（默认 true：用 atempo 链） */
+  keepPitch: boolean;
 }
 
 export interface ImageParams {

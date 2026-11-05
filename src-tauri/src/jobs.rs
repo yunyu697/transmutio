@@ -464,11 +464,16 @@ fn precheck_spec(
         "video-mp4" => {
             let p: args::VideoParams = serde_json::from_value(params.clone())
                 .map_err(|e| format!("视频参数格式错误：{e}"))?;
+            args::validate_speed(p.speed)?;
+            if args::speed_or_default(p.speed) != 1.0 && p.audio_mode == "copy" {
+                return Err("变速会改变音轨时长，不能与原样复制音轨同时使用：请改为按容器转码或移除音轨".into());
+            }
             containers::validate_video(&p.container, &p.codec)
         }
         "audio-mp3" | "audio-aac" => {
             let p: args::AudioParams = serde_json::from_value(params.clone())
                 .map_err(|e| format!("音频参数格式错误：{e}"))?;
+            args::validate_speed(p.speed)?;
             containers::validate_audio(&p.format)
         }
         "video-merge" | "video-mux" | "video-gif" => {

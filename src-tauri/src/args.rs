@@ -27,6 +27,11 @@ pub struct VideoParams {
     pub audio_bitrate_kbps: u32,
     pub hw_decode: bool,
     pub faststart: bool,
+    /// 播放倍速：1.0 表示不变；有效范围 0.25–4.0
+    pub speed: f64,
+    /// 变速时保持音高（默认 true：用 atempo；false 时音高随速度变化）
+    #[serde(default = "default_true")]
+    pub keep_pitch: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -41,6 +46,15 @@ pub struct AudioParams {
     pub channels: String,
     /// EBU R128 响度归一化（-16 LUFS）
     pub normalize: bool,
+    /// 播放倍速：1.0 表示不变；有效范围 0.25–4.0
+    pub speed: f64,
+    /// 变速时保持音高（默认 true：用 atempo；false 时音高随速度变化）
+    #[serde(default = "default_true")]
+    pub keep_pitch: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -770,6 +784,80 @@ fn rotation_filters(mode: &str) -> Vec<String> {
     }
 }
 
+/// 把目标倍速拆成若干个 atempo 因子：单次 atempo 只接受 0.5–2.0，
+/// 超出范围必须链式串接（例如 0.25 → 0.5×0.5；4.0 → 2.0×2.0；2.5 → 2.0×1.25）。
+pub fn atempo_factors(speed: f64) -> Vec<f64> {
+    let mut remaining = speed;
+    let mut out: Vec<f64> = Vec::new();
+    while remaining > 2.0 + 1e-9 {
+        out.push(2.0);
+        remaining /= 2.0;
+    }
+    while remaining < 0.5 - 1e-9 {
+        out.push(0.5);
+        remaining *= 2.0;
+    }
+    out.push(remaining);
+    out
+}
+
+/// 数字统一格式化：最多 4 位小数并去掉尾随 0（2.0 → "2"，1.25 → "1.25"）。
+fn fmt_num(value: f64) -> String {
+    let text = format!("{value:.4}");
+    let trimmed = text.trim_end_matches('0').trim_end_matches('.');
+    if trimmed.is_empty() || trimmed == "-" {
+        "0".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// 视频/音频变速的滤镜片段；speed 归一化后为 1.0 时返回 None（不产生任何滤镜）。
+pub fn speed_filters(speed: f64, keep_pitch: bool) -> Option<(String, String)> {
+    let speed = speed_or_default(speed);
+    if (speed - 1.0).abs() < 1e-9 {
+        return None;
+    }
+    let video = format!("setpts=PTS/{}", fmt_num(speed));
+    let audio = if keep_pitch {
+        atempo_factors(speed)
+            .iter()
+            .map(|f| format!("atempo={}", fmt_num(*f)))
+            .collect::<Vec<_>>()
+            .join(",")
+    } else {
+        // 音高随速度变化：先把音频重采样到 48 kHz，再改采样率解释（时长变为 1/speed，音高 ×speed），
+        // 最后重采样回 48 kHz。atempo 不再叠加，否则会把时长再改一次。
+        format!(
+            "aresample=48000,asetrate={},aresample=48000",
+            fmt_num(48000.0 * speed)
+        )
+    };
+    Some((video, audio))
+}
+
+/// 0 / 负数 / NaN 视为「未启用」，返回 1.0。
+pub fn speed_or_default(speed: f64) -> f64 {
+    if !speed.is_finite() || speed <= 0.0 {
+        1.0
+    } else {
+        speed
+    }
+}
+
+/// 入队校验：0 视为未启用（通过）；非 0 时必须在 0.25–4.0，否则拒绝并给出可读原因。
+pub fn validate_speed(speed: f64) -> Result<(), String> {
+    if !speed.is_finite() || speed <= 0.0 {
+        return Ok(());
+    }
+    if !(0.25..=4.0).contains(&speed) {
+        return Err(format!(
+            "倍速 {speed} 超出支持范围：0.25–4.0（1.0 表示不变速）"
+        ));
+    }
+    Ok(())
+}
+
 pub fn build_video(
     encoder: &str,
     input: &str,
@@ -829,6 +917,9 @@ pub fn build_video(
             }
         }
     }
+    if let Some((video_filter, _)) = speed_filters(p.speed, p.keep_pitch) {
+        filters.push(video_filter);
+    }
     if vaapi_ok {
         filters.push("format=nv12".into());
         filters.push("hwupload".into());
@@ -873,6 +964,11 @@ pub fn build_video(
             } else {
                 container_audio
             };
+            // 变速只影响转码音轨；「原样复制」由 precheck 拒绝组合。
+            if let Some((_, audio_filter)) = speed_filters(p.speed, p.keep_pitch) {
+                args.push("-af".into());
+                args.push(audio_filter);
+            }
             args.push("-c:a".into());
             args.push(audio.into());
             args.push("-b:a".into());
@@ -955,10 +1051,18 @@ pub fn build_audio(encoder: &str, input: &str, output: &str, p: &AudioParams) ->
         }
         _ => {}
     }
+    // 变速在前、响度归一化在后；非空时只插入一次 -af。
+    let mut audio_filters: Vec<String> = Vec::new();
+    if let Some((_, audio_filter)) = speed_filters(p.speed, p.keep_pitch) {
+        audio_filters.push(audio_filter);
+    }
     if p.normalize {
         // EBU R128 单遍响度归一化；libebur128 缺失时 ffmpeg 会明确报错，任务不会被静默标成功。
+        audio_filters.push("loudnorm=I=-16:TP=-1.5:LRA=11".into());
+    }
+    if !audio_filters.is_empty() {
         args.push("-af".into());
-        args.push("loudnorm=I=-16:TP=-1.5:LRA=11".into());
+        args.push(audio_filters.join(","));
     }
     args.push(output.into());
     args
@@ -1442,7 +1546,164 @@ mod tests {
             audio_bitrate_kbps: 192,
             hw_decode: false,
             faststart: true,
+            speed: 1.0,
+            keep_pitch: true,
         }
+    }
+
+    fn audio_filter_arg(args: &[String]) -> Option<String> {
+        let pos = args.iter().position(|a| a == "-af")?;
+        args.get(pos + 1).cloned()
+    }
+
+    fn count_flag(args: &[String], flag: &str) -> usize {
+        args.iter().filter(|a| a.as_str() == flag).count()
+    }
+
+    #[test]
+    fn speed_one_adds_no_filter() {
+        let mut p = video_params();
+        p.speed = 1.0;
+        p.audio_mode = "aac".into();
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None);
+        assert!(filter_arg(&args).is_none(), "原速不应插入 -vf");
+        assert!(audio_filter_arg(&args).is_none(), "原速不应插入 -af");
+    }
+
+    #[test]
+    fn speed_1_5_single_atempo() {
+        let mut p = video_params();
+        p.speed = 1.5;
+        p.audio_mode = "aac".into();
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None);
+        let vf = filter_arg(&args).expect("应生成 -vf");
+        assert_eq!(vf, "setpts=PTS/1.5");
+        assert_eq!(audio_filter_arg(&args).as_deref(), Some("atempo=1.5"));
+    }
+
+    #[test]
+    fn speed_0_25_chains_two_half() {
+        let mut p = video_params();
+        p.speed = 0.25;
+        p.audio_mode = "aac".into();
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None);
+        assert_eq!(
+            audio_filter_arg(&args).as_deref(),
+            Some("atempo=0.5,atempo=0.5")
+        );
+    }
+
+    #[test]
+    fn speed_4_chains_two_double() {
+        let mut p = video_params();
+        p.speed = 4.0;
+        p.audio_mode = "aac".into();
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None);
+        assert_eq!(
+            audio_filter_arg(&args).as_deref(),
+            Some("atempo=2,atempo=2")
+        );
+    }
+
+    #[test]
+    fn speed_2_5_chains_two_and_1_25() {
+        let mut p = video_params();
+        p.speed = 2.5;
+        p.audio_mode = "aac".into();
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None);
+        assert_eq!(
+            audio_filter_arg(&args).as_deref(),
+            Some("atempo=2,atempo=1.25")
+        );
+    }
+
+    #[test]
+    fn atempo_product_matches_target() {
+        for target in [0.25, 0.4, 0.5, 1.5, 2.0, 2.5, 3.0, 4.0] {
+            let factors = atempo_factors(target);
+            assert!(!factors.is_empty(), "{target} 应至少一个因子");
+            for factor in &factors {
+                assert!(
+                    (0.5..=2.0).contains(factor),
+                    "因子 {factor} 超出 0.5–2.0（目标 {target}）"
+                );
+            }
+            let product: f64 = factors.iter().product();
+            assert!(
+                (product - target).abs() < 1e-6,
+                "乘积 {product} 与目标 {target} 不一致"
+            );
+        }
+    }
+
+    #[test]
+    fn speed_with_crop_rotate_filter_order() {
+        let mut p = video_params();
+        p.crop = "9:16".into();
+        p.rotation = "90".into();
+        p.resolution = "720".into();
+        p.speed = 2.0;
+        p.audio_mode = "aac".into();
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None);
+        let vf = filter_arg(&args).expect("应生成 -vf");
+        assert!(vf.starts_with("crop="), "裁剪应最先应用：{vf}");
+        assert!(vf.contains("transpose=1"), "旋转应在裁剪之后：{vf}");
+        assert!(vf.contains("scale=-2:720"), "缩放应在旋转之后：{vf}");
+        assert!(vf.ends_with("setpts=PTS/2"), "变速应最后应用：{vf}");
+        assert_eq!(vf.matches("setpts=").count(), 1, "{vf}");
+        assert_eq!(count_flag(&args, "-af"), 1, "{args:?}");
+    }
+
+    #[test]
+    fn pitch_off_uses_asetrate() {
+        let mut p = video_params();
+        p.speed = 2.0;
+        p.keep_pitch = false;
+        p.audio_mode = "aac".into();
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None);
+        assert_eq!(
+            audio_filter_arg(&args).as_deref(),
+            Some("aresample=48000,asetrate=96000,aresample=48000")
+        );
+    }
+
+    #[test]
+    fn validate_speed_rejects_out_of_range() {
+        assert!(validate_speed(0.1).is_err());
+        assert!(validate_speed(5.0).is_err());
+        assert!(validate_speed(0.25).is_ok());
+        assert!(validate_speed(4.0).is_ok());
+        assert!(validate_speed(0.0).is_ok());
+    }
+
+    #[test]
+    fn keep_pitch_defaults_to_true_when_omitted() {
+        // 前端未传 keepPitch 时必须默认保持音高，否则升速会意外变调。
+        let video: VideoParams = serde_json::from_str(r#"{"speed":1.5}"#).unwrap();
+        assert!(video.keep_pitch, "视频参数缺 keepPitch 时应默认保持音高");
+        let audio: AudioParams = serde_json::from_str(r#"{"format":"mp3","speed":1.5}"#).unwrap();
+        assert!(audio.keep_pitch, "音频参数缺 keepPitch 时应默认保持音高");
+        let explicit: AudioParams = serde_json::from_str(r#"{"keepPitch":false}"#).unwrap();
+        assert!(!explicit.keep_pitch, "显式 false 必须生效");
+    }
+
+    #[test]
+    fn audio_speed_precedes_loudnorm() {
+        let p = AudioParams {
+            format: "mp3".into(),
+            bitrate_kbps: 192,
+            sample_rate: "source".into(),
+            channels: "source".into(),
+            normalize: true,
+            speed: 1.5,
+            keep_pitch: true,
+        };
+        let args = build_audio("libmp3lame", "in.wav", "out.mp3", &p);
+        assert_eq!(count_flag(&args, "-af"), 1);
+        assert_eq!(
+            audio_filter_arg(&args).as_deref(),
+            Some("atempo=1.5,loudnorm=I=-16:TP=-1.5:LRA=11")
+        );
     }
 
     fn filter_arg(args: &[String]) -> Option<String> {
@@ -1511,6 +1772,8 @@ mod tests {
             sample_rate: "source".into(),
             channels: "source".into(),
             normalize: true,
+            speed: 1.0,
+            keep_pitch: true,
         };
         let args = build_audio("libmp3lame", "in.wav", "out.mp3", &p);
         let pos = args.iter().position(|a| a == "-af").expect("应插入 -af");

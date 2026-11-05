@@ -10,6 +10,7 @@ import {
   formatProbeNotice,
 } from "../lib/formats";
 import { Icon } from "../components/Icon";
+import { SPEED_MAX, SPEED_MIN, SPEED_PRESETS, SPEED_STEP, speedLabel } from "../lib/speed";
 
 const DEFAULT_PARAMS: AudioParams = {
   format: "mp3",
@@ -17,6 +18,8 @@ const DEFAULT_PARAMS: AudioParams = {
   sampleRate: "source",
   channels: "source",
   normalize: false,
+  speed: 1,
+  keepPitch: true,
 };
 
 export function AudioPanel({
@@ -68,11 +71,12 @@ export function AudioPanel({
   const lossy = formatSpec.lossy;
 
   const estimate = useMemo(() => {
-    const duration = files.reduce((sum, file) => sum + (file.durationSec ?? 0), 0);
-    if (!duration || !lossy) return null;
+    const rawDuration = files.reduce((sum, file) => sum + (file.durationSec ?? 0), 0);
+    if (!rawDuration || !lossy) return null;
+    const duration = rawDuration / (params.speed || 1);
     const bytes = (params.bitrateKbps * 1000 * duration) / 8;
     return { bytes, duration };
-  }, [files, params.bitrateKbps, lossy]);
+  }, [files, params.bitrateKbps, params.speed, lossy]);
 
   const start = async () => {
     if (!files.length) {
@@ -191,6 +195,47 @@ export function AudioPanel({
             )}
             <div className="note">
               源文件为视频时只提取第一条音轨；视频画面不会被保留。若源文件没有音轨，任务会失败并给出原因。
+            </div>
+          </Group>
+
+          <Group title="变速" icon="gauge">
+            <Field label="倍速" tag={speedLabel(params.speed)}>
+              <Segmented
+                value={String(params.speed)}
+                onChange={(value) => set("speed", Number(value))}
+                options={SPEED_PRESETS.map((value) => ({
+                  value: String(value),
+                  label: speedLabel(value),
+                }))}
+              />
+            </Field>
+            <Field label="自定义倍速" tag="0.25–4.0">
+              <input
+                className="input"
+                type="number"
+                min={SPEED_MIN}
+                max={SPEED_MAX}
+                step={SPEED_STEP}
+                value={params.speed}
+                onChange={(e) => {
+                  const next = Number(e.target.value);
+                  // 越界时不写入，保留上一次合法值。
+                  if (next === 0 || (next >= SPEED_MIN && next <= SPEED_MAX)) set("speed", next);
+                }}
+              />
+            </Field>
+            <SwitchRow
+              label="保持音高"
+              hint={
+                params.keepPitch
+                  ? "用 atempo 链变速，音高不变（单次 0.5–2.0，超出自动链式串接）"
+                  : "关闭后音高随速度变化：会先把音频重采样到 48 kHz，输出采样率固定 48 kHz"
+              }
+              on={params.keepPitch}
+              onChange={(value) => set("keepPitch", value)}
+            />
+            <div className="note">
+              无损格式（FLAC/WAV）变速同样生效；保持音高用 atempo 链。
             </div>
           </Group>
 

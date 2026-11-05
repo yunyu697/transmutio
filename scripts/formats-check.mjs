@@ -94,6 +94,34 @@ check(
   "src/lib/storage.ts 定义 LEGACY_PREFIX / STORAGE_PREFIX / MIGRATION_KEY",
 );
 
+// 变速：范围常量集中在 speed.ts，两个面板使用同一套预设与「保持音高」开关；
+// 后端滤镜链必须包含 atempo 链式拆分与 setpts 变速。
+const speedModule = readFileSync(join(root, "src/lib/speed.ts"), "utf8");
+const speedConstants = ["SPEED_MIN = 0.25", "SPEED_MAX = 4", "SPEED_STEP = 0.05", "SPEED_PRESETS"];
+const missingSpeedConstants = speedConstants.filter((token) => !speedModule.includes(token));
+const speedPresets = ["0.5", "0.75", "1.25", "1.5", "2"];
+const missingPresets = speedPresets.filter((value) => !speedModule.includes(value));
+check(
+  "变速范围与预设集中定义",
+  missingSpeedConstants.length === 0 && missingPresets.length === 0 && speedModule.includes("raw < SPEED_MIN || raw > SPEED_MAX"),
+  missingSpeedConstants.length || missingPresets.length
+    ? `缺少 ${[...missingSpeedConstants, ...missingPresets].join(", ")}`
+    : "speed.ts 定义 SPEED_MIN/SPEED_MAX/SPEED_STEP/SPEED_PRESETS（含 0.5/0.75/1.25/1.5/2），越界返回 error",
+);
+check(
+  "视频与音频面板共用变速预设",
+  [videoPanel, audioPanel].every(
+    (panel) => panel.includes("SPEED_PRESETS") && panel.includes("保持音高") && panel.includes("keepPitch"),
+  ),
+  "VideoPanel / AudioPanel 均引用 SPEED_PRESETS，并含「保持音高」开关与 keepPitch 字段",
+);
+const argsSource = readFileSync(join(root, "src-tauri/src/args.rs"), "utf8");
+check(
+  "后端变速滤镜链完整",
+  ["atempo_factors", "setpts=PTS/", "validate_speed", "atempo=0.5"].every((token) => argsSource.includes(token)),
+  "args.rs 含 atempo_factors / setpts=PTS/ / validate_speed 与 atempo=0.5 链式用例",
+);
+
 let failed = 0;
 for (const item of results) {
   console.log(`${item.ok ? "PASS" : "FAIL"} ${item.name}: ${item.detail}`);

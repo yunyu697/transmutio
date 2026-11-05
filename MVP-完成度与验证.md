@@ -760,7 +760,7 @@ identifier（dark 反编译 `ShortcutProperty System.AppUserModel.ID`）、NSIS 
 2. **输出扩展名可见性**：已给音频「编码格式」加了 `输出 .m4a` 标签；此前 `.m4a` 只藏在 tooltip。
 3. ~~PDF 转图片灰显~~：**已修**（§4.13）——入口保持可点，面板内给安装说明 + 「重新检测」。
 4. ~~`formatforge:*` localStorage 前缀~~：**已修**（§4.13）——启动时一次性迁移到 `transmutio:*`。
-5. 水印、字幕、变速、图片压缩、Office 互转、光盘/ISO、工具集仍是**真未实现**（入口置灰提示）。
+5. 水印、字幕、图片压缩、Office 互转、光盘/ISO、工具集仍是**真未实现**（入口置灰提示）；变速已在 §4.14 落地。
 
 > 第 1/3/4 项在下一轮（§4.13）已落地；`localStorage` 前缀双写仅为旧版回滚兼容，一个版本周期后删除。
 
@@ -816,6 +816,80 @@ identifier（dark 反编译 `ShortcutProperty System.AppUserModel.ID`）、NSIS 
 - WebM 下 VP9 / Opus 联动、`原样复制` 禁用；
 - 删除 / 移走 ffmpeg 后的「未检测到 ffmpeg 或编码器不可用」提示；
 - 新版「PDF 转图片」在缺 `pdftoppm` 机器上的说明与「重新检测」实际点击效果（本机已装 Poppler，只验证了正路径与静态文案）。
+
+## 4.14 变速（playback speed）（第五轮）
+
+视频面板与音频面板都加入「变速」，后端参数构造集中在 `src-tauri/src/args.rs`，面板只传结构化参数（`speed` / `keepPitch`），不拼滤镜字符串。
+
+### 改动点
+
+| 层 | 改动 | 关键文件 |
+| --- | --- | --- |
+| 参数结构 | `VideoParams` / `AudioParams` 新增 `speed: f64`（1.0 = 不变）、`keep_pitch: bool`；`keep_pitch` 用 `#[serde(default = "default_true")]`，**缺字段即保持音高** | `src-tauri/src/args.rs` |
+| 链式拆分 | `atempo_factors(speed)`：单次 `atempo` 只接受 0.5–2.0，按「>2 反复除以 2、<0.5 反复乘 2、余数一次」贪心分解；`speed_filters(speed, keep_pitch)` 统一产出 `(vf 片段, af 片段)`，1.0 返回 `None` | `src-tauri/src/args.rs` |
+| 视频滤镜 | `build_video`：`crop → rotation(transpose / hflip+vflip) → scale → setpts=PTS/<speed> → [format=nv12,hwupload（vaapi）]`，`-vf` 只 push 一次 | `src-tauri/src/args.rs` |
+| 音频滤镜 | 视频任务转码音轨：`-af` 只 push 一次（变速）；音频任务：`变速 → loudnorm(-16 LUFS)` 合并成一个 `-af` | `src-tauri/src/args.rs`（`build_video` / `build_audio`） |
+| 入队校验 | `precheck_spec`：`video-mp4` / `audio-mp3` / `audio-aac` 先 `validate_speed`；变速 + `audio_mode=copy` 直接拒绝（改音轨时长与 stream copy 冲突） | `src-tauri/src/jobs.rs` |
+| 面板 | 预设 `0.5 / 0.75 / 1.25 / 1.5 / 2`（1 不单列，默认值即 1 = 原速）+ 自定义 `0.25–4.0`、步进 `0.05`；「保持音高」开关默认开；变速时「原样复制」禁用并自动切到 AAC；输出时长估算按倍速缩放 | `src/lib/speed.ts`（新）、`src/panels/VideoPanel.tsx`、`src/panels/AudioPanel.tsx`、`src/lib/api.ts`、`src/components/Icon.tsx` |
+
+### `atempo` 链规则
+
+* 单次 `atempo` 因子必须在 `[0.5, 2.0]`，越界由 `atempo_factors` 展开成多级：
+  * `0.25` → `atempo=0.5,atempo=0.5`
+  * `4.0` → `atempo=2,atempo=2`
+  * `2.5` → `atempo=2,atempo=1.25`
+  * `3.0` → `atempo=2,atempo=1.5`
+* 拆分后用 `1e-6` 容差断言「所有因子的乘积 == 目标倍速」且每个因子都在 0.5–2.0 内。
+* 视频侧永远是单个 `setpts=PTS/<speed>`，不进 `atempo` 链，也不与任何其他滤镜重复。
+
+### 保持音高开关
+
+* **开（默认）**：`atempo` 链，音高不变，时长按倍速缩放。
+* **关**：`aresample=48000,asetrate=<48000*speed>,aresample=48000`，音高随速度整体升降。副作用：输出采样率被固定为 48 kHz（与「采样率=保持原始」不再一致），极快档位高频会失真，且需要更多码率；因此面板在关闭时明确写出这一点。
+
+### 组合优先级（不允许互相覆盖）
+
+| 组合 | 顺序 / 规则 |
+| --- | --- |
+| 变速 + 裁剪 + 旋转 + 缩放 | 视频链 `crop → rotation → scale → setpts`，`setpts` 恒为最后一环（VAAPI 前的 `format/hwupload` 除外），断言 `setpts=` 只出现一次 |
+| 变速 + 响度归一化（音频任务） | `atempo 链 → loudnorm`，断言只有一个 `-af` |
+| 变速 + concat（视频合并） | `video-merge` 无 `speed` 参数，合并任务不参与变速；需要变速时先对单文件变速再合并。避免「合并流 copy 被 setpts 污染」 |
+| 变速 + 原样复制音轨 | **拒绝**：音轨 stream copy 不会随画面变速，必然音画不同步 |
+| 变速 + 硬件编码 | `setpts` 在 CPU 滤镜链中完成，VAAPI 只追加 `format=nv12,hwupload`，不再插入第二个时间滤镜 |
+
+### 显式拒绝（不静默输出）
+
+* `speed` 在 `(0, 0.25)` 或 `(4.0, ∞)`、`NaN`/`inf` → `validate_speed` 返回可读错误，任务入队即失败。
+* `speed == 0` 与负数在后端按「未启用」处理（返回 1.0）；前端控件则**拒绝写入** 0 与负数，保留上一次合法值。
+* 变速 + `audio_mode=copy` → 拒绝，提示「改为按容器转码或移除音轨」。
+* **GIF** 走 `GifParams`（`fps/width/start/duration`），没有倍速字段，面板也不显示倍速控件；**音频-only** 任务走 `build_audio`，只用 `-af`，绝不带 `setpts`。
+* 混流（`video-mux`）与合并（`video-merge`）不接收 `speed`，前端也不会透传。
+
+### 断言结果（后台，无窗口）
+
+| 验证 | 结果 | 覆盖 |
+| --- | --- | --- |
+| `cargo test` | **74 / 74**（+11 条变速相关、+1 条默认值） | 1.0 不产生滤镜；1.5 单 `atempo=1.5`；0.25 双 0.5；4.0 双 2；2.5 = `2,1.25`；乘积 1e-6；变速+裁剪+旋转链顺序与 `setpts` 唯一；关音高走 `asetrate`；越界拒绝；缺 `keepPitch` 默认 true；`atempo` 在 `loudnorm` 之前 |
+| `npm run verify:formats` | **13 / 13** | `speed.ts` 常量/预设/越界逻辑，两面板引用与「保持音高」，`args.rs` 含 `atempo_factors`/`setpts`/`validate_speed` |
+| `p2-check`（LGPL FFmpeg） | **13 / 13** | `speed-matrix`：`atempo_factors(2.5)` 乘积 2.5000；真实 1.5× → **1.37 s**（期望 2.00/1.5=1.33 s）、0.5× → **3.98 s**（期望 4.00 s），容差 0.1 s；两条产物音频 **48000 Hz / 2 声道**与原片一致 |
+| `npm run build` | 通过 | 69 modules，372.00 kB |
+| `verify:core` / `verify:setup` / `verify:ui` / `verify:flavor:*` | 无回归 | 本轮未改这些链路 |
+
+### 本轮产物（`dist-artifacts/`，四包重建）
+
+| 变体 | 安装包 | 字节 | SHA-256 |
+| --- | --- | --- | --- |
+| LGPL | `lgpl/Transmutio_0.1.0_x64_en-US.msi` | 2,666,496 | `b6ac2b69d257f4ec2151b5776914b17aa6bc488d93a88702f69b5c79699352ec` |
+| LGPL | `lgpl/Transmutio_0.1.0_x64-setup.exe` | 1,821,939 | `61120d20e1e83d7fe9e76aab7d8cc559b92487f35432b0b97fefc34a3f8f310f` |
+| GPL | `gpl/Transmutio GPL_0.1.0_x64_en-US.msi` | 2,662,400 | `7c61e491554e50db8acb9776d95ff4f35525e386b0d68dda28543f6b5df21f17` |
+| GPL | `gpl/Transmutio GPL_0.1.0_x64-setup.exe` | 1,818,110 | `9cfc6e90a615b432b65604d2009d0aef43fdc5f6b1e0d9079df62c488dd18d5b` |
+
+### 仍需人工开窗确认（本轮未开窗、未点 UAC）
+
+* 预设段选中态与自定义输入框的步进手感（0.05），输入 0 / 负数 / 5 时是否回弹到上一次合法值；
+* 选变速后「原样复制」是否立即禁用并自动切到 AAC（静态断言只覆盖逻辑，不覆盖真实渲染）；
+* 「保持音高」关闭时的说明文案在窄窗口下是否完整；
+* 1.5× / 0.5× 变速后的**主观音画同步与音质**（后台只断言时长、采样率、声道）。
 
 ---
 

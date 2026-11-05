@@ -240,6 +240,7 @@ fn run_all() -> Result<(), String> {
     pdf_merge_and_split(&dir, &mut report);
     pdf_to_image(&dir, &ffprobe, &mut report);
     format_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
+    speed_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
     preset_roundtrip(&dir, &mut report);
 
     report.write();
@@ -934,6 +935,155 @@ fn format_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report)
         report.pass(&format!("{name}-audio"), evidence.join("；"));
     } else {
         report.fail(&format!("{name}-audio"), failures.join("；"));
+    }
+}
+
+/// 读取音频流的采样率/声道与容器时长，用于变速产物断言。
+fn probe_audio_duration(ffprobe: &Path, path: &Path) -> Result<(f64, u32, u32), String> {
+    let json = run(
+        ffprobe,
+        &[
+            "-v".into(),
+            "error".into(),
+            "-select_streams".into(),
+            "a:0".into(),
+            "-show_entries".into(),
+            "stream=sample_rate,channels:format=duration".into(),
+            "-of".into(),
+            "json".into(),
+            path.to_string_lossy().to_string(),
+        ],
+    )?;
+    let value: serde_json::Value =
+        serde_json::from_str(&json).map_err(|e| format!("ffprobe JSON 解析失败：{e}"))?;
+    let duration = value
+        .get("format")
+        .and_then(|f| f.get("duration"))
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<f64>().ok())
+        .ok_or("ffprobe 没有返回时长")?;
+    let stream = value
+        .get("streams")
+        .and_then(|s| s.get(0))
+        .ok_or("ffprobe 没有返回音频流")?;
+    let sample_rate = stream
+        .get("sample_rate")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(0);
+    let channels = stream.get("channels").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+    Ok((duration, sample_rate, channels))
+}
+
+/// 变速矩阵：真实生成 1.5× / 0.5× 产物，断言时长按倍速缩放且音频采样率/声道不变；
+/// 同时静态校验 atempo 链式拆分的乘积。
+fn speed_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report) {
+    let name = "speed-matrix";
+    let base = dir.join("speed-base.mp4");
+    if !base.is_file() {
+        if let Err(e) = run(
+            ffmpeg,
+            &[
+                "-hide_banner".into(),
+                "-nostdin".into(),
+                "-y".into(),
+                "-loglevel".into(),
+                "error".into(),
+                "-f".into(),
+                "lavfi".into(),
+                "-i".into(),
+                "testsrc2=size=320x240:rate=30:duration=2".into(),
+                "-f".into(),
+                "lavfi".into(),
+                "-i".into(),
+                "sine=frequency=440:sample_rate=48000:duration=2".into(),
+                "-c:v".into(),
+                "libopenh264".into(),
+                "-c:a".into(),
+                "aac".into(),
+                "-b:a".into(),
+                "128k".into(),
+                "-ac".into(),
+                "2".into(),
+                "-shortest".into(),
+                base.to_string_lossy().to_string(),
+            ],
+        ) {
+            report.fail(name, format!("生成基准视频失败：{e}"));
+            return;
+        }
+    }
+
+    let factors = args::atempo_factors(2.5);
+    let product: f64 = factors.iter().product();
+    if (product - 2.5).abs() < 1e-6 {
+        report.pass(
+            &format!("{name}-atempo"),
+            format!("atempo_factors(2.5)={factors:?}，乘积 {product:.4}"),
+        );
+    } else {
+        report.fail(
+            &format!("{name}-atempo"),
+            format!("atempo_factors(2.5) 乘积 {product} 与 2.5 不一致"),
+        );
+    }
+
+    for speed in [1.5, 0.5] {
+        let label = format!("{name}-{speed}x");
+        let out = dir.join(format!("speed-{speed}.mp4"));
+        let p = args::VideoParams {
+            container: "mp4".into(),
+            codec: "h264".into(),
+            encoder: "libopenh264".into(),
+            rate_mode: "quality".into(),
+            quality: 23,
+            bitrate_kbps: 0,
+            resolution: "source".into(),
+            fps: "source".into(),
+            crop: "source".into(),
+            rotation: "0".into(),
+            audio_mode: "aac".into(),
+            audio_bitrate_kbps: 128,
+            hw_decode: false,
+            faststart: true,
+            speed,
+            keep_pitch: true,
+        };
+        let argv = args::build_video(
+            "libopenh264",
+            base.to_string_lossy().as_ref(),
+            out.to_string_lossy().as_ref(),
+            &p,
+            "aac",
+            None,
+        );
+        if let Err(e) = run(ffmpeg, &argv) {
+            report.fail(&label, format!("ffmpeg 失败：{e}"));
+            continue;
+        }
+        match probe_audio_duration(ffprobe, &out) {
+            Ok((duration, sample_rate, channels)) => {
+                let expected = 2.0 / speed;
+                let ok =
+                    (duration - expected).abs() <= 0.1 && sample_rate == 48000 && channels == 2;
+                if ok {
+                    report.pass(
+                        &label,
+                        format!(
+                            "时长 {duration:.2}s（期望 {expected:.2}s），音频 {sample_rate} Hz / {channels} 声道"
+                        ),
+                    );
+                } else {
+                    report.fail(
+                        &label,
+                        format!(
+                            "时长 {duration:.2}s（期望 {expected:.2}s），音频 {sample_rate} Hz / {channels} 声道（期望 48000 / 2）"
+                        ),
+                    );
+                }
+            }
+            Err(e) => report.fail(&label, e),
+        }
     }
 }
 

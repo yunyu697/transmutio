@@ -13,6 +13,7 @@ import {
 } from "../lib/formats";
 import { GifPanel, MergePanel, MuxPanel } from "./CompositePanels";
 import { Icon } from "../components/Icon";
+import { SPEED_MAX, SPEED_MIN, SPEED_PRESETS, SPEED_STEP, speedLabel } from "../lib/speed";
 
 const DEFAULT_PARAMS: VideoParams = {
   container: "mp4",
@@ -29,6 +30,8 @@ const DEFAULT_PARAMS: VideoParams = {
   audioBitrateKbps: 192,
   hwDecode: true,
   faststart: true,
+  speed: 1,
+  keepPitch: true,
 };
 
 function qualityHintKbps(resolution: string, quality: number): number {
@@ -113,9 +116,17 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
     }
   }, [availableCodecs, caps, containerSpec.codecs, params.codec]);
 
+  // 变速会改变音轨时长，原样复制不可用；已选中 copy 时自动切回转码。
+  useEffect(() => {
+    if (params.audioMode === "copy" && params.speed !== 1) {
+      setParams((prev) => ({ ...prev, audioMode: "aac" }));
+    }
+  }, [params.audioMode, params.speed]);
+
   const estimate = useMemo(() => {
-    const duration = files.reduce((sum, f) => sum + (f.durationSec ?? 0), 0);
-    if (!duration) return null;
+    const rawDuration = files.reduce((sum, f) => sum + (f.durationSec ?? 0), 0);
+    if (!rawDuration) return null;
+    const duration = rawDuration / (params.speed || 1);
     const videoKbps = params.rateMode === "bitrate" ? params.bitrateKbps : qualityHintKbps(params.resolution, params.quality);
     const audioKbps = params.audioMode === "none" ? 0 : params.audioBitrateKbps;
     return { bytes: ((videoKbps + audioKbps) * 1000 * duration) / 8, duration };
@@ -364,6 +375,47 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
             </div>
           </Group>
 
+          <Group title="变速" icon="gauge">
+            <Field label="倍速" tag={speedLabel(params.speed)}>
+              <Segmented
+                value={String(params.speed)}
+                onChange={(value) => set("speed", Number(value))}
+                options={SPEED_PRESETS.map((value) => ({
+                  value: String(value),
+                  label: speedLabel(value),
+                }))}
+              />
+            </Field>
+            <Field label="自定义倍速" tag="0.25–4.0">
+              <input
+                className="input"
+                type="number"
+                min={SPEED_MIN}
+                max={SPEED_MAX}
+                step={SPEED_STEP}
+                value={params.speed}
+                onChange={(e) => {
+                  const next = Number(e.target.value);
+                  // 越界时不写入，保留上一次合法值。
+                  if (next === 0 || (next >= SPEED_MIN && next <= SPEED_MAX)) set("speed", next);
+                }}
+              />
+            </Field>
+            <SwitchRow
+              label="保持音高"
+              hint={
+                params.keepPitch
+                  ? "用 atempo 链变速，音高不变（单次 0.5–2.0，超出自动链式串接）"
+                  : "关闭后音高随速度变化：会先把音频重采样到 48 kHz，输出采样率固定 48 kHz"
+              }
+              on={params.keepPitch}
+              onChange={(value) => set("keepPitch", value)}
+            />
+            <div className="note">
+              变速改变视频时长与音轨时长；与裁剪/旋转/缩放同时使用时顺序为「裁剪 → 旋转 → 缩放 → 变速」。音轨「原样复制」不能与变速同时使用。
+            </div>
+          </Group>
+
           <Group title="音频" icon="wave">
             <Field label="音轨">
               <Segmented
@@ -374,8 +426,13 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
                   {
                     value: "copy",
                     label: "原样复制",
-                    disabled: params.container === "webm",
-                    title: params.container === "webm" ? "WebM 只能封装 Opus / Vorbis，源音轨通常不兼容" : undefined,
+                    disabled: params.container === "webm" || params.speed !== 1,
+                    title:
+                      params.speed !== 1
+                        ? "变速会改变音轨时长，不能原样复制"
+                        : params.container === "webm"
+                          ? "WebM 只能封装 Opus / Vorbis，源音轨通常不兼容"
+                          : undefined,
                   },
                   { value: "none", label: "移除" },
                 ]}

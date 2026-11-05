@@ -20,6 +20,7 @@ const paths: Record<string, string> = {
   gif: "M3 5h18v14H3z M8 10v4 M12 10v4 M15 10h3v2h-3v2h3",
   scissors: "M6 4l12 12 M18 4L6 16 M6 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4z M18 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4z",
   speed: "M12 20a8 8 0 1 1 0-16 8 8 0 0 1 0 16z M12 12l5-5",
+  gauge: "M4 17a8 8 0 1 1 16 0 M12 17l5-6 M7 20h10",
   volume: "M4 9v6h4l5 4V5l-5 4z M17 9l3 6 M20 9l-3 6",
   grid: "M3 3h8v8H3z M13 3h8v8h-8z M3 13h8v8H3z M13 13h8v8h-8z",
   pdf: "M6 3h9l4 4v14H6z M15 3v5h4 M9 13h6 M9 17h6",
