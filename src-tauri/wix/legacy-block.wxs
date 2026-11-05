@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Transmutio MSI 旧版并存拦截。
+
+  事实来源 = 旧 MSI 的 UpgradeCode（由 Windows Installer 自己维护，
+  比注册表路径更稳，也不依赖旧的安装目录布局）：
+    - 旧 FormatForge LGPL  {68CDE348-14E5-52EE-8A32-0972D9760143}
+    - 旧 FormatForge GPL   {D0BEF367-4F7D-57E2-AC29-60145E1DB4F0}
+
+  OnlyDetect="yes" 只做检测，不触发升级替换；命中后由 LaunchCondition 中止安装。
+  只读检测，不自动卸载、不迁移数据。
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <!--
+      空的 ComponentGroup 只用于让 WiX light 真正引入这个 Fragment：
+      WiX 3.14 的 light 会静默丢弃「没有被任何 Feature 引用」的 Fragment，
+      导致 Upgrade/LaunchCondition 全部不进 MSI（实测：数据库里连表都没有）。
+      由 tauri.conf.json 的 bundle.windows.wix.componentGroupRefs 引用它。
+    -->
+    <ComponentGroup Id="TransmutioLegacyGuard" />
+
+    <Upgrade Id="{68CDE348-14E5-52EE-8A32-0972D9760143}">
+      <UpgradeVersion
+        Property="OLD_FORMATFORGE_LGPL"
+        OnlyDetect="yes"
+        IncludeMinimum="yes"
+        Minimum="0.0.0.0"
+        IncludeMaximum="yes"
+        Maximum="99.99.99.99" />
+    </Upgrade>
+    <Upgrade Id="{D0BEF367-4F7D-57E2-AC29-60145E1DB4F0}">
+      <UpgradeVersion
+        Property="OLD_FORMATFORGE_GPL"
+        OnlyDetect="yes"
+        IncludeMinimum="yes"
+        Minimum="0.0.0.0"
+        IncludeMaximum="yes"
+        Maximum="99.99.99.99" />
+    </Upgrade>
+
+    <!-- MSI 数据库代码页为 1252（en-US 安装包），描述必须用 ASCII。 -->
+    <Condition Message="Legacy FormatForge (LGPL or GPL) is installed. Please uninstall it first (keep app data), then install Transmutio. Setup aborted; no files were written.">
+      NOT OLD_FORMATFORGE_LGPL AND NOT OLD_FORMATFORGE_GPL
+    </Condition>
+  </Fragment>
+</Wix>
+
