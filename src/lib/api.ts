@@ -144,6 +144,26 @@ export interface JobSpec {
   params: Record<string, unknown>;
 }
 
+/** 图片水印参数（后端 camelCase 反序列化；关闭时不传该字段）。 */
+export interface WatermarkParams {
+  enabled: boolean;
+  /** 水印图片路径（png / jpg / jpeg / webp） */
+  path: string;
+  /** nw | n | ne | w | c | e | sw | s | se | custom */
+  position: string;
+  /** 仅 custom：水印左上角坐标（像素） */
+  x: number;
+  y: number;
+  /** 0..1 */
+  opacity: number;
+  /** 相对输出画面短边的百分比，5..50 */
+  scalePercent: number;
+  /** 距画面边缘的留白（像素） */
+  margin: number;
+  /** -180..180（度） */
+  rotation: number;
+}
+
 export interface VideoParams {
   /** mp4 | mkv | webm | mov | ts | avi */
   container: string;
@@ -165,6 +185,8 @@ export interface VideoParams {
   speed: number;
   /** 变速时保持音高（默认 true：用 atempo 链） */
   keepPitch: boolean;
+  /** 图片水印；enabled=false 时入队不携带该字段 */
+  watermark: WatermarkParams;
 }
 
 export interface AudioParams {
@@ -198,6 +220,8 @@ export interface ImageParams {
   cropY: number;
   cropW: number;
   cropH: number;
+  /** 图片水印；enabled=false 时入队不携带该字段 */
+  watermark: WatermarkParams;
 }
 
 export interface SeqParams {

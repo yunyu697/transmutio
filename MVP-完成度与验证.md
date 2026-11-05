@@ -891,6 +891,68 @@ identifier（dark 反编译 `ShortcutProperty System.AppUserModel.ID`）、NSIS 
 * 「保持音高」关闭时的说明文案在窄窗口下是否完整；
 * 1.5× / 0.5× 变速后的**主观音画同步与音质**（后台只断言时长、采样率、声道）。
 
+## 4.15 水印（图片 + 视频）（第六轮）
+
+两张「水印」卡片由置灰改为可用：视频走 `video-mp4`、图片走 `image`，kind 不变，避免新增任务类型。参数全部集中在 `args.rs`，面板只传结构化的 `watermark` 对象。
+
+### 改动点
+
+| 层 | 内容 | 位置 |
+| --- | --- | --- |
+| 参数结构 | `WatermarkParams { enabled, path, position, x, y, opacity, scalePercent, margin, rotation }`，`#[serde(default)]` 挂在 `VideoParams` / `ImageParams` 上；底图尺寸用 `#[serde(skip)]` 字段回填 | `src-tauri/src/args.rs` |
+| 校验 | `validate_watermark`：空路径 / 文件不存在 / 非 png-jpg-jpeg-webp / opacity∉0..1 / scale∉5..50 / rotation∉±180 / 未知位置 → 可读错误，入队即失败 | `args.rs`、`jobs.rs::precheck_spec` |
+| 尺寸探测 | 任务执行前用 ffprobe 读取底图（视频含裁剪/旋转后的输出宽高），按「短边 × scalePercent」算出水印像素尺寸；探测失败显式报错，不静默退化 | `jobs.rs`（`watermark_dims_for_job`）、`args.rs`（`watermark_target_size`） |
+| 坐标 | 纯函数 `watermark_position`：九宫格 + 自定义；custom 越界**钳制**到 `[0, W-w] × [0, H-h]` | `args.rs` |
+| 视频链 | 主链搬入 `-filter_complex`：`[0:v]crop→rotation→scale→setpts[base]`，`[1:v]scale,format=rgba,colorchannelmixer=aa=op[,rotate][wm]`，`[base][wm]overlay=x:y:format=auto:shortest=1[outv]`；水印输入 `-loop 1`，输出再加 `-shortest`；VAAPI 的 `format=nv12,hwupload` 移到 overlay 之后 | `args.rs::build_video` |
+| 图片链 | 同样改为 `-filter_complex`，图片不需要 `shortest`；JPEG 输出 `yuvj420p`、WebP `yuv420p`、PNG `rgb24`，透明 PNG 水印叠 JPEG 由 overlay 自动合成，不报透明像素错误 | `args.rs::build_image` |
+| 面板 | 两张水印卡启用；VideoPanel / ImagePanel 新增「水印」分组（启用开关、选择图片、3×3 位置 + 自定义 x/y、不透明度 0–1 步进 0.05、缩放 5–50「相对短边 %」、边距、旋转） | `src/catalog.ts`、`src/lib/watermark.ts`（新）、`src/panels/VideoPanel.tsx`、`src/panels/ImagePanel.tsx`、`src/lib/api.ts` |
+
+### 滤镜链与时长处理
+
+- **视频**：`setpts` 只在主链出现一次；overlay 在 setpts 之后，因此叠加发生在变速后的时间轴上，水印不被二次变速。
+- **时长**：水印是 `-loop 1` 的静态图（无限长），靠 `-shortest` 截断到主视频长度；断言真实输出 mp4 1.33 s、mkv 1.36 s（期望 1.33 s，容差 0.1 s）。
+- **不重复叠加**：有水印时恰好只有一个 `-filter_complex`、`-vf` 为 0；无水印时保持原 `-vf` 路径，行为不变。
+- **失败回退**：水印路径缺失/格式不支持时入队失败，文案 `水印图片不存在：<path>（请重新选择水印图片，或关闭水印）`，绝不静默跳过。
+- **不支持**：GIF、合并（concat）、混流不接收水印参数；BMP/TIFF 输出未做水印像素格式验证（本轮只保证 JPEG/PNG/WebP）。
+
+### 断言结果（后台，无窗口）
+
+| 验证 | 结果 | 覆盖 |
+| --- | --- | --- |
+| `cargo test` | **85 / 85**（原 74 + 11 条水印） | 九宫格 9 位置 × 边距坐标；custom 负值/超界钳制；20% 短边 → 640×480 底图得 96 px；水印大于底图被压到不超过底图；opacity=0.5 进入滤镜串；水印+裁剪+旋转+变速链顺序、`setpts` 仅 1 次、`-vf` 与 `-filter_complex` 不共存；三种图片格式滤镜串；`validate_watermark` 六类拒绝 |
+| `npm run verify:formats` | **17 / 17**（原 13 + 4） | 两张水印卡已启用、两个面板含水印控件与位置枚举、`api.ts` 定义 `WatermarkParams` |
+| `p2-check`（LGPL FFmpeg） | **19 / 19**（原 13 + 6） | 见下表真跑数字 |
+| `npm run build` | 通过 | tsc + vite |
+
+真跑明细（`p2-check`）：
+
+| 用例 | 结果 |
+| --- | --- |
+| PNG 水印 → JPEG | 640×480 / `yuvj420p`；右下角采样 **RGB(232,10,19)**（底图为纯蓝）→ 水印确实出现在画面上 |
+| PNG 水印 → WebP | 640×480 / `yuv420p`；采样 RGB(232,10,19) |
+| PNG 水印 → PNG | 640×480 / `rgb24`；采样 RGB(233,10,20) |
+| 视频 mp4（水印 + 1.5× 变速） | 320×240、**1.33 s**（期望 1.33 s）、音频 48 kHz / 2 声道 |
+| 视频 mkv（水印 + 1.5× 变速） | 320×240、**1.36 s**（容差内）、音频 48 kHz / 2 声道 |
+| 不存在的水印路径 | 入队拒绝，文案含「水印图片不存在」 |
+
+像素抽样方法：对输出视频/图片右下角 `40×40` 区域 `crop` 后转 `rawvideo rgb24`，求三通道均值；底图为纯蓝，红水印落点均值 R≈232 说明不是「只有参数对」。
+
+### 本轮产物（`dist-artifacts/`，四包重建）
+
+| 变体 | 安装包 | 字节 | SHA-256 |
+| --- | --- | --- | --- |
+| LGPL | `lgpl/Transmutio_0.1.0_x64_en-US.msi` | 2,678,784 | `8f844f35e9df7b0327b3ea94941d9e290321f62b3182adbbd67c3ba804326781` |
+| LGPL | `lgpl/Transmutio_0.1.0_x64-setup.exe` | 1,831,684 | `c4d197e22dfffe74d763ccf29b0599bd898587f5bd870c5120e90fc7b2adfabf` |
+| GPL | `gpl/Transmutio GPL_0.1.0_x64_en-US.msi` | 2,678,784 | `8f5f2557861f357cf2f11a257a96ce017811ff382b09b7d6a1d899c78071c525` |
+| GPL | `gpl/Transmutio GPL_0.1.0_x64-setup.exe` | 1,827,141 | `8d7a730f783cad378d6af126b24418ad858472fb0eae9cd08693301b26815038` |
+
+### 仍需人工开窗确认（本轮未开窗、未点 UAC）
+
+* 两张水印卡在真实窗口内可点、进入面板后控件齐全（九宫格选中态、滑块手感）；
+* 选图对话框的过滤器（png/jpg/jpeg/webp）与路径显示；
+* 水印 + 变速 + 裁剪组合时的**主观**画面位置与时长（后台已断言时长/分辨率/像素）；
+* BMP/TIFF 输出叠加水印未验证；GIF/合并/混流入口未提供水印控件（符合本轮范围）。
+
 ---
 
 ## 5. 应用级链路（`scripts/app-e2e.mjs`）与已知问题

@@ -241,6 +241,7 @@ fn run_all() -> Result<(), String> {
     pdf_to_image(&dir, &ffprobe, &mut report);
     format_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
     speed_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
+    watermark_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
     preset_roundtrip(&dir, &mut report);
 
     report.write();
@@ -432,11 +433,14 @@ fn image_crop(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report) {
         ..Default::default()
     };
     let ratio_out = dir.join("crop-ratio.png");
-    let argv = args::build_image(
+    let argv = match args::build_image(
         &src.to_string_lossy(),
         ratio_out.to_string_lossy().as_ref(),
         &ratio_params,
-    );
+    ) {
+        Ok(argv) => argv,
+        Err(e) => return report.fail(name, format!("比例裁剪失败：{e}")),
+    };
     if let Err(e) = run(ffmpeg, &argv) {
         return report.fail(name, format!("比例裁剪失败：{e}"));
     }
@@ -457,11 +461,14 @@ fn image_crop(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report) {
         return report.fail(name, format!("合法裁剪被拒绝：{e}"));
     }
     let custom_out = dir.join("crop-custom.png");
-    let argv = args::build_image(
+    let argv = match args::build_image(
         &src.to_string_lossy(),
         custom_out.to_string_lossy().as_ref(),
         &custom_params,
-    );
+    ) {
+        Ok(argv) => argv,
+        Err(e) => return report.fail(name, format!("自定义裁剪失败：{e}")),
+    };
     if let Err(e) = run(ffmpeg, &argv) {
         return report.fail(name, format!("自定义裁剪失败：{e}"));
     }
@@ -1048,15 +1055,22 @@ fn speed_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report) 
             faststart: true,
             speed,
             keep_pitch: true,
+            watermark: args::WatermarkParams::default(),
         };
-        let argv = args::build_video(
+        let argv = match args::build_video(
             "libopenh264",
             base.to_string_lossy().as_ref(),
             out.to_string_lossy().as_ref(),
             &p,
             "aac",
             None,
-        );
+        ) {
+            Ok(argv) => argv,
+            Err(e) => {
+                report.fail(&label, e);
+                continue;
+            }
+        };
         if let Err(e) = run(ffmpeg, &argv) {
             report.fail(&label, format!("ffmpeg 失败：{e}"));
             continue;
@@ -1084,6 +1098,289 @@ fn speed_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report) 
             }
             Err(e) => report.fail(&label, e),
         }
+    }
+}
+
+fn probe_pix_fmt(ffprobe: &Path, path: &Path) -> Result<String, String> {
+    let json = run(
+        ffprobe,
+        &[
+            "-v".into(),
+            "error".into(),
+            "-select_streams".into(),
+            "v:0".into(),
+            "-show_entries".into(),
+            "stream=pix_fmt".into(),
+            "-of".into(),
+            "json".into(),
+            path.to_string_lossy().to_string(),
+        ],
+    )?;
+    let value: serde_json::Value =
+        serde_json::from_str(&json).map_err(|e| format!("ffprobe JSON 解析失败：{e}"))?;
+    Ok(value
+        .get("streams")
+        .and_then(|s| s.get(0))
+        .and_then(|s| s.get("pix_fmt"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string())
+}
+
+/// 取单像素 RGB：裁剪成 2x2 后写 rawvideo，避免解析 png/jpg 解码器。
+/// 尺寸必须取偶（yuv420 的色度块在 1x1 裁剪时会变成 0）。
+fn sample_pixel(ffmpeg: &Path, input: &Path, x: u32, y: u32) -> Result<(u8, u8, u8), String> {
+    let out = input.with_extension("sample.rgb");
+    run(
+        ffmpeg,
+        &[
+            "-hide_banner".into(),
+            "-nostdin".into(),
+            "-y".into(),
+            "-loglevel".into(),
+            "error".into(),
+            "-i".into(),
+            input.to_string_lossy().to_string(),
+            "-vf".into(),
+            format!("crop=2:2:{x}:{y},format=rgb24"),
+            "-frames:v".into(),
+            "1".into(),
+            "-pix_fmt".into(),
+            "rgb24".into(),
+            "-f".into(),
+            "rawvideo".into(),
+            out.to_string_lossy().to_string(),
+        ],
+    )?;
+    let bytes = std::fs::read(&out).map_err(|e| format!("读取像素失败：{e}"))?;
+    let _ = std::fs::remove_file(&out);
+    if bytes.len() < 3 {
+        return Err(format!("像素数据不足：{} 字节", bytes.len()));
+    }
+    Ok((bytes[0], bytes[1], bytes[2]))
+}
+
+/// 水印矩阵：图片 jpg/webp/png 的像素颜色 + pix_fmt；视频 mp4/mkv 的尺寸、时长、
+/// 音频采样率与流格式；以及缺失水印图片的硬失败路径。
+fn watermark_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report) {
+    let name = "watermark";
+    let base_img = dir.join("wm-base.jpg");
+    let base_mp4 = dir.join("wm-base.mp4");
+    let wm = dir.join("wm.png");
+    if !base_img.is_file() {
+        if let Err(e) = ffmpeg_color(ffmpeg, &base_img, "640x480", "0x3366CC") {
+            return report.fail(name, format!("生成基准图片失败：{e}"));
+        }
+    }
+    if !wm.is_file() {
+        if let Err(e) = ffmpeg_color(ffmpeg, &wm, "64x64", "red") {
+            return report.fail(name, format!("生成水印图片失败：{e}"));
+        }
+    }
+    if !base_mp4.is_file() {
+        if let Err(e) = run(
+            ffmpeg,
+            &[
+                "-hide_banner".into(),
+                "-nostdin".into(),
+                "-y".into(),
+                "-loglevel".into(),
+                "error".into(),
+                "-f".into(),
+                "lavfi".into(),
+                "-i".into(),
+                "testsrc2=size=320x240:rate=30:duration=2".into(),
+                "-f".into(),
+                "lavfi".into(),
+                "-i".into(),
+                "sine=frequency=440:sample_rate=48000:duration=2".into(),
+                "-c:v".into(),
+                "libopenh264".into(),
+                "-c:a".into(),
+                "aac".into(),
+                "-b:a".into(),
+                "128k".into(),
+                "-ac".into(),
+                "2".into(),
+                "-shortest".into(),
+                base_mp4.to_string_lossy().to_string(),
+            ],
+        ) {
+            return report.fail(name, format!("生成基准视频失败：{e}"));
+        }
+    }
+
+    let wm_params = |margin: u32| args::WatermarkParams {
+        enabled: true,
+        path: wm.to_string_lossy().to_string(),
+        position: "se".into(),
+        opacity: 0.9,
+        scale_percent: 20,
+        margin,
+        rotation: 0.0,
+        base_width: 640,
+        base_height: 480,
+        wm_width: 64,
+        wm_height: 64,
+        ..Default::default()
+    };
+
+    // 图片：640x480，20% 短边 → 96x96；margin 0 → 右下角 (544,384)，采样点 (600,440)。
+    for (format, expect_pix) in [("jpg", "yuvj420p"), ("webp", "yuv420p"), ("png", "rgb24")] {
+        let label = format!("{name}-image-{format}");
+        let out = dir.join(format!("wm-out.{format}"));
+        let p = args::ImageParams {
+            format: format.into(),
+            quality: 90,
+            watermark: wm_params(0),
+            ..Default::default()
+        };
+        let argv = match args::build_image(
+            &base_img.to_string_lossy(),
+            out.to_string_lossy().as_ref(),
+            &p,
+        ) {
+            Ok(argv) => argv,
+            Err(e) => {
+                report.fail(&label, e);
+                continue;
+            }
+        };
+        if let Err(e) = run(ffmpeg, &argv) {
+            report.fail(&label, format!("ffmpeg 失败：{e}"));
+            continue;
+        }
+        let dims = probe(ffprobe, &out).map(|p| (p.width, p.height)).ok();
+        let pix_fmt = probe_pix_fmt(ffprobe, &out).unwrap_or_default();
+        let pixel = sample_pixel(ffmpeg, &out, 600, 440).ok();
+        let pixel_ok = pixel.map(|(r, _, b)| r >= 180 && b <= 80).unwrap_or(false);
+        if dims == Some((640, 480)) && pix_fmt == expect_pix && pixel_ok {
+            let (r, g, b) = pixel.unwrap();
+            report.pass(
+                &label,
+                format!("640x480 / pix_fmt={pix_fmt} / 采样像素 RGB({r},{g},{b})"),
+            );
+        } else {
+            report.fail(
+                &label,
+                format!(
+                    "尺寸 {dims:?}（期望 640x480），pix_fmt={pix_fmt}（期望 {expect_pix}），像素 {pixel:?}（期望 R>=180 且 B<=80）"
+                ),
+            );
+        }
+    }
+
+    // 视频：320x240，20% 短边 → 48x48；margin 24 → se (248,168)；1.5× → 1.333s。
+    let vp = args::VideoParams {
+        container: "mp4".into(),
+        codec: "h264".into(),
+        encoder: "libopenh264".into(),
+        rate_mode: "quality".into(),
+        quality: 23,
+        bitrate_kbps: 0,
+        resolution: "source".into(),
+        fps: "source".into(),
+        crop: "source".into(),
+        rotation: "0".into(),
+        audio_mode: "aac".into(),
+        audio_bitrate_kbps: 128,
+        hw_decode: false,
+        faststart: true,
+        speed: 1.5,
+        keep_pitch: true,
+        watermark: args::WatermarkParams {
+            enabled: true,
+            path: wm.to_string_lossy().to_string(),
+            position: "se".into(),
+            opacity: 0.9,
+            scale_percent: 20,
+            margin: 24,
+            rotation: 0.0,
+            base_width: 320,
+            base_height: 240,
+            wm_width: 64,
+            wm_height: 64,
+            ..Default::default()
+        },
+    };
+    for container in ["mp4", "mkv"] {
+        let label = format!("{name}-video-{container}");
+        let mut p = vp.clone();
+        p.container = container.into();
+        let out = dir.join(format!("wm-video.{container}"));
+        let argv = match args::build_video(
+            "libopenh264",
+            base_mp4.to_string_lossy().as_ref(),
+            out.to_string_lossy().as_ref(),
+            &p,
+            "aac",
+            None,
+        ) {
+            Ok(argv) => argv,
+            Err(e) => {
+                report.fail(&label, e);
+                continue;
+            }
+        };
+        if let Err(e) = run(ffmpeg, &argv) {
+            report.fail(&label, format!("ffmpeg 失败：{e}"));
+            continue;
+        }
+        let probed = match probe(ffprobe, &out) {
+            Ok(p) => p,
+            Err(e) => {
+                report.fail(&label, e);
+                continue;
+            }
+        };
+        let audio = probe_audio_duration(ffprobe, &out).unwrap_or((0.0, 0, 0));
+        let format_name = probe_meta(ffprobe, &out)
+            .map(|(_, f)| f)
+            .unwrap_or_default();
+        let container_ok = if container == "mkv" {
+            format_name.contains("matroska")
+        } else {
+            format_name.contains("mp4")
+        };
+        let ok = probed.width == 320
+            && probed.height == 240
+            && (probed.duration - 1.333).abs() <= 0.1
+            && audio.1 == 48000
+            && audio.2 == 2
+            && container_ok;
+        if ok {
+            report.pass(
+                &label,
+                format!(
+                    "320x240，{:.2}s（期望 1.33s），音频 {} Hz / {} 声道，容器 {format_name}",
+                    probed.duration, audio.1, audio.2
+                ),
+            );
+        } else {
+            report.fail(
+                &label,
+                format!(
+                    "{}x{}，{:.2}s（期望 1.33s），音频 {} Hz / {} 声道（期望 48000 / 2），容器 {format_name}",
+                    probed.width, probed.height, probed.duration, audio.1, audio.2
+                ),
+            );
+        }
+    }
+
+    // 缺失水印图片必须在开始前硬失败，不能静默跳过。
+    let missing = args::validate_watermark(&args::WatermarkParams {
+        enabled: true,
+        path: dir.join("missing-wm.png").to_string_lossy().to_string(),
+        ..Default::default()
+    })
+    .unwrap_err();
+    if missing.contains("水印图片不存在") {
+        report.pass(&format!("{name}-validate"), missing);
+    } else {
+        report.fail(
+            &format!("{name}-validate"),
+            format!("错误文案异常：{missing}"),
+        );
     }
 }
 

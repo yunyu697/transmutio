@@ -32,6 +32,9 @@ pub struct VideoParams {
     /// 变速时保持音高（默认 true：用 atempo；false 时音高随速度变化）
     #[serde(default = "default_true")]
     pub keep_pitch: bool,
+    /// 水印叠加（默认关闭）
+    #[serde(default)]
+    pub watermark: WatermarkParams,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -79,6 +82,62 @@ pub struct ImageParams {
     pub crop_y: i64,
     pub crop_w: u32,
     pub crop_h: u32,
+    /// 水印叠加（默认关闭）
+    #[serde(default)]
+    pub watermark: WatermarkParams,
+}
+
+/// 水印参数。`baseWidth/baseHeight/wmWidth/wmHeight` 由后端探测后回填，
+/// 前端不传（`#[serde(skip)]`），用于把「百分比缩放 + 九宫格定位」换算成像素坐标。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct WatermarkParams {
+    pub enabled: bool,
+    /// 水印图片路径（png / jpg / jpeg / webp）
+    pub path: String,
+    /// nw | n | ne | w | c | e | sw | s | se | custom；空字符串等价 se
+    pub position: String,
+    /// custom 模式的左上角坐标（像素）
+    pub x: i64,
+    pub y: i64,
+    /// 0..=1
+    pub opacity: f64,
+    /// 相对基准画面短边的百分比，默认 15，范围 5–50
+    pub scale_percent: u32,
+    /// 距画面边缘的留白（像素）
+    pub margin: u32,
+    /// -180..=180（度）
+    pub rotation: f64,
+    /// 基准画面尺寸（输出帧），由后端回填
+    #[serde(skip)]
+    pub base_width: u32,
+    #[serde(skip)]
+    pub base_height: u32,
+    /// 水印原始尺寸，由后端回填
+    #[serde(skip)]
+    pub wm_width: u32,
+    #[serde(skip)]
+    pub wm_height: u32,
+}
+
+impl Default for WatermarkParams {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            path: String::new(),
+            position: "se".into(),
+            x: 0,
+            y: 0,
+            opacity: 0.9,
+            scale_percent: 15,
+            margin: 24,
+            rotation: 0.0,
+            base_width: 0,
+            base_height: 0,
+            wm_width: 0,
+            wm_height: 0,
+        }
+    }
 }
 
 /// 图片序列 → 视频。`size_mode`：source（要求全部同尺寸）| first（按首帧）|
@@ -858,6 +917,269 @@ pub fn validate_speed(speed: f64) -> Result<(), String> {
     Ok(())
 }
 
+/// 探测后回填的水印尺寸（输出帧 + 水印源图）。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct WatermarkDims {
+    pub base_width: u32,
+    pub base_height: u32,
+    pub wm_width: u32,
+    pub wm_height: u32,
+}
+
+/// 水印不透明度归一化：0 / 非法值视为默认 0.9。
+pub fn watermark_opacity(raw: f64) -> f64 {
+    if !raw.is_finite() || raw <= 0.0 {
+        0.9
+    } else {
+        raw.clamp(0.0, 1.0)
+    }
+}
+
+/// 水印目标尺寸：按基准画面短边百分比缩放并保持原图宽高比；
+/// 结果不会超出基准画面（超出时按同一比例整体缩小），最小 1 像素。
+pub fn watermark_target_size(
+    base_width: u32,
+    base_height: u32,
+    wm_width: u32,
+    wm_height: u32,
+    scale_percent: u32,
+) -> (u32, u32) {
+    if base_width == 0 || base_height == 0 || wm_width == 0 || wm_height == 0 {
+        return (1, 1);
+    }
+    let percent = if (5..=50).contains(&scale_percent) {
+        scale_percent
+    } else {
+        15
+    };
+    let base_short = base_width.min(base_height) as f64;
+    let target_short = (base_short * percent as f64 / 100.0).max(1.0);
+    let wm_short = wm_width.min(wm_height) as f64;
+    let mut factor = target_short / wm_short;
+    // 水印不能盖满/超出画面：宽高任一越界都按同一比例整体缩小。
+    factor = factor
+        .min(base_width as f64 / wm_width as f64)
+        .min(base_height as f64 / wm_height as f64);
+    let width = (wm_width as f64 * factor).round().max(1.0) as u32;
+    let height = (wm_height as f64 * factor).round().max(1.0) as u32;
+    (width.min(base_width), height.min(base_height))
+}
+
+/// 旋转后的外接矩形尺寸（`rotate` 使用 ow=rotw/oh=roth 时的实际输出大小）。
+pub fn watermark_rotated_dims(width: u32, height: u32, degrees: f64) -> (u32, u32) {
+    if !degrees.is_finite() || degrees.abs() < 0.01 {
+        return (width, height);
+    }
+    let rad = degrees.to_radians();
+    let (sin, cos) = (rad.sin().abs(), rad.cos().abs());
+    let w = (width as f64 * cos + height as f64 * sin).round().max(1.0);
+    let h = (width as f64 * sin + height as f64 * cos).round().max(1.0);
+    (w as u32, h as u32)
+}
+
+/// 九宫格 / 自定义坐标（左上角原点）。custom 会被收紧到画面内；
+/// 画面小于「水印 + 间距」时，坐标同样不会越界。
+pub fn watermark_position(
+    position: &str,
+    margin: u32,
+    base_width: u32,
+    base_height: u32,
+    wm_width: u32,
+    wm_height: u32,
+    x: i64,
+    y: i64,
+) -> (i32, i32) {
+    let margin = margin as i64;
+    let max_x = (base_width as i64 - wm_width as i64).max(0);
+    let max_y = (base_height as i64 - wm_height as i64).max(0);
+    let position = if position.is_empty() { "se" } else { position };
+    let (px, py) = if position == "custom" {
+        (x.clamp(0, max_x), y.clamp(0, max_y))
+    } else {
+        // 留白最多占可用空间的一半，画面过小时也不会出现「贴左」与「贴右」不一致。
+        let margin_x = margin.min(max_x / 2);
+        let margin_y = margin.min(max_y / 2);
+        let left = margin_x;
+        let right = (max_x - margin_x).max(0);
+        let top = margin_y;
+        let bottom = (max_y - margin_y).max(0);
+        let center_x = max_x / 2;
+        let center_y = max_y / 2;
+        let px = match position {
+            "nw" | "w" | "sw" => left,
+            "ne" | "e" | "se" => right,
+            _ => center_x,
+        };
+        let py = match position {
+            "nw" | "n" | "ne" => top,
+            "sw" | "s" | "se" => bottom,
+            _ => center_y,
+        };
+        (px, py)
+    };
+    (px as i32, py as i32)
+}
+
+/// 入队校验：关闭时一律放行；开启时必须给出真实存在且格式受支持的图片。
+pub fn validate_watermark(w: &WatermarkParams) -> Result<(), String> {
+    if !w.enabled {
+        return Ok(());
+    }
+    let path = w.path.trim();
+    if path.is_empty() || !std::path::Path::new(path).is_file() {
+        return Err(format!(
+            "水印图片不存在：{}（请重新选择水印图片，或关闭水印）",
+            w.path
+        ));
+    }
+    let ext = std::path::Path::new(path)
+        .extension()
+        .map(|e| e.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    if !["png", "jpg", "jpeg", "webp"].contains(&ext.as_str()) {
+        return Err(format!(
+            "不支持的水印图片格式「{ext}」，可选 png / jpg / jpeg / webp"
+        ));
+    }
+    if !w.opacity.is_finite() || !(0.0..=1.0).contains(&w.opacity) {
+        return Err(format!("水印不透明度 {} 超出范围 0–1", w.opacity));
+    }
+    if !(5..=50).contains(&w.scale_percent) {
+        return Err(format!("水印比例 {}% 超出范围 5–50", w.scale_percent));
+    }
+    if !w.rotation.is_finite() || !(-180.0..=180.0).contains(&w.rotation) {
+        return Err(format!("水印旋转 {}° 超出范围 -180–180", w.rotation));
+    }
+    match w.position.as_str() {
+        "" | "nw" | "n" | "ne" | "w" | "c" | "e" | "sw" | "s" | "se" | "custom" => Ok(()),
+        other => Err(format!(
+            "不支持的水印位置「{other}」，可选 nw / n / ne / w / c / e / sw / s / se / custom"
+        )),
+    }
+}
+
+/// 裁剪后的宽高（与 `crop_filter` 的表达式一致：宽高取偶）。
+fn crop_dimensions(mode: &str, width: u32, height: u32) -> (u32, u32) {
+    let (w, h) = (width as u64, height as u64);
+    let (cw, ch) = match mode {
+        "16:9" => (w.min(h * 16 / 9), h.min(w * 9 / 16)),
+        "1:1" => {
+            let side = w.min(h);
+            (side, side)
+        }
+        "9:16" => (w.min(h * 9 / 16), h.min(w * 16 / 9)),
+        "4:3" => (w.min(h * 4 / 3), h.min(w * 3 / 4)),
+        _ => (w, h),
+    };
+    let out_w = (((cw / 2) * 2) as u32).max(2).min(width.max(2));
+    let out_h = (((ch / 2) * 2) as u32).max(2).min(height.max(2));
+    (out_w, out_h)
+}
+
+/// 旋转后的画面宽高（90 / 270 交换宽高，180 与翻转不改尺寸）。
+fn rotation_dimensions(mode: &str, width: u32, height: u32) -> (u32, u32) {
+    match mode {
+        "90" | "270" => (height, width),
+        _ => (width, height),
+    }
+}
+
+/// 视频「最终画面」尺寸：裁剪 → 旋转 → 分辨率缩放（scale=-2:h，宽度取偶）。
+pub fn video_base_dims(p: &VideoParams, src_width: u32, src_height: u32) -> (u32, u32) {
+    let (w, h) = crop_dimensions(&p.crop, src_width, src_height);
+    let (mut w, mut h) = rotation_dimensions(&p.rotation, w, h);
+    if p.resolution != "source" && !p.resolution.is_empty() {
+        if let Ok(target_h) = p.resolution.parse::<u32>() {
+            if target_h > 0 {
+                let desired = w as f64 * target_h as f64 / h as f64;
+                w = ((desired / 2.0).round() as u32 * 2).max(2);
+                h = target_h.max(2);
+            }
+        }
+    }
+    (w.max(2), h.max(2))
+}
+
+/// 图片「最终画面」尺寸：EXIF 方向 → 裁剪 → 手动旋转 → 最长边缩放。
+pub fn image_base_dims(
+    p: &ImageParams,
+    input: &str,
+    src_width: u32,
+    src_height: u32,
+) -> (u32, u32) {
+    let (mut w, mut h) = (src_width, src_height);
+    // EXIF Orientation 5–8 会交换宽高（与 build_image 的滤镜顺序一致）。
+    if p.auto_orient {
+        if let Some(orientation) = exif_orientation(input) {
+            if matches!(orientation, 5 | 6 | 7 | 8) {
+                std::mem::swap(&mut w, &mut h);
+            }
+        }
+    }
+    let (cw, ch) = match p.crop_mode.as_str() {
+        "ratio" => crop_dimensions(&p.crop_ratio, w, h),
+        "custom" => (p.crop_w, p.crop_h),
+        _ => (w, h),
+    };
+    let (rw, rh) = rotation_dimensions(&p.rotation, cw, ch);
+    w = rw;
+    h = rh;
+    if p.max_edge > 0 {
+        let edge = p.max_edge as f64;
+        let factor = (edge / w as f64).min(edge / h as f64).min(1.0);
+        w = (w as f64 * factor).round().max(1.0) as u32;
+        h = (h as f64 * factor).round().max(1.0) as u32;
+    }
+    (w.max(1), h.max(1))
+}
+
+/// 生成两段滤镜：`[1:v]` 的水印预处理链与 overlay 定位参数。
+/// `shortest` 仅视频需要（静态图输入配 `-loop 1`），图片只取一帧。
+fn watermark_plan(w: &WatermarkParams, shortest: bool) -> Result<(String, String), String> {
+    if w.base_width == 0 || w.base_height == 0 {
+        return Err("无法读取输入画面尺寸，不能按位置叠加水印".into());
+    }
+    if w.wm_width == 0 || w.wm_height == 0 {
+        return Err(format!(
+            "无法读取水印图片尺寸：{}（文件可能已损坏，请重新选择）",
+            w.path
+        ));
+    }
+    let (tw, th) = watermark_target_size(
+        w.base_width,
+        w.base_height,
+        w.wm_width,
+        w.wm_height,
+        w.scale_percent,
+    );
+    let (rw, rh) = watermark_rotated_dims(tw, th, w.rotation);
+    let (x, y) = watermark_position(
+        &w.position,
+        w.margin,
+        w.base_width,
+        w.base_height,
+        rw,
+        rh,
+        w.x,
+        w.y,
+    );
+    let opacity = fmt_num(watermark_opacity(w.opacity));
+    let mut chain = vec![
+        format!("scale={tw}:{th}:flags=lanczos"),
+        "format=rgba".into(),
+        format!("colorchannelmixer=aa={opacity}"),
+    ];
+    if w.rotation.is_finite() && w.rotation.abs() >= 0.01 {
+        let rad = fmt_num(w.rotation.to_radians());
+        chain.push(format!("rotate={rad}:ow=rotw({rad}):oh=roth({rad}):c=none"));
+    }
+    let overlay = format!(
+        "overlay={x}:{y}:format=auto{}",
+        if shortest { ":shortest=1" } else { "" }
+    );
+    Ok((chain.join(","), overlay))
+}
+
 pub fn build_video(
     encoder: &str,
     input: &str,
@@ -865,7 +1187,7 @@ pub fn build_video(
     p: &VideoParams,
     container_audio: &str,
     hwaccel: Option<&str>,
-) -> Vec<String> {
+) -> Result<Vec<String>, String> {
     let mut args: Vec<String> = vec![
         "-hide_banner".into(),
         "-nostdin".into(),
@@ -899,8 +1221,24 @@ pub fn build_video(
     }
     args.push("-i".into());
     args.push(input.into());
+    let wm_plan = if p.watermark.enabled {
+        Some(watermark_plan(&p.watermark, true)?)
+    } else {
+        None
+    };
+    if wm_plan.is_some() {
+        // 静态水印图循环读取，铺满整个视频时长。
+        args.push("-loop".into());
+        args.push("1".into());
+        args.push("-i".into());
+        args.push(p.watermark.path.clone());
+    }
     args.push("-map".into());
-    args.push("0:v:0".into());
+    if wm_plan.is_some() {
+        args.push("[outv]".into());
+    } else {
+        args.push("0:v:0".into());
+    }
     if p.audio_mode != "none" {
         args.push("-map".into());
         args.push("0:a:0?".into());
@@ -920,11 +1258,28 @@ pub fn build_video(
     if let Some((video_filter, _)) = speed_filters(p.speed, p.keep_pitch) {
         filters.push(video_filter);
     }
-    if vaapi_ok {
+    if vaapi_ok && wm_plan.is_none() {
         filters.push("format=nv12".into());
         filters.push("hwupload".into());
     }
-    if !filters.is_empty() {
+    if let Some((wm_chain, overlay)) = &wm_plan {
+        // 主链从 [0:v] 出发（无滤镜时补 null），水印链从 [1:v] 出发，最后 overlay 输出 [outv]。
+        // VAAPI 的格式转换与上传必须放在 overlay 之后（overlay 只处理软件帧）。
+        let main_chain = if filters.is_empty() {
+            "[0:v]null".to_string()
+        } else {
+            format!("[0:v]{}", filters.join(","))
+        };
+        let tail = if vaapi_ok {
+            ",format=nv12,hwupload"
+        } else {
+            ""
+        };
+        let complex =
+            format!("{main_chain}[base];[1:v]{wm_chain}[wm];[base][wm]{overlay}{tail}[outv]");
+        args.push("-filter_complex".into());
+        args.push(complex);
+    } else if !filters.is_empty() {
         args.push("-vf".into());
         args.push(filters.join(","));
     }
@@ -935,6 +1290,10 @@ pub fn build_video(
                 args.push(fps.to_string());
             }
         }
+    }
+    if wm_plan.is_some() {
+        // 没有 :shortest=1 时静态水印会无限循环，任务永远结束不了。
+        args.push("-shortest".into());
     }
     args.push("-c:v".into());
     args.push(encoder.to_string());
@@ -989,7 +1348,7 @@ pub fn build_video(
     args.push(muxer.into());
     args.push(output.into());
     args.shrink_to_fit();
-    args
+    Ok(args)
 }
 
 pub fn audio_encoder(p: &AudioParams) -> &'static str {
@@ -1068,7 +1427,7 @@ pub fn build_audio(encoder: &str, input: &str, output: &str, p: &AudioParams) ->
     args
 }
 
-pub fn build_image(input: &str, output: &str, p: &ImageParams) -> Vec<String> {
+pub fn build_image(input: &str, output: &str, p: &ImageParams) -> Result<Vec<String>, String> {
     let mut args: Vec<String> = vec![
         "-hide_banner".into(),
         "-nostdin".into(),
@@ -1082,9 +1441,22 @@ pub fn build_image(input: &str, output: &str, p: &ImageParams) -> Vec<String> {
         "-noautorotate".into(),
         "-i".into(),
         input.into(),
-        "-map".into(),
-        "0:v:0".into(),
     ];
+    let wm_plan = if p.watermark.enabled {
+        Some(watermark_plan(&p.watermark, false)?)
+    } else {
+        None
+    };
+    if wm_plan.is_some() {
+        args.push("-i".into());
+        args.push(p.watermark.path.clone());
+    }
+    args.push("-map".into());
+    if wm_plan.is_some() {
+        args.push("[out]".into());
+    } else {
+        args.push("0:v:0".into());
+    }
 
     let mut filters: Vec<String> = Vec::new();
     if p.auto_orient {
@@ -1103,7 +1475,16 @@ pub fn build_image(input: &str, output: &str, p: &ImageParams) -> Vec<String> {
             p.max_edge, p.max_edge
         ));
     }
-    if !filters.is_empty() {
+    if let Some((wm_chain, overlay)) = &wm_plan {
+        let main_chain = if filters.is_empty() {
+            "[0:v]null".to_string()
+        } else {
+            format!("[0:v]{}", filters.join(","))
+        };
+        let complex = format!("{main_chain}[base];[1:v]{wm_chain}[wm];[base][wm]{overlay}[out]");
+        args.push("-filter_complex".into());
+        args.push(complex);
+    } else if !filters.is_empty() {
         args.push("-vf".into());
         args.push(filters.join(","));
     }
@@ -1114,12 +1495,21 @@ pub fn build_image(input: &str, output: &str, p: &ImageParams) -> Vec<String> {
             args.push("png".into());
             args.push("-compression_level".into());
             args.push("6".into());
+            if wm_plan.is_some() {
+                // overlay 之后帧是 rgba，png 编码器默认会保留 alpha；这里固定 rgb24 输出。
+                args.push("-pix_fmt".into());
+                args.push("rgb24".into());
+            }
         }
         "webp" => {
             args.push("-c:v".into());
             args.push("libwebp".into());
             args.push("-quality".into());
             args.push(quality.to_string());
+            if wm_plan.is_some() {
+                args.push("-pix_fmt".into());
+                args.push("yuv420p".into());
+            }
         }
         "bmp" => {
             args.push("-c:v".into());
@@ -1136,12 +1526,17 @@ pub fn build_image(input: &str, output: &str, p: &ImageParams) -> Vec<String> {
             args.push("mjpeg".into());
             args.push("-q:v".into());
             args.push(q.clamp(2, 31).to_string());
+            if wm_plan.is_some() {
+                // mjpeg 不接受 rgba；jpg 的完整色度需要 yuvj420p。
+                args.push("-pix_fmt".into());
+                args.push("yuvj420p".into());
+            }
         }
     }
     args.push("-frames:v".into());
     args.push("1".into());
     args.push(output.into());
-    args
+    Ok(args)
 }
 
 /// EXIF Orientation → 像素变换（与 ffmpeg 的官方映射一致）。
@@ -1548,6 +1943,7 @@ mod tests {
             faststart: true,
             speed: 1.0,
             keep_pitch: true,
+            watermark: WatermarkParams::default(),
         }
     }
 
@@ -1565,7 +1961,7 @@ mod tests {
         let mut p = video_params();
         p.speed = 1.0;
         p.audio_mode = "aac".into();
-        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None);
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
         assert!(filter_arg(&args).is_none(), "原速不应插入 -vf");
         assert!(audio_filter_arg(&args).is_none(), "原速不应插入 -af");
     }
@@ -1575,7 +1971,7 @@ mod tests {
         let mut p = video_params();
         p.speed = 1.5;
         p.audio_mode = "aac".into();
-        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None);
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
         let vf = filter_arg(&args).expect("应生成 -vf");
         assert_eq!(vf, "setpts=PTS/1.5");
         assert_eq!(audio_filter_arg(&args).as_deref(), Some("atempo=1.5"));
@@ -1586,7 +1982,7 @@ mod tests {
         let mut p = video_params();
         p.speed = 0.25;
         p.audio_mode = "aac".into();
-        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None);
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
         assert_eq!(
             audio_filter_arg(&args).as_deref(),
             Some("atempo=0.5,atempo=0.5")
@@ -1598,7 +1994,7 @@ mod tests {
         let mut p = video_params();
         p.speed = 4.0;
         p.audio_mode = "aac".into();
-        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None);
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
         assert_eq!(
             audio_filter_arg(&args).as_deref(),
             Some("atempo=2,atempo=2")
@@ -1610,7 +2006,7 @@ mod tests {
         let mut p = video_params();
         p.speed = 2.5;
         p.audio_mode = "aac".into();
-        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None);
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
         assert_eq!(
             audio_filter_arg(&args).as_deref(),
             Some("atempo=2,atempo=1.25")
@@ -1644,7 +2040,7 @@ mod tests {
         p.resolution = "720".into();
         p.speed = 2.0;
         p.audio_mode = "aac".into();
-        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None);
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
         let vf = filter_arg(&args).expect("应生成 -vf");
         assert!(vf.starts_with("crop="), "裁剪应最先应用：{vf}");
         assert!(vf.contains("transpose=1"), "旋转应在裁剪之后：{vf}");
@@ -1660,7 +2056,7 @@ mod tests {
         p.speed = 2.0;
         p.keep_pitch = false;
         p.audio_mode = "aac".into();
-        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None);
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
         assert_eq!(
             audio_filter_arg(&args).as_deref(),
             Some("aresample=48000,asetrate=96000,aresample=48000")
@@ -1717,7 +2113,7 @@ mod tests {
         p.crop = "9:16".into();
         p.rotation = "90".into();
         p.resolution = "720".into();
-        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None);
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
         let vf = filter_arg(&args).expect("应生成 -vf");
         assert!(
             vf.starts_with("crop=w='trunc(min(iw,ih*9/16)/2)*2'"),
@@ -1734,14 +2130,14 @@ mod tests {
     fn rotation_180_uses_flip_pair() {
         let mut p = video_params();
         p.rotation = "180".into();
-        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None);
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
         assert_eq!(filter_arg(&args).as_deref(), Some("hflip,vflip"));
     }
 
     #[test]
     fn no_adjustments_means_no_filter_graph() {
         let p = video_params();
-        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None);
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
         assert!(
             filter_arg(&args).is_none(),
             "无裁剪/旋转/缩放时不应插入 -vf"
@@ -1752,14 +2148,14 @@ mod tests {
     fn crop_16_9_and_1_1_expressions() {
         let mut p = video_params();
         p.crop = "1:1".into();
-        let square = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None);
+        let square = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
         assert_eq!(
             filter_arg(&square).as_deref(),
             Some("crop=w='trunc(min(iw,ih)/2)*2':h='trunc(min(iw,ih)/2)*2'")
         );
 
         p.crop = "16:9".into();
-        let wide = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None);
+        let wide = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
         let vf = filter_arg(&wide).expect("应生成 -vf");
         assert!(vf.contains("ih*16/9") && vf.contains("iw*9/16"), "{vf}");
     }
@@ -1833,7 +2229,7 @@ mod tests {
             crop_mode: "none".into(),
             ..Default::default()
         };
-        let args = build_image(&input.to_string_lossy(), "out.jpg", &params);
+        let args = build_image(&input.to_string_lossy(), "out.jpg", &params).unwrap();
         // 关键：ffmpeg 自身的 autorotate 必须关闭，否则会和显式 transpose 叠加。
         assert!(args.contains(&"-noautorotate".to_string()));
         let vf = args[args.iter().position(|a| a == "-vf").unwrap() + 1].clone();
@@ -1844,7 +2240,7 @@ mod tests {
             auto_orient: false,
             ..params.clone()
         };
-        let args_off = build_image(&input.to_string_lossy(), "out.jpg", &params_off);
+        let args_off = build_image(&input.to_string_lossy(), "out.jpg", &params_off).unwrap();
         assert!(!args_off.contains(&"-vf".to_string()));
 
         // 自动校正 + 手动 90°，必须是「EXIF 一次 + 手动一次」，而不是被 ffmpeg 再隐式转一次。
@@ -1852,7 +2248,7 @@ mod tests {
             rotation: "90".into(),
             ..params
         };
-        let args_manual = build_image(&input.to_string_lossy(), "out.jpg", &params_manual);
+        let args_manual = build_image(&input.to_string_lossy(), "out.jpg", &params_manual).unwrap();
         let vf_manual = args_manual
             .iter()
             .position(|a| a == "-vf")
@@ -1995,7 +2391,7 @@ mod tests {
             crop_h: 200,
             ..Default::default()
         };
-        let args = build_image("in.png", "out.png", &p);
+        let args = build_image("in.png", "out.png", &p).unwrap();
         let vf = filter_arg(&args).expect("应生成 -vf");
         assert_eq!(
             vf,
@@ -2181,5 +2577,322 @@ mod tests {
             "{graph}"
         );
         assert_eq!(collage_canvas(2, 2, 100, 80, 10), (210, 170));
+    }
+
+    fn complex_arg(args: &[String]) -> Option<String> {
+        let pos = args.iter().position(|a| a == "-filter_complex")?;
+        args.get(pos + 1).cloned()
+    }
+
+    /// 640x480 画面 + 96x96 水印 + 24 间距：九宫格坐标（左上角原点）。
+    #[test]
+    fn watermark_positions_cover_nine_grid() {
+        let base = (640, 480);
+        let wm = (96, 96);
+        let cases = [
+            ("nw", (24, 24)),
+            ("n", (272, 24)),
+            ("ne", (520, 24)),
+            ("w", (24, 192)),
+            ("c", (272, 192)),
+            ("e", (520, 192)),
+            ("sw", (24, 360)),
+            ("s", (272, 360)),
+            ("se", (520, 360)),
+        ];
+        for (position, expected) in cases {
+            assert_eq!(
+                watermark_position(position, 24, base.0, base.1, wm.0, wm.1, 0, 0),
+                expected,
+                "{position} 位置错误"
+            );
+        }
+        // 空字符串等价 se（默认值）
+        assert_eq!(
+            watermark_position("", 24, base.0, base.1, wm.0, wm.1, 0, 0),
+            (520, 360)
+        );
+        // 画面比「水印 + 间距」还小时，留白被收紧到可用空间的一半，不会出现负坐标
+        assert_eq!(watermark_position("se", 24, 100, 100, 96, 96, 0, 0), (2, 2));
+        assert_eq!(
+            watermark_position("nw", 200, 100, 100, 96, 96, 0, 0),
+            (2, 2)
+        );
+    }
+
+    #[test]
+    fn watermark_custom_coords_are_clamped() {
+        let base = (640, 480);
+        let wm = (96, 96);
+        assert_eq!(
+            watermark_position("custom", 24, base.0, base.1, wm.0, wm.1, 100, 50),
+            (100, 50)
+        );
+        // 越界 / 负数都被收紧到 [0, base - wm]
+        assert_eq!(
+            watermark_position("custom", 24, base.0, base.1, wm.0, wm.1, 900, 900),
+            (544, 384)
+        );
+        assert_eq!(
+            watermark_position("custom", 24, base.0, base.1, wm.0, wm.1, -50, -50),
+            (0, 0)
+        );
+    }
+
+    #[test]
+    fn watermark_scale_is_relative_to_base_short_edge() {
+        // 640x480 短边 480，20% → 96（原型实测）
+        assert_eq!(watermark_target_size(640, 480, 512, 512, 20), (96, 96));
+        // 默认 15% → 72
+        assert_eq!(watermark_target_size(640, 480, 512, 512, 15), (72, 72));
+        // 非等比水印保持宽高比（宽 2:1）
+        let (w, h) = watermark_target_size(640, 480, 800, 400, 20);
+        assert_eq!(h, 96);
+        assert_eq!(w, 192);
+        // 水印原图比目标还小时仍按「短边百分比」缩小，不会占满画面
+        assert_eq!(watermark_target_size(100, 100, 400, 400, 50), (50, 50));
+        // 非法百分比回落到默认 15%
+        assert_eq!(watermark_target_size(640, 480, 512, 512, 0), (72, 72));
+    }
+
+    #[test]
+    fn watermark_rotation_dims_swap_at_right_angle() {
+        assert_eq!(watermark_rotated_dims(96, 96, 0.0), (96, 96));
+        assert_eq!(watermark_rotated_dims(96, 96, 90.0), (96, 96));
+        // 45° 的正方形外接矩形约为 136x136
+        let (w, h) = watermark_rotated_dims(96, 96, 45.0);
+        assert_eq!(w, h);
+        assert!((135..=137).contains(&w), "{w}");
+        // 非正方形 90° 交换宽高
+        assert_eq!(watermark_rotated_dims(120, 60, 90.0), (60, 120));
+    }
+
+    #[test]
+    fn watermark_video_uses_single_filter_complex_and_shortest() {
+        let mut p = video_params();
+        p.speed = 1.5;
+        p.audio_mode = "aac".into();
+        p.watermark = WatermarkParams {
+            enabled: true,
+            path: "wm.png".into(),
+            scale_percent: 20,
+            base_width: 640,
+            base_height: 480,
+            wm_width: 512,
+            wm_height: 512,
+            ..Default::default()
+        };
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
+        assert_eq!(count_flag(&args, "-vf"), 0, "水印必须走 filter_complex");
+        assert_eq!(count_flag(&args, "-filter_complex"), 1);
+        let graph = complex_arg(&args).expect("应生成 -filter_complex");
+        assert_eq!(graph.matches("setpts=").count(), 1, "{graph}");
+        assert!(graph.contains("[0:v]setpts=PTS/1.5[base]"), "{graph}");
+        assert!(
+            graph.contains(
+                "[1:v]scale=96:96:flags=lanczos,format=rgba,colorchannelmixer=aa=0.9[wm]"
+            ),
+            "{graph}"
+        );
+        assert!(
+            graph.contains("[base][wm]overlay=520:360:format=auto:shortest=1[outv]"),
+            "{graph}"
+        );
+        assert_eq!(
+            count_flag(&args, "-shortest"),
+            1,
+            "静态水印必须加 -shortest"
+        );
+        // 水印输入以 -loop 1 循环读取，并映射到 [outv]
+        let map_pos = args
+            .iter()
+            .position(|a| a == "[outv]")
+            .expect("应映射 [outv]");
+        assert_eq!(args[map_pos - 1], "-map");
+        assert!(args.contains(&"wm.png".to_string()));
+    }
+
+    #[test]
+    fn watermark_video_appends_rotation_filter() {
+        let mut p = video_params();
+        p.watermark = WatermarkParams {
+            enabled: true,
+            path: "wm.png".into(),
+            rotation: 30.0,
+            opacity: 0.5,
+            position: "custom".into(),
+            x: 10,
+            y: 20,
+            base_width: 640,
+            base_height: 480,
+            wm_width: 96,
+            wm_height: 96,
+            ..Default::default()
+        };
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
+        let graph = complex_arg(&args).expect("应生成 -filter_complex");
+        assert!(graph.contains("colorchannelmixer=aa=0.5"), "{graph}");
+        assert!(
+            graph.contains("rotate=0.5236:ow=rotw(0.5236):oh=roth(0.5236):c=none"),
+            "{graph}"
+        );
+        assert!(
+            graph.contains("[base][wm]overlay=10:20:format=auto:shortest=1"),
+            "{graph}"
+        );
+        // 旋转 0° 时不插入 rotate
+        let mut plain = p.clone();
+        plain.watermark.rotation = 0.0;
+        let graph_plain =
+            complex_arg(&build_video("libx264", "in.mp4", "out.mp4", &plain, "aac", None).unwrap())
+                .expect("应生成 -filter_complex");
+        assert!(!graph_plain.contains("rotate="), "{graph_plain}");
+    }
+
+    #[test]
+    fn watermark_video_reports_missing_dims() {
+        let mut p = video_params();
+        p.watermark = WatermarkParams {
+            enabled: true,
+            path: "wm.png".into(),
+            ..Default::default()
+        };
+        let err = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap_err();
+        assert!(err.contains("无法读取输入画面尺寸"), "{err}");
+
+        p.watermark.base_width = 640;
+        p.watermark.base_height = 480;
+        let err = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap_err();
+        assert!(err.contains("无法读取水印图片尺寸"), "{err}");
+    }
+
+    #[test]
+    fn watermark_image_build_sets_pix_fmt_per_format() {
+        for (format, expect) in [("jpg", "yuvj420p"), ("webp", "yuv420p"), ("png", "rgb24")] {
+            let p = ImageParams {
+                format: format.into(),
+                quality: 90,
+                watermark: WatermarkParams {
+                    enabled: true,
+                    path: "wm.png".into(),
+                    scale_percent: 20,
+                    base_width: 640,
+                    base_height: 480,
+                    wm_width: 512,
+                    wm_height: 512,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let args = build_image("in.png", "out.img", &p).unwrap();
+            assert_eq!(count_flag(&args, "-vf"), 0, "{format} 应走 filter_complex");
+            let graph = complex_arg(&args).expect("应生成 -filter_complex");
+            assert!(graph.starts_with("[0:v]null[base];"), "{graph}");
+            assert!(
+                graph.contains("[base][wm]overlay=520:360:format=auto[out]"),
+                "{graph}"
+            );
+            assert_eq!(args.last().unwrap(), "out.img");
+            let pix_pos = args
+                .iter()
+                .position(|a| a == "-pix_fmt")
+                .unwrap_or_else(|| panic!("{format} 缺少 -pix_fmt"));
+            assert_eq!(args[pix_pos + 1], expect, "{format} 的 pix_fmt 错误");
+            assert_eq!(count_flag(&args, "-shortest"), 0, "图片不需要 -shortest");
+        }
+    }
+
+    #[test]
+    fn watermark_validation_rejects_bad_input() {
+        let dir = std::env::temp_dir().join(format!("ff-wm-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let png = dir.join("ok.png");
+        std::fs::write(&png, b"png").unwrap();
+        let gif = dir.join("bad.gif");
+        std::fs::write(&gif, b"gif").unwrap();
+
+        // 关闭时一律放行
+        assert!(validate_watermark(&WatermarkParams::default()).is_ok());
+
+        let mut w = WatermarkParams {
+            enabled: true,
+            path: String::new(),
+            ..Default::default()
+        };
+        let err = validate_watermark(&w).unwrap_err();
+        assert!(err.contains("水印图片不存在"), "{err}");
+        assert!(err.contains("请重新选择水印图片"), "{err}");
+
+        w.path = png.to_string_lossy().to_string();
+        assert!(validate_watermark(&w).is_ok());
+
+        w.path = gif.to_string_lossy().to_string();
+        let err = validate_watermark(&w).unwrap_err();
+        assert!(err.contains("不支持的水印图片格式"), "{err}");
+
+        w.path = png.to_string_lossy().to_string();
+        w.opacity = 1.5;
+        assert!(validate_watermark(&w).unwrap_err().contains("不透明度"));
+        w.opacity = 0.9;
+        w.scale_percent = 4;
+        assert!(validate_watermark(&w).unwrap_err().contains("比例"));
+        w.scale_percent = 51;
+        assert!(validate_watermark(&w).unwrap_err().contains("比例"));
+        w.scale_percent = 15;
+        w.rotation = 181.0;
+        assert!(validate_watermark(&w).unwrap_err().contains("旋转"));
+        w.rotation = -181.0;
+        assert!(validate_watermark(&w).unwrap_err().contains("旋转"));
+        w.rotation = 0.0;
+        w.position = "magic".into();
+        assert!(validate_watermark(&w).unwrap_err().contains("位置"));
+        for position in [
+            "", "nw", "n", "ne", "w", "c", "e", "sw", "s", "se", "custom",
+        ] {
+            w.position = position.into();
+            assert!(validate_watermark(&w).is_ok(), "{position} 应被接受");
+        }
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn watermark_defaults_match_ui_spec() {
+        let w = WatermarkParams::default();
+        assert!(!w.enabled);
+        assert_eq!(w.position, "se");
+        assert!((w.opacity - 0.9).abs() < 1e-9);
+        assert_eq!(w.scale_percent, 15);
+        assert_eq!(w.margin, 24);
+        assert_eq!(w.rotation, 0.0);
+        // 前端不传尺寸，反序列化后保持 0（由后端回填）
+        let parsed: WatermarkParams = serde_json::from_str("{\"enabled\":true}").unwrap();
+        assert_eq!(parsed.base_width, 0);
+        assert_eq!(parsed.scale_percent, 15);
+    }
+
+    #[test]
+    fn watermark_base_dims_follow_filter_chain() {
+        let mut p = video_params();
+        p.crop = "1:1".into();
+        assert_eq!(video_base_dims(&p, 1280, 720), (720, 720));
+        p.rotation = "90".into();
+        assert_eq!(video_base_dims(&p, 1280, 720), (720, 720));
+        p.resolution = "480".into();
+        assert_eq!(video_base_dims(&p, 1280, 720), (480, 480));
+
+        let mut img = ImageParams {
+            format: "png".into(),
+            max_edge: 200,
+            crop_mode: "custom".into(),
+            crop_x: 10,
+            crop_y: 20,
+            crop_w: 300,
+            crop_h: 200,
+            ..Default::default()
+        };
+        assert_eq!(image_base_dims(&img, "in.png", 640, 480), (200, 133));
+        img.rotation = "90".into();
+        assert_eq!(image_base_dims(&img, "in.png", 640, 480), (133, 200));
     }
 }

@@ -13,6 +13,8 @@ function check(name, ok, detail) {
 const formats = readFileSync(join(root, "src/lib/formats.ts"), "utf8");
 const videoPanel = readFileSync(join(root, "src/panels/VideoPanel.tsx"), "utf8");
 const audioPanel = readFileSync(join(root, "src/panels/AudioPanel.tsx"), "utf8");
+const imagePanel = readFileSync(join(root, "src/panels/ImagePanel.tsx"), "utf8");
+const apiSource = readFileSync(join(root, "src/lib/api.ts"), "utf8");
 
 const videoBlock = formats.slice(formats.indexOf("export const VIDEO_CONTAINERS"), formats.indexOf("export const CODEC_LABELS"));
 const audioBlock = formats.slice(formats.indexOf("export const AUDIO_FORMATS"), formats.indexOf("export const PROBE_MISSING_NOTICE"));
@@ -120,6 +122,55 @@ check(
   "后端变速滤镜链完整",
   ["atempo_factors", "setpts=PTS/", "validate_speed", "atempo=0.5"].every((token) => argsSource.includes(token)),
   "args.rs 含 atempo_factors / setpts=PTS/ / validate_speed 与 atempo=0.5 链式用例",
+);
+
+// 水印：catalog 两张卡启用（不再是置灰的 `, false`），面板控件与前端参数类型齐全。
+const videoWatermarkLine = catalog.split("\n").find((line) => line.includes('"video-watermark"')) ?? "";
+const imageWatermarkLine = catalog.split("\n").find((line) => line.includes('"image-watermark"')) ?? "";
+check(
+  "两张水印卡已启用",
+  !videoWatermarkLine.includes(", false") &&
+    !imageWatermarkLine.includes(", false") &&
+    videoWatermarkLine.includes('"video"') &&
+    imageWatermarkLine.includes('"image"'),
+  `video-watermark=${videoWatermarkLine.trim() || "缺失"}；image-watermark=${imageWatermarkLine.trim() || "缺失"}`,
+);
+
+const watermarkPositions = ["nw", "n", "ne", "w", "c", "e", "sw", "s", "se", "custom"];
+const watermarkUiTokens = ['title="水印"', "选择水印图片", "opacity", "scalePercent", "margin", "rotation"];
+const missingWatermarkUi = [videoPanel, imagePanel].flatMap((panel) =>
+  [...watermarkPositions.map((position) => `"${position}"`), ...watermarkUiTokens].filter(
+    (token) => !panel.includes(token),
+  ),
+);
+check(
+  "两个面板含水印控件",
+  missingWatermarkUi.length === 0,
+  missingWatermarkUi.length
+    ? `缺少 ${missingWatermarkUi.join(", ")}`
+    : "位置九宫格（nw…se / custom）、opacity / scalePercent / margin / rotation 与「水印」标题均在 VideoPanel / ImagePanel 中",
+);
+
+const apiWatermarkBlock = apiSource.slice(apiSource.indexOf("export interface WatermarkParams"), apiSource.indexOf("export interface VideoParams"));
+const videoParamsBlock = apiSource.slice(apiSource.indexOf("export interface VideoParams"), apiSource.indexOf("export interface AudioParams"));
+const imageParamsBlock = apiSource.slice(apiSource.indexOf("export interface ImageParams"), apiSource.indexOf("export interface SeqParams"));
+const watermarkFields = ["enabled", "path", "position", "x", "y", "opacity", "scalePercent", "margin", "rotation"];
+const missingWatermarkFields = watermarkFields.filter((field) => !apiWatermarkBlock.includes(field));
+check(
+  "前端参数类型包含水印",
+  apiSource.includes("export interface WatermarkParams") &&
+    missingWatermarkFields.length === 0 &&
+    videoParamsBlock.includes("watermark: WatermarkParams") &&
+    imageParamsBlock.includes("watermark: WatermarkParams"),
+  missingWatermarkFields.length
+    ? `WatermarkParams 缺少 ${missingWatermarkFields.join(", ")}`
+    : "api.ts 定义 WatermarkParams，VideoParams / ImageParams 均含 watermark: WatermarkParams",
+);
+
+check(
+  "静态断言数量 ≥ 17",
+  results.length + 1 >= 17,
+  `当前 ${results.length + 1} 条断言（保留原有 13 条并新增水印断言）`,
 );
 
 let failed = 0;

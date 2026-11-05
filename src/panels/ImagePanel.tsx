@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { formatBytes, formatDuration } from "@formatforge/design-tokens";
-import { api, type ImageParams, type Job } from "../lib/api";
+import { api, type ImageParams, type Job, type WatermarkParams } from "../lib/api";
 import { DropZone, Field, FileTable, Group, OutputNaming, Segmented, SwitchRow, useMediaFiles, type NamingPrefs } from "./shared";
 import { loadPanelPrefs, savePanelPrefs } from "../lib/panelPrefs";
+import { WATERMARK_DEFAULTS, normalizeWatermark, pickWatermarkImage } from "../lib/watermark";
 import { Icon } from "../components/Icon";
 
 const DEFAULT_PARAMS: ImageParams = {
@@ -17,7 +18,27 @@ const DEFAULT_PARAMS: ImageParams = {
   cropY: 0,
   cropW: 0,
   cropH: 0,
+  watermark: { ...WATERMARK_DEFAULTS },
 };
+
+/** 水印位置九宫格：每行一组，配合「自定义坐标」一起构成 3×3 + 自定义。 */
+const WATERMARK_ROWS: { value: string; label: string }[][] = [
+  [
+    { value: "nw", label: "左上" },
+    { value: "n", label: "上" },
+    { value: "ne", label: "右上" },
+  ],
+  [
+    { value: "w", label: "左" },
+    { value: "c", label: "居中" },
+    { value: "e", label: "右" },
+  ],
+  [
+    { value: "sw", label: "左下" },
+    { value: "s", label: "下" },
+    { value: "se", label: "右下" },
+  ],
+];
 
 const EDGE_PRESETS = [
   { value: 0, label: "保持原尺寸" },
@@ -51,7 +72,10 @@ export function ImagePanel({
     cropMode: methodId === "image-crop" ? "ratio" : "none",
   };
   // 参数持久化：EXIF 自动校正、手动旋转、质量、尺寸等重启后恢复。
-  const [params, setParams] = useState<ImageParams>(() => loadPanelPrefs(`image:${methodId}`, defaults));
+  const [params, setParams] = useState<ImageParams>(() => {
+    const loaded = loadPanelPrefs(`image:${methodId}`, defaults);
+    return { ...loaded, watermark: normalizeWatermark(loaded.watermark) };
+  });
   const [naming, setNaming] = useState<NamingPrefs>(() => loadPanelPrefs(`naming:${methodId}`, { template: "", conflict: "suffix" }));
   const [starting, setStarting] = useState(false);
   useEffect(() => savePanelPrefs(`image:${methodId}`, params), [methodId, params]);
@@ -60,6 +84,10 @@ export function ImagePanel({
 
   const set = <K extends keyof ImageParams>(key: K, value: ImageParams[K]) =>
     setParams((prev) => ({ ...prev, [key]: value }));
+  const setWatermark = <K extends keyof WatermarkParams>(key: K, value: WatermarkParams[K]) =>
+    setParams((prev) => ({ ...prev, watermark: { ...prev.watermark, [key]: value } }));
+
+  const isWatermark = methodId === "image-watermark";
 
   const totals = useMemo(
     () => ({
@@ -81,15 +109,21 @@ export function ImagePanel({
       toast("未找到 ffmpeg，无法开始转换", "error");
       return;
     }
+    if (isWatermark && params.watermark.enabled && !params.watermark.path.trim()) {
+      toast("水印已开启，请先选择水印图片（png / jpg / jpeg / webp）", "error");
+      return;
+    }
     setStarting(true);
     try {
+      // 水印关闭时不携带 watermark 字段，保持与原逻辑完全一致。
+      const { watermark, ...paramsWithoutWatermark } = params;
       const specs = files
         .filter((file) => !file.error)
         .map((file) => ({
           kind: "image" as const,
           input: file.path,
           outputDir,
-          params: { ...params },
+          params: watermark.enabled ? { ...params, watermark } : { ...paramsWithoutWatermark },
           nameTemplate: naming.template.trim() || undefined,
           conflict: naming.conflict,
         }));
@@ -116,7 +150,7 @@ export function ImagePanel({
             ← 方法列表
           </button>
           <div>
-            <h1>{methodId === "image-resize" ? "图片批量缩放" : methodId === "image-crop" ? "图片批量裁剪" : "图片批量转换"}</h1>
+            <h1>{methodId === "image-watermark" ? "图片加水印" : methodId === "image-resize" ? "图片批量缩放" : methodId === "image-crop" ? "图片批量裁剪" : "图片批量转换"}</h1>
             <p>等比缩放不拉伸 · 永不覆盖原图 · 输出目录与源目录相同时自动加序号</p>
           </div>
           <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
@@ -296,6 +330,124 @@ export function ImagePanel({
               缩放使用 <code>force_original_aspect_ratio=decrease</code>，只缩不放，不会拉伸；小于上限的图片保持原样。
             </div>
           </Group>
+
+          {isWatermark ? (
+            <Group title="水印" icon="watermark">
+              <SwitchRow
+                label="启用水印"
+                hint="为每张图片叠加同一张水印图；关闭时不向 ffmpeg 传任何水印参数"
+                on={params.watermark.enabled}
+                onChange={(value) => setWatermark("enabled", value)}
+              />
+              {params.watermark.enabled ? (
+                <>
+                  <Field label="水印图片" tag="png / jpg / jpeg / webp">
+                    <button
+                      className="btn small"
+                      type="button"
+                      onClick={async () => {
+                        const picked = await pickWatermarkImage();
+                        if (picked) setWatermark("path", picked);
+                      }}
+                    >
+                      选择水印图片
+                    </button>
+                    <div className="note" title={params.watermark.path} style={{ wordBreak: "break-all" }}>
+                      {params.watermark.path || "尚未选择水印图片"}
+                    </div>
+                  </Field>
+                  <Field label="位置" tag={params.watermark.position === "custom" ? "自定义坐标" : "九宫格"}>
+                    {WATERMARK_ROWS.map((row) => (
+                      <Segmented
+                        key={row.map((option) => option.value).join("-")}
+                        value={params.watermark.position}
+                        onChange={(value) => setWatermark("position", value)}
+                        options={row}
+                      />
+                    ))}
+                    <Segmented
+                      value={params.watermark.position}
+                      onChange={(value) => setWatermark("position", value)}
+                      options={[{ value: "custom", label: "自定义坐标" }]}
+                    />
+                  </Field>
+                  {params.watermark.position === "custom" ? (
+                    <div className="row2">
+                      <Field label="X（px）">
+                        <input
+                          className="input"
+                          type="number"
+                          step={1}
+                          value={params.watermark.x}
+                          onChange={(event) => setWatermark("x", Math.round(Number(event.target.value) || 0))}
+                        />
+                      </Field>
+                      <Field label="Y（px）">
+                        <input
+                          className="input"
+                          type="number"
+                          step={1}
+                          value={params.watermark.y}
+                          onChange={(event) => setWatermark("y", Math.round(Number(event.target.value) || 0))}
+                        />
+                      </Field>
+                    </div>
+                  ) : null}
+                  <Field label={`不透明度 ${params.watermark.opacity.toFixed(2)}`} tag="0–1">
+                    <input
+                      className="slider"
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={params.watermark.opacity}
+                      onChange={(event) => setWatermark("opacity", Number(event.target.value))}
+                    />
+                  </Field>
+                  <Field label={`缩放 ${params.watermark.scalePercent}%`} tag="相对短边 %">
+                    <input
+                      className="slider"
+                      type="range"
+                      min={5}
+                      max={50}
+                      step={1}
+                      value={params.watermark.scalePercent}
+                      onChange={(event) => setWatermark("scalePercent", Number(event.target.value))}
+                    />
+                  </Field>
+                  <div className="row2">
+                    <Field label="边距（px）">
+                      <input
+                        className="input"
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={params.watermark.margin}
+                        onChange={(event) => setWatermark("margin", Math.max(0, Math.round(Number(event.target.value) || 0)))}
+                      />
+                    </Field>
+                    <Field label={`旋转 ${params.watermark.rotation}°`} tag="-180–180">
+                      <input
+                        className="input"
+                        type="number"
+                        min={-180}
+                        max={180}
+                        step={1}
+                        value={params.watermark.rotation}
+                        onChange={(event) => {
+                          const next = Number(event.target.value);
+                          if (Number.isFinite(next) && next >= -180 && next <= 180) setWatermark("rotation", Math.round(next));
+                        }}
+                      />
+                    </Field>
+                  </div>
+                  <div className="note">
+                    水印按输出画面短边百分比缩放，九宫格会自动留出边距；自定义坐标为水印左上角像素位置。水印图仅支持 png / jpg / jpeg / webp。
+                  </div>
+                </>
+              ) : null}
+            </Group>
+          ) : null}
 
           <Group title="方向" icon="crop">
             <SwitchRow

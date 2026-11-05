@@ -468,6 +468,7 @@ fn precheck_spec(
             if args::speed_or_default(p.speed) != 1.0 && p.audio_mode == "copy" {
                 return Err("变速会改变音轨时长，不能与原样复制音轨同时使用：请改为按容器转码或移除音轨".into());
             }
+            args::validate_watermark(&p.watermark)?;
             containers::validate_video(&p.container, &p.codec)
         }
         "audio-mp3" | "audio-aac" => {
@@ -485,7 +486,8 @@ fn precheck_spec(
         "image" => {
             let p: args::ImageParams = serde_json::from_value(params.clone())
                 .map_err(|e| format!("图片参数格式错误：{e}"))?;
-            args::validate_image_crop(&p)
+            args::validate_image_crop(&p)?;
+            args::validate_watermark(&p.watermark)
         }
         "image-seq-video" => {
             let p: args::SeqParams = serde_json::from_value(params.clone())
@@ -2342,6 +2344,62 @@ async fn run_frames(ctx: Ctx, id: String, job: Job, ffmpeg: String, dir: PathBuf
     finish_slot(&ctx, &id).await;
 }
 
+/// 读取「最终画面」与「水印源图」的真实尺寸。水印开启后任一步失败都返回可读原因，
+/// 由 run_job 直接失败任务（缺失/损坏的水印绝不能被静默跳过）。
+async fn watermark_dims_for_job(
+    probe_bin: Option<&str>,
+    job: &Job,
+) -> Result<Option<args::WatermarkDims>, String> {
+    let wm = match job.kind.as_str() {
+        "video-mp4" => {
+            serde_json::from_value::<args::VideoParams>(job.params.clone())
+                .map_err(|e| format!("视频参数格式错误：{e}"))?
+                .watermark
+        }
+        "image" => {
+            serde_json::from_value::<args::ImageParams>(job.params.clone())
+                .map_err(|e| format!("图片参数格式错误：{e}"))?
+                .watermark
+        }
+        _ => return Ok(None),
+    };
+    if !wm.enabled {
+        return Ok(None);
+    }
+    let bin =
+        probe_bin.ok_or_else(|| "找不到 ffprobe，无法读取水印叠加所需的画面尺寸".to_string())?;
+    let base = probe::probe_media(bin, &job.input).await;
+    let (src_w, src_h) = match (base.width, base.height) {
+        (Some(w), Some(h)) if w > 0 && h > 0 => (w, h),
+        _ => return Err(format!("无法读取输入画面尺寸：{}", job.input)),
+    };
+    let (base_w, base_h) = if job.kind == "video-mp4" {
+        let p: args::VideoParams = serde_json::from_value(job.params.clone())
+            .map_err(|e| format!("视频参数格式错误：{e}"))?;
+        args::video_base_dims(&p, src_w, src_h)
+    } else {
+        let p: args::ImageParams = serde_json::from_value(job.params.clone())
+            .map_err(|e| format!("图片参数格式错误：{e}"))?;
+        args::image_base_dims(&p, &job.input, src_w, src_h)
+    };
+    let info = probe::probe_media(bin, &wm.path).await;
+    let (wm_w, wm_h) = match (info.width, info.height) {
+        (Some(w), Some(h)) if w > 0 && h > 0 => (w, h),
+        _ => {
+            return Err(format!(
+                "无法读取水印图片尺寸：{}（文件可能已损坏，请重新选择）",
+                wm.path
+            ))
+        }
+    };
+    Ok(Some(args::WatermarkDims {
+        base_width: base_w,
+        base_height: base_h,
+        wm_width: wm_w,
+        wm_height: wm_h,
+    }))
+}
+
 async fn run_job(ctx: Ctx, id: String) {
     let state = ctx.state.clone();
     let job = match get_job(&ctx, &id).await {
@@ -2577,6 +2635,30 @@ async fn run_job(ctx: Ctx, id: String) {
         _ => vec![String::new()],
     };
 
+    // 水印位置依赖「最终画面 + 水印源图」的真实尺寸；探测失败时任务直接失败。
+    let watermark_dims = {
+        let probe_bin = tools_snapshot
+            .as_ref()
+            .and_then(|t| t.ffprobe.as_ref())
+            .map(|p| p.path.as_str());
+        match watermark_dims_for_job(probe_bin, &job).await {
+            Ok(dims) => dims,
+            Err(message) => {
+                remove_temp_file(&temp).await;
+                set_job(&ctx, &id, |job| {
+                    job.status = "failed".into();
+                    job.error_kind = Some("invalid-params".into());
+                    job.message = Some(message);
+                    job.finished_at = Some(now_ms());
+                })
+                .await;
+                write_job_log(&ctx, &id, "failed", &[], "").await;
+                finish_slot(&ctx, &id).await;
+                return;
+            }
+        }
+    };
+
     let mut last_stderr = String::new();
     for (idx, encoder) in chain.iter().enumerate() {
         let cancelled = {
@@ -2591,8 +2673,14 @@ async fn run_job(ctx: Ctx, id: String) {
             Some(argv) => argv,
             None => match job.kind.as_str() {
                 "video-mp4" => {
-                    let p: args::VideoParams =
+                    let mut p: args::VideoParams =
                         serde_json::from_value(job.params.clone()).unwrap_or_default();
+                    if let Some(dims) = watermark_dims {
+                        p.watermark.base_width = dims.base_width;
+                        p.watermark.base_height = dims.base_height;
+                        p.watermark.wm_width = dims.wm_width;
+                        p.watermark.wm_height = dims.wm_height;
+                    }
                     let accel = if p.hw_decode {
                         best_decode_accel(caps.as_ref())
                     } else {
@@ -2611,14 +2699,29 @@ async fn run_job(ctx: Ctx, id: String) {
                         .unwrap_or_default();
                     let container_audio =
                         containers::pick_container_audio_encoder(&p.container, "", &usable_audio);
-                    args::build_video(
+                    match args::build_video(
                         encoder,
                         &job.input,
                         temp.to_string_lossy().as_ref(),
                         &p,
                         container_audio,
                         accel.as_deref(),
-                    )
+                    ) {
+                        Ok(argv) => argv,
+                        Err(message) => {
+                            remove_temp_file(&temp).await;
+                            set_job(&ctx, &id, |job| {
+                                job.status = "failed".into();
+                                job.error_kind = Some("invalid-params".into());
+                                job.message = Some(message);
+                                job.finished_at = Some(now_ms());
+                            })
+                            .await;
+                            write_job_log(&ctx, &id, "failed", &attempts_info, "").await;
+                            finish_slot(&ctx, &id).await;
+                            return;
+                        }
+                    }
                 }
                 "audio-mp3" | "audio-aac" => {
                     let p: args::AudioParams =
@@ -2626,9 +2729,30 @@ async fn run_job(ctx: Ctx, id: String) {
                     args::build_audio(encoder, &job.input, temp.to_string_lossy().as_ref(), &p)
                 }
                 _ => {
-                    let p: args::ImageParams =
+                    let mut p: args::ImageParams =
                         serde_json::from_value(job.params.clone()).unwrap_or_default();
-                    args::build_image(&job.input, temp.to_string_lossy().as_ref(), &p)
+                    if let Some(dims) = watermark_dims {
+                        p.watermark.base_width = dims.base_width;
+                        p.watermark.base_height = dims.base_height;
+                        p.watermark.wm_width = dims.wm_width;
+                        p.watermark.wm_height = dims.wm_height;
+                    }
+                    match args::build_image(&job.input, temp.to_string_lossy().as_ref(), &p) {
+                        Ok(argv) => argv,
+                        Err(message) => {
+                            remove_temp_file(&temp).await;
+                            set_job(&ctx, &id, |job| {
+                                job.status = "failed".into();
+                                job.error_kind = Some("invalid-params".into());
+                                job.message = Some(message);
+                                job.finished_at = Some(now_ms());
+                            })
+                            .await;
+                            write_job_log(&ctx, &id, "failed", &attempts_info, "").await;
+                            finish_slot(&ctx, &id).await;
+                            return;
+                        }
+                    }
                 }
             },
         };
