@@ -661,6 +661,587 @@ fn compress_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Repor
     }
 }
 
+/// 与 run 相同，但返回 stderr（astats 等滤镜统计只写 stderr）。
+fn run_stderr(tool: &Path, argv: &[String]) -> Result<String, String> {
+    let mut cmd = Command::new(tool);
+    cmd.args(argv)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let output = cmd
+        .output()
+        .map_err(|e| format!("无法启动 {}：{e}", tool.display()))?;
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    if !output.status.success() {
+        return Err(format!("退出码 {:?}：{stderr}", output.status.code()));
+    }
+    Ok(stderr)
+}
+
+/// 用 astats 取 Overall RMS level（dB）。astats 会按通道各打印一行，取 Overall 段最后一行。
+fn mean_volume(ffmpeg: &Path, path: &Path) -> Result<f64, String> {
+    let stderr = run_stderr(
+        ffmpeg,
+        &[
+            "-hide_banner".into(),
+            "-nostdin".into(),
+            "-loglevel".into(),
+            "info".into(),
+            "-i".into(),
+            path.to_string_lossy().to_string(),
+            "-af".into(),
+            "astats=metadata=0:reset=0".into(),
+            "-f".into(),
+            "null".into(),
+            "-".into(),
+        ],
+    )?;
+    let mut in_overall = false;
+    let mut value: Option<f64> = None;
+    for line in stderr.lines() {
+        if line.contains("Overall") {
+            in_overall = true;
+        }
+        if in_overall {
+            if let Some((_, raw)) = line.split_once("RMS level dB:") {
+                value = raw.trim().parse::<f64>().ok();
+            }
+        }
+    }
+    value.ok_or_else(|| format!("astats 未输出 Overall RMS level：{}", path.display()))
+}
+
+fn has_audio(ffprobe: &Path, path: &Path) -> Result<bool, String> {
+    let json = run(
+        ffprobe,
+        &[
+            "-v".into(),
+            "error".into(),
+            "-select_streams".into(),
+            "a".into(),
+            "-show_entries".into(),
+            "stream=index".into(),
+            "-of".into(),
+            "json".into(),
+            path.to_string_lossy().to_string(),
+        ],
+    )?;
+    let value: serde_json::Value =
+        serde_json::from_str(&json).map_err(|e| format!("ffprobe JSON 解析失败：{e}"))?;
+    Ok(value
+        .get("streams")
+        .and_then(|s| s.as_array())
+        .map(|s| !s.is_empty())
+        .unwrap_or(false))
+}
+
+fn gif_frame_count(ffprobe: &Path, path: &Path) -> Result<u64, String> {
+    let json = run(
+        ffprobe,
+        &[
+            "-v".into(),
+            "error".into(),
+            "-count_frames".into(),
+            "-select_streams".into(),
+            "v:0".into(),
+            "-show_entries".into(),
+            "stream=nb_read_frames".into(),
+            "-of".into(),
+            "json".into(),
+            path.to_string_lossy().to_string(),
+        ],
+    )?;
+    let value: serde_json::Value =
+        serde_json::from_str(&json).map_err(|e| format!("ffprobe JSON 解析失败：{e}"))?;
+    value
+        .get("streams")
+        .and_then(|s| s.get(0))
+        .and_then(|s| s.get("nb_read_frames"))
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<u64>().ok())
+        .ok_or_else(|| "ffprobe 没有返回帧数".to_string())
+}
+
+/// 抽取指定帧（0 起）的 2x2 像素。GIF 需要 select=eq(n\,N) 才能取到非首帧。
+fn sample_frame_pixel(
+    ffmpeg: &Path,
+    input: &Path,
+    frame: u32,
+    x: u32,
+    y: u32,
+) -> Result<(u8, u8, u8), String> {
+    let out = input.with_extension(format!("sample{frame}.rgb"));
+    run(
+        ffmpeg,
+        &[
+            "-hide_banner".into(),
+            "-nostdin".into(),
+            "-y".into(),
+            "-loglevel".into(),
+            "error".into(),
+            "-i".into(),
+            input.to_string_lossy().to_string(),
+            "-vf".into(),
+            format!("select=eq(n\\,{frame}),crop=2:2:{x}:{y},format=rgb24"),
+            "-frames:v".into(),
+            "1".into(),
+            "-pix_fmt".into(),
+            "rgb24".into(),
+            "-f".into(),
+            "rawvideo".into(),
+            out.to_string_lossy().to_string(),
+        ],
+    )?;
+    let bytes = std::fs::read(&out).map_err(|e| format!("读取像素失败：{e}"))?;
+    let _ = std::fs::remove_file(&out);
+    if bytes.len() < 3 {
+        return Err(format!("像素数据不足：{} 字节", bytes.len()));
+    }
+    Ok((bytes[0], bytes[1], bytes[2]))
+}
+
+/// 从 GIF 字节里读 NETSCAPE2.0 扩展的循环次数（0 = 无限）。
+fn gif_loop_count(bytes: &[u8]) -> Option<u16> {
+    let marker = b"NETSCAPE2.0";
+    let pos = bytes.windows(marker.len()).position(|w| w == marker)?;
+    let after = bytes.get(pos + marker.len()..)?;
+    if after.len() >= 5 && after[0] == 3 && after[1] == 1 {
+        Some(u16::from_le_bytes([after[2], after[3]]))
+    } else {
+        None
+    }
+}
+
+/// 音量矩阵：正弦音 0/+6/-6 dB 的 astats 相对差、静音无音轨、边界校验。
+fn volume_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report) {
+    let tone = dir.join("vol-tone.wav");
+    let gen = run(
+        ffmpeg,
+        &[
+            "-hide_banner".into(),
+            "-nostdin".into(),
+            "-y".into(),
+            "-loglevel".into(),
+            "error".into(),
+            "-f".into(),
+            "lavfi".into(),
+            "-i".into(),
+            "sine=frequency=440:sample_rate=48000:duration=2".into(),
+            "-c:a".into(),
+            "pcm_s16le".into(),
+            tone.to_string_lossy().to_string(),
+        ],
+    );
+    if let Err(e) = gen {
+        report.fail("volume-tone", format!("生成测试音失败：{e}"));
+        return;
+    }
+    let base = match mean_volume(ffmpeg, &tone) {
+        Ok(v) => v,
+        Err(e) => {
+            report.fail("volume-tone", e);
+            return;
+        }
+    };
+
+    let mut measured: Vec<(f64, f64)> = Vec::new();
+    for gain in [0.0f64, 6.0, -6.0] {
+        let out = dir.join(format!("vol-{gain}db.wav"));
+        let p = args::AudioParams {
+            format: "wav".into(),
+            bitrate_kbps: 0,
+            sample_rate: "source".into(),
+            channels: "source".into(),
+            normalize: false,
+            speed: 1.0,
+            keep_pitch: true,
+            volume: args::VolumeParams {
+                enabled: true,
+                gain_db: gain,
+                mute: false,
+            },
+        };
+        let argv = args::build_audio(
+            "pcm_s16le",
+            tone.to_string_lossy().as_ref(),
+            out.to_string_lossy().as_ref(),
+            &p,
+        );
+        if let Err(e) = run(ffmpeg, &argv) {
+            report.fail("volume-gain", format!("{} dB 应用失败：{e}", gain));
+            continue;
+        }
+        match mean_volume(ffmpeg, &out) {
+            Ok(level) => measured.push((gain, level)),
+            Err(e) => report.fail("volume-gain", format!("{} dB astats 失败：{e}", gain)),
+        }
+    }
+    let level_of = |gain: f64| measured.iter().find(|(g, _)| *g == gain).map(|(_, v)| *v);
+    match (level_of(0.0), level_of(6.0), level_of(-6.0)) {
+        (Some(zero), Some(plus), Some(minus)) => {
+            let delta_plus = plus - zero;
+            let delta_minus = minus - zero;
+            let ok =
+                (delta_plus.abs() - 6.0).abs() <= 1.0 && (delta_minus.abs() - 6.0).abs() <= 1.0;
+            let evidence = format!(
+                "基准 {} dB，+6dB 实测 {} dB（Δ{:+.2}dB），-6dB 实测 {} dB（Δ{:+.2}dB）",
+                base, plus, delta_plus, minus, delta_minus
+            );
+            if ok {
+                report.pass("volume-gain", evidence);
+            } else {
+                report.fail("volume-gain", format!("增益偏差超过 ±1dB：{evidence}"));
+            }
+        }
+        _ => report.fail("volume-gain", "未能取得三档 astats 结果".into()),
+    }
+
+    // 边界：-20/20 通过，-21/20.1 拒绝。
+    let boundary_ok = args::validate_volume(&args::VolumeParams {
+        enabled: true,
+        gain_db: -20.0,
+        mute: false,
+    })
+    .is_ok()
+        && args::validate_volume(&args::VolumeParams {
+            enabled: true,
+            gain_db: 20.0,
+            mute: false,
+        })
+        .is_ok();
+    let boundary_reject = args::validate_volume(&args::VolumeParams {
+        enabled: true,
+        gain_db: -21.0,
+        mute: false,
+    })
+    .is_err()
+        && args::validate_volume(&args::VolumeParams {
+            enabled: true,
+            gain_db: 20.1,
+            mute: false,
+        })
+        .is_err();
+    if boundary_ok && boundary_reject {
+        report.pass(
+            "volume-bounds",
+            "-20/20 dB 通过，-21/20.1 dB 拒绝；mute 时忽略增益".into(),
+        );
+    } else {
+        report.fail("volume-bounds", "增益边界校验不符合预期".into());
+    }
+
+    // 静音：输入带音轨，输出必须没有音频流。
+    let source = dir.join("vol-mute-src.mp4");
+    let gen = run(
+        ffmpeg,
+        &[
+            "-hide_banner".into(),
+            "-nostdin".into(),
+            "-y".into(),
+            "-loglevel".into(),
+            "error".into(),
+            "-f".into(),
+            "lavfi".into(),
+            "-i".into(),
+            "testsrc2=size=320x240:rate=30:duration=1".into(),
+            "-f".into(),
+            "lavfi".into(),
+            "-i".into(),
+            "sine=frequency=440:sample_rate=48000:duration=1".into(),
+            "-c:v".into(),
+            "libopenh264".into(),
+            "-c:a".into(),
+            "aac".into(),
+            "-shortest".into(),
+            source.to_string_lossy().to_string(),
+        ],
+    );
+    if let Err(e) = gen {
+        report.fail("volume-mute", format!("生成带音轨样片失败：{e}"));
+        return;
+    }
+    let out = dir.join("vol-mute.mp4");
+    let mut p = args::VideoParams::default();
+    p.container = "mp4".into();
+    p.codec = "h264".into();
+    p.encoder = "libopenh264".into();
+    p.rate_mode = "quality".into();
+    p.quality = 23;
+    p.resolution = "source".into();
+    p.fps = "source".into();
+    p.crop = "source".into();
+    p.rotation = "0".into();
+    p.audio_mode = "aac".into();
+    p.audio_bitrate_kbps = 128;
+    p.speed = 1.0;
+    p.keep_pitch = true;
+    p.faststart = true;
+    p.volume = args::VolumeParams {
+        enabled: true,
+        gain_db: 6.0,
+        mute: true,
+    };
+    let argv = match args::build_video(
+        "libopenh264",
+        source.to_string_lossy().as_ref(),
+        out.to_string_lossy().as_ref(),
+        &p,
+        "aac",
+        None,
+    ) {
+        Ok(argv) => argv,
+        Err(e) => {
+            report.fail("volume-mute", e);
+            return;
+        }
+    };
+    if let Err(e) = run(ffmpeg, &argv) {
+        report.fail("volume-mute", format!("静音转换失败：{e}"));
+        return;
+    }
+    match has_audio(ffprobe, &out) {
+        Ok(false) => report.pass(
+            "volume-mute",
+            format!(
+                "输出无音频流；argv 含 -an={}",
+                argv.iter().any(|a| a == "-an")
+            ),
+        ),
+        Ok(true) => report.fail("volume-mute", "静音输出仍带音频流".into()),
+        Err(e) => report.fail("volume-mute", e),
+    }
+}
+
+/// 分割矩阵：1280x720 样片的 copy 三段 + encode 一段，实测时长偏移。
+fn split_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report) {
+    let source = dir.join("split-src.mp4");
+    // GOP 设为 10 帧（30fps 下 0.333s），保证 copy 偏移落在 ±0.5s 的可解释范围。
+    let gen = run(
+        ffmpeg,
+        &[
+            "-hide_banner".into(),
+            "-nostdin".into(),
+            "-y".into(),
+            "-loglevel".into(),
+            "error".into(),
+            "-f".into(),
+            "lavfi".into(),
+            "-i".into(),
+            "testsrc2=size=1280x720:rate=30:duration=10".into(),
+            "-f".into(),
+            "lavfi".into(),
+            "-i".into(),
+            "sine=frequency=440:sample_rate=48000:duration=10".into(),
+            "-c:v".into(),
+            "libopenh264".into(),
+            "-g".into(),
+            "10".into(),
+            "-pix_fmt".into(),
+            "yuv420p".into(),
+            "-c:a".into(),
+            "aac".into(),
+            "-shortest".into(),
+            source.to_string_lossy().to_string(),
+        ],
+    );
+    if let Err(e) = gen {
+        report.fail("split-source", format!("生成样片失败：{e}"));
+        return;
+    }
+
+    if let Err(e) = args::validate_split(
+        &args::SplitParams {
+            mode: "copy".into(),
+            container: "mp4".into(),
+            segment_index: 0,
+            start_sec: 0.0,
+            end_sec: 10.1,
+        },
+        10.0,
+    ) {
+        report.pass("split-validate", format!("超时长被拒绝：{e}"));
+    } else {
+        report.fail("split-validate", "end 超出源时长未被拒绝".into());
+    }
+
+    for (index, (start, end)) in [(0.0, 3.0), (3.0, 6.0), (6.0, 9.0)].iter().enumerate() {
+        let label = format!("split-copy-{index}");
+        let out = dir.join(format!("split-copy-{index}.mp4"));
+        let p = args::SplitParams {
+            mode: "copy".into(),
+            container: "mp4".into(),
+            segment_index: index as u32,
+            start_sec: *start,
+            end_sec: *end,
+        };
+        let argv = args::build_split(
+            source.to_string_lossy().as_ref(),
+            out.to_string_lossy().as_ref(),
+            &p,
+            "libopenh264",
+        );
+        if let Err(e) = run(ffmpeg, &argv) {
+            report.fail(&label, format!("copy 切分失败：{e}"));
+            continue;
+        }
+        match probe(ffprobe, &out) {
+            Ok(pr) => {
+                let requested = *end - *start;
+                let offset = pr.duration - requested;
+                let evidence = format!(
+                    "请求 {requested:.3}s，实测 {:.3}s，偏移 {offset:+.3}s（GOP 0.333s）",
+                    pr.duration
+                );
+                if offset.abs() <= 0.5 {
+                    report.pass(&label, evidence);
+                } else {
+                    report.fail(&label, format!("偏移超出 ±0.5s：{evidence}"));
+                }
+            }
+            Err(e) => report.fail(&label, e),
+        }
+    }
+
+    let label = "split-encode";
+    let out = dir.join("split-encode.mp4");
+    let p = args::SplitParams {
+        mode: "encode".into(),
+        container: "mp4".into(),
+        segment_index: 3,
+        start_sec: 2.0,
+        end_sec: 4.0,
+    };
+    let argv = args::build_split(
+        source.to_string_lossy().as_ref(),
+        out.to_string_lossy().as_ref(),
+        &p,
+        "libopenh264",
+    );
+    if let Err(e) = run(ffmpeg, &argv) {
+        report.fail(label, format!("encode 切分失败：{e}"));
+        return;
+    }
+    match probe(ffprobe, &out) {
+        Ok(pr) => {
+            let offset = pr.duration - 2.0;
+            let evidence = format!(
+                "请求 2.000s，实测 {:.3}s，偏移 {offset:+.3}s（重编码帧级）",
+                pr.duration
+            );
+            if offset.abs() <= 0.04 {
+                report.pass(label, evidence);
+            } else {
+                report.fail(label, format!("偏移超过 1 帧（0.04s）：{evidence}"));
+            }
+        }
+        Err(e) => report.fail(label, e),
+    }
+}
+
+/// 图片 GIF 矩阵：红/绿/蓝三图 → 两遍调色板 → 帧数/尺寸/循环/第 2 帧像素。
+fn gif_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report) {
+    let red = dir.join("gif-red.png");
+    let green = dir.join("gif-green.png");
+    let blue = dir.join("gif-blue.png");
+    for (path, color) in [(&red, "red"), (&green, "green"), (&blue, "blue")] {
+        if let Err(e) = ffmpeg_color(ffmpeg, path, "64x48", color) {
+            report.fail("gif-source", format!("生成 {color} 图失败：{e}"));
+            return;
+        }
+    }
+
+    let p = args::ImageGifParams {
+        fps: 5,
+        loop_count: 0,
+        max_width: 0,
+        dither: true,
+    };
+    let width = args::gif_target_width(p.max_width, 64);
+    // concat demuxer 会相对「清单文件所在目录」解析 file 路径，必须写绝对路径。
+    let abs = |path: &Path| {
+        std::fs::canonicalize(path)
+            .map(|value| value.to_string_lossy().to_string())
+            .unwrap_or_else(|_| path.to_string_lossy().to_string())
+    };
+    let files = vec![abs(&red), abs(&green), abs(&blue)];
+    let list = dir.join("gif-list.txt");
+    if let Err(e) = std::fs::write(&list, args::gif_concat_list(&files, p.fps)) {
+        report.fail("gif-list", format!("写清单失败：{e}"));
+        return;
+    }
+    let palette = dir.join("gif-palette.png");
+    let pass1 = args::build_gif_pass1(
+        list.to_string_lossy().as_ref(),
+        palette.to_string_lossy().as_ref(),
+        &p,
+        width,
+    );
+    if let Err(e) = run(ffmpeg, &pass1) {
+        report.fail("gif-pass1", format!("palettegen 失败：{e}"));
+        return;
+    }
+    // 调色板存在 = 第一遍确实执行，第二遍随后使用它。
+    if !palette.is_file() {
+        report.fail("gif-pass1", "palettegen 未生成调色板文件".into());
+        return;
+    }
+
+    let out = dir.join("gif-out.gif");
+    let mut pass2 = args::build_gif_pass2(
+        list.to_string_lossy().as_ref(),
+        palette.to_string_lossy().as_ref(),
+        out.to_string_lossy().as_ref(),
+        &p,
+        width,
+    );
+    // concat 末行重复会多出一帧，按图片张数封顶。
+    args::limit_gif_frames(&mut pass2, files.len() as u32);
+    if let Err(e) = run(ffmpeg, &pass2) {
+        report.fail("gif-pass2", format!("paletteuse 失败：{e}"));
+        return;
+    }
+    let pass1_has = pass1
+        .iter()
+        .any(|a| a.contains("palettegen=stats_mode=diff"));
+    let pass2_has = pass2.iter().any(|a| a.contains("paletteuse=dither="));
+    if !pass1_has || !pass2_has {
+        report.fail(
+            "gif-passes",
+            "两遍命令字符串缺失 palettegen/paletteuse".into(),
+        );
+        return;
+    }
+
+    match (probe(ffprobe, &out), gif_frame_count(ffprobe, &out)) {
+        (Ok(pr), Ok(frames)) => {
+            let bytes = std::fs::read(&out).unwrap_or_default();
+            let loops = gif_loop_count(&bytes);
+            let pixel = sample_frame_pixel(ffmpeg, &out, 1, 32, 24);
+            let loop_ok = loops == Some(0);
+            let frame_ok = frames == 3;
+            let size_ok = pr.width == 64 && pr.height == 48;
+            // FFmpeg 命名色 "green" 是 HTML #008000（G≈128），不是纯亮绿；只要明显偏绿且非黑/白即可。
+            let pixel_ok = matches!(pixel, Ok((r, g, b)) if g >= 100 && r <= 100 && b <= 100);
+            let evidence = format!(
+                "帧数 {frames}，尺寸 {}x{}，循环 {:?}（0=无限），第 2 帧像素 {:?}，两遍 palettegen/paletteuse 均执行",
+                pr.width, pr.height, loops, pixel
+            );
+            if frame_ok && size_ok && loop_ok && pixel_ok {
+                report.pass("image-gif", evidence);
+            } else {
+                report.fail("image-gif", evidence);
+            }
+        }
+        (Err(e), _) | (_, Err(e)) => report.fail("image-gif", e),
+    }
+}
+
 fn main() {
     if let Err(message) = run_all() {
         eprintln!("P2 CHECK FAILED: {message}");
@@ -704,6 +1285,9 @@ fn run_all() -> Result<(), String> {
     watermark_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
     compress_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
     subtitle_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
+    volume_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
+    split_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
+    gif_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
     preset_roundtrip(&dir, &mut report);
 
     report.write();
@@ -1519,6 +2103,8 @@ fn speed_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report) 
             keep_pitch: true,
             watermark: args::WatermarkParams::default(),
             subtitle: args::SubtitleParams::default(),
+            volume: args::VolumeParams::default(),
+            split: args::SplitParams::default(),
         };
         let argv = match args::build_video(
             "libopenh264",
@@ -1766,6 +2352,8 @@ fn watermark_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Repo
             ..Default::default()
         },
         subtitle: args::SubtitleParams::default(),
+        volume: args::VolumeParams::default(),
+        split: args::SplitParams::default(),
     };
     for container in ["mp4", "mkv"] {
         let label = format!("{name}-video-{container}");
@@ -2069,6 +2657,8 @@ fn subtitle_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Repor
         keep_pitch: true,
         watermark: args::WatermarkParams::default(),
         subtitle,
+        volume: args::VolumeParams::default(),
+        split: args::SplitParams::default(),
     };
 
     // mp4 内嵌：必须转码 mov_text，language 与 default disposition 写入容器。

@@ -44,11 +44,11 @@ Rust 单元测试 16/16 通过（`cargo-test.log`；新增 5 条滤镜/归一化
 
 ### 未实现（入口保留、点击只提示，不做假转换）
 
-视频：视频音量、分割。
-图片：图片转 GIF、EXIF 元数据写入、AVIF 编码。
+视频：暂无（音量增益、按时间点分割已在第九轮落地，见 §4.19）。
+图片：EXIF 元数据写入、AVIF 编码。
 文档：文档转 PDF、Office 互转。
 光驱 / DVD / ISO、工具集（改名、校验、信息、截图）全部仅入口占位。
-（变速、水印、字幕、图片压缩已在第五～七轮落地，见 §4.14–§4.17；总账见 §4.18。）
+（变速、水印、字幕、图片压缩、音量、分割、图片 GIF 已在第五～九轮落地，见 §4.14–§4.19；总账见 §4.18。）
 
 > 本节曾把合并 / 混流 / GIF / 裁剪 / 拼图 / PDF / 预设 / 持久化列为未实现，
 > 这些已由 P0/P1/P2 三轮补齐，逐项现状见 §4.6–§4.12 的入口对账表。
@@ -1137,10 +1137,65 @@ identifier（dark 反编译 `ShortcutProperty System.AppUserModel.ID`）、NSIS 
 | 未实现 | Office 互转、文档转 PDF | 未实现 | 入口置灰 |
 | 未实现 | 光驱 / DVD / ISO | 未实现 | 入口占位 |
 | 未实现 | 工具集（改名 / 校验 / 信息 / 截图） | 未实现 | 入口占位 |
-| 未实现 | 视频音量、视频分割 | 未实现 | 入口占位 |
-| 未实现 | 图片转 GIF、EXIF 元数据写入 | 未实现 | 入口置灰 |
+| 队列⑦ | 视频音量（相对增益 / 静音）与视频分割（按时间点，copy/encode） | 已实现（音量见 §4.19；分割仅按时间点切） | 视频 › 视频音量（面板内分组）、视频分割 |
+| 队列⑧ | 图片转 GIF（多图 palettegen/paletteuse 两遍） | 已实现（多图 palettegen/paletteuse） | 图片 › 图片转 GIF |
+| 未实现 | EXIF 元数据写入 | 未实现 | 入口置灰 |
 | 未实现 | AVIF 编码 | 未实现 | 不在图片格式清单（JPG/PNG/WebP/BMP/TIFF） |
 | 未实现 | 更新通道实装（密钥 / 签名 / 灰度） | 未实现 | 待用户拍板后再做 |
+
+---
+
+## 4.19 音量 / 分割 / 图片 GIF（第九轮）
+
+本轮把三张原「未实现」入口补齐：视频音量（相对增益 + 静音）、视频分割（按时间点切一段一个任务）、图片转 GIF（多图两遍调色板）。三者都只动现有参数链路，不引入新依赖。
+
+### 4.19.1 视频音量（相对增益）vs 音频卡「响度归一化」
+
+- 数据模型：`VolumeParams { enabled, gain_db, mute }`，嵌入 `VideoParams` 与 `AudioParams`；`validate_volume` 要求 gain 有限且落在 `[-20, 20]`，静音时忽略 gain。
+- 滤镜链顺序：`volume=<gain>dB` 放在音频链最前，其后才是 `atempo`（视频/音频）与 `loudnorm`（仅音频卡）；整链只生成一个 `-af`。静音在视频侧走 `-an` 且不再 `-map 0:a:0?`；音频侧没有音轨可丢，改用 `volume=0` 输出等长静音。
+- 为什么与 loudnorm 互斥：`loudnorm` 是「测量整体响度后拉回 -16 LUFS」的归一化，任何相对增益都会被它重新拉平——用户看到的 +6 dB 最终仍接近 -16 LUFS，语义冲突且结果不可预期。因此 `validate_audio_volume` 在 `normalize && volume.enabled` 时直接拒绝，前端在音量启用时禁用归一化开关并显示原因。
+- `audio_mode=copy` 与音量增益不能共存：流复制不做滤镜，precheck 明确拒绝并提示改「按容器转码」或关闭增益；前端也把「原样复制」置灰并自动切回 AAC。
+
+### 4.19.2 视频分割（按时间点，第一期）
+
+- 一个时间段 = 一个任务：前端按分段的文本逐行拆成多个 `JobSpec`（kind `video-split`），文件名追加 `-partN`，任务名追加 `（开始s–结束s）`，任一段失败都能在任务中心单独定位。
+- `copy`：`-ss/-to` 输入侧定位 + `-map 0 -c copy -avoid_negative_ts make_zero`，速度快、无损，但只能切在关键帧，起点会带上 GOP 量级的偏移；`make_zero` 让每段时间戳从 0 起。
+- `encode`：`-c:v <encoder> -preset veryfast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k`（MP4 加 `-movflags +faststart`），帧级准确，代价是重编码时间与质量代际损失。编码器仍由 jobs 用 `pick_sequence_encoder(caps)` 选，LGPL 构建只有 `libopenh264`。
+- 实测：p2-check 用 1280×720、GOP=10 帧（0.333s）的样片，copy 三段（0–3 / 3–6 / 6–9s）实测偏移均在 ±0.5s 内；encode 2–4s 实测偏差 ≤1 帧（0.04s）。偏移会写进任务消息与任务日志（「切分时长核对」）。
+- 取舍：第一期不支持按关键帧列表 / 按大小 / 按章节切分，也不做分段后自动合并。
+
+### 4.19.3 图片转 GIF（palettegen + paletteuse 两遍）
+
+- 两遍：第一遍 `fps,scale,palettegen=stats_mode=diff` 生成全局调色板；第二遍用同一调色板 `paletteuse=dither=sierra2_4a`（可关）合成 GIF。单遍 `-vf gif` 每帧独立量化，跨帧颜色会跳，故禁用。
+- concat 清单：jobs 在临时目录写 `file '<abs>'` + `duration 1/fps`，最后一张重复一行（concat demuxer 要求）；文件名单引号按 `'\''` 转义。注意重复行会让 `fps` 滤镜多输出一帧（尾帧重复），第二遍按图片张数加 `-frames:v N` 封顶，保证 GIF 帧数严格等于图片张数。
+- 宽度：`max_width>0` 用它，否则取首图宽度；>2000 时前端提示并自动填 1280（后端不改参数，避免隐式行为）。
+- 排序：前端按文件名 `localeCompare(..., {numeric:true})` 自然排序后合并成一个任务（`input` 第一张、`inputs` 其余），后端 precheck 要求至少 2 张、fps 1–30。
+- 实测：p2-check 用红/绿/蓝三张 64×48 图生成 GIF，ffprobe 复核帧数 3、尺寸 64×48、NETSCAPE2.0 循环次数 0（无限），抽第 2 帧像素为绿色；第 1 遍结束后调色板文件存在，证明两遍都执行。
+- 取舍：暂不做逐帧时长（统一 1/fps）、不做透明背景 / 抖动矩阵选择、不做 GIF 体积预估。
+
+### 4.19.4 断言与四包
+
+| 验证 | 结果 |
+| --- | --- |
+| `cargo test` | **124 / 124**（原 107 + 17：音量 11 / 分割与 GIF 6，另含 jobs 侧校验） |
+| `p2-check` | **39 / 39**（原 30 + volume 3 / split 4 / gif 1 / 校验 1） |
+| `npm run verify:formats` | **31 / 31**（原 27 + 4） |
+| `npx tsc --noEmit` + `vite build` | 通过 |
+| `cargo fmt --check` | 通过 |
+
+| 变体 | 产物 | 字节 | SHA-256 |
+| --- | --- | --- | --- |
+| LGPL | MSI | 2 740 224 | `719ea68fd905a3d19a6cc0ba5c7c3aec5d47a0b0b94877be9fa25c38d07f0270` |
+| LGPL | NSIS setup | 1 876 069 | `7bd924afaf0c5ed94bcb7bcde14ae092777de26afd303b2fdc61bc7903bad1c2` |
+| GPL | MSI | 2 736 128 | `5394712a3a2e1adc09d081c6a74e8b2f341661b6c0f34acd9f65fd61c9527958` |
+| GPL | NSIS setup | 1 872 372 | `3668e6e397c0bd85f88bd848e9e77727d3bd19452b1fb806b6c1559734759262` |
+
+### 4.19.5 仍需人工开窗确认
+
+* 视频面板「音量」分组（启用 / −20…20 dB / 静音）与「分割」分组（模式 / 分段文本）真实渲染；
+* 分割多段入队后任务中心显示 `-partN` 与「（起s–止s）」，任一段失败可单独定位；
+* 图片转 GIF 多选 ≥2 张时合并为一条任务、自然排序生效、>2000px 自动降 1280 的提示；
+* 音频卡「音量启用时归一化禁用」的置灰与原因文案。
 
 ---
 

@@ -93,7 +93,9 @@ export type JobKind =
   | "video-merge"
   | "video-mux"
   | "video-gif"
+  | "video-split"
   | "audio-mp3"
+  | "image-gif"
   | "audio-aac"
   | "image"
   | "image-compress"
@@ -200,6 +202,36 @@ export interface SubtitleParams {
   marginV: number;
 }
 
+/** 相对音量增益：只放大/衰减固定 dB，与音频卡的 loudnorm（-16 LUFS）语义不同。 */
+export interface VolumeParams {
+  enabled: boolean;
+  /** -20..20 dB */
+  gainDb: number;
+  /** 静音：丢弃音轨（忽略 gainDb） */
+  mute: boolean;
+}
+
+/** 按时间点切分（一个任务只切一段，前端按段拆成多个 JobSpec）。 */
+export interface SplitParams {
+  mode: "copy" | "encode";
+  /** mp4 | mkv | webm | mov | ts | avi */
+  container: string;
+  segmentIndex: number;
+  startSec: number;
+  endSec: number;
+}
+
+/** 多图合成 GIF（palettegen + paletteuse 两遍）。 */
+export interface ImageGifParams {
+  /** 1..30 */
+  fps: number;
+  /** 0 = 无限循环 */
+  loopCount: number;
+  /** 0 = 保持首图宽度；>2000 时前端提示并自动填 1280 */
+  maxWidth: number;
+  dither: boolean;
+}
+
 export interface VideoParams {
   /** mp4 | mkv | webm | mov | ts | avi */
   container: string;
@@ -225,6 +257,10 @@ export interface VideoParams {
   watermark: WatermarkParams;
   /** 字幕；enabled=false 时入队不携带该字段 */
   subtitle: SubtitleParams;
+  /** 相对音量增益（与音频卡 loudnorm 不同） */
+  volume: VolumeParams;
+  /** 分割参数（仅 video-split 卡片使用） */
+  split: SplitParams;
 }
 
 export interface AudioParams {
@@ -239,6 +275,8 @@ export interface AudioParams {
   speed: number;
   /** 变速时保持音高（默认 true：用 atempo 链） */
   keepPitch: boolean;
+  /** 相对音量增益（与 loudnorm 互斥） */
+  volume: VolumeParams;
 }
 
 /** 图片压缩参数（仅 image-compress 任务读取；默认值对应后端默认）。 */

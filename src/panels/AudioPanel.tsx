@@ -20,6 +20,7 @@ const DEFAULT_PARAMS: AudioParams = {
   normalize: false,
   speed: 1,
   keepPitch: true,
+  volume: { enabled: false, gainDb: 0, mute: false },
 };
 
 export function AudioPanel({
@@ -48,7 +49,11 @@ export function AudioPanel({
     normalize: methodId === "audio-volume",
   };
   // 参数持久化：重启后恢复上次的码率/采样率/声道等设置。
-  const [params, setParams] = useState<AudioParams>(() => loadPanelPrefs(`audio:${methodId}`, defaults));
+  const [params, setParams] = useState<AudioParams>(() => {
+    const loaded = loadPanelPrefs(`audio:${methodId}`, defaults);
+    // 兼容旧版本持久化数据（当时还没有 volume 字段）。
+    return { ...loaded, volume: loaded.volume ?? { enabled: false, gainDb: 0, mute: false } };
+  });
   const [naming, setNaming] = useState<NamingPrefs>(() => loadPanelPrefs(`naming:${methodId}`, { template: "", conflict: "suffix" }));
   const [starting, setStarting] = useState(false);
   useEffect(() => savePanelPrefs(`audio:${methodId}`, params), [methodId, params]);
@@ -264,10 +269,85 @@ export function AudioPanel({
             </Field>
             <SwitchRow
               label="音量归一化"
-              hint="EBU R128（-16 LUFS），把忽大忽小的音量拉到一致水平"
+              hint={
+                params.volume.enabled
+                  ? "已启用音量增益：loudnorm 会把整体响度拉回 -16 LUFS，增益会被抵消；两者语义不同，请二选一"
+                  : "EBU R128（-16 LUFS），把忽大忽小的音量拉到一致水平"
+              }
               on={params.normalize}
               onChange={(value) => set("normalize", value)}
+              disabled={params.volume.enabled}
             />
+          </Group>
+
+          <Group title="音量" icon="wave">
+            <SwitchRow
+              label="启用音量增益"
+              hint="相对增益：整条音轨统一放大/衰减固定 dB，不改变动态范围"
+              on={params.volume.enabled}
+              onChange={(value) =>
+                setParams((prev) => ({
+                  ...prev,
+                  // 开启增益时自动关闭归一化，避免后端拒绝这个互斥组合。
+                  normalize: value ? false : prev.normalize,
+                  volume: { ...prev.volume, enabled: value },
+                }))
+              }
+            />
+            {params.volume.enabled ? (
+              <Field
+                label={`增益 ${params.volume.gainDb > 0 ? "+" : ""}${params.volume.gainDb} dB`}
+                tag="-20–20"
+              >
+                <input
+                  className="slider"
+                  type="range"
+                  min={-20}
+                  max={20}
+                  step={0.5}
+                  value={params.volume.gainDb}
+                  disabled={params.volume.mute}
+                  onChange={(event) => {
+                    const next = Number(event.target.value);
+                    if (next >= -20 && next <= 20) {
+                      setParams((prev) => ({
+                        ...prev,
+                        volume: { ...prev.volume, gainDb: next },
+                      }));
+                    }
+                  }}
+                />
+                <input
+                  className="input"
+                  type="number"
+                  min={-20}
+                  max={20}
+                  step={0.5}
+                  value={params.volume.gainDb}
+                  disabled={params.volume.mute}
+                  onChange={(event) => {
+                    const next = Number(event.target.value);
+                    if (next >= -20 && next <= 20) {
+                      setParams((prev) => ({
+                        ...prev,
+                        volume: { ...prev.volume, gainDb: next },
+                      }));
+                    }
+                  }}
+                />
+              </Field>
+            ) : null}
+            <SwitchRow
+              label="静音（移除音轨）"
+              hint="静音时忽略增益；音频任务会输出一段等长静音"
+              on={params.volume.mute}
+              onChange={(value) =>
+                setParams((prev) => ({ ...prev, volume: { ...prev.volume, mute: value } }))
+              }
+            />
+            <div className="note">
+              音量＝相对增益；响度归一化＝把整体拉到 -16 LUFS，两者不同且不能同时开启。
+            </div>
           </Group>
 
           <Group title="编码器状态" icon="chip">

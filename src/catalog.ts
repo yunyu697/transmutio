@@ -50,6 +50,7 @@ export const sections: SectionDef[] = [
       m("video", "video-subtitle", "添加字幕", "内嵌字幕或外挂字幕", "subtitle", true, "video"),
       m("video", "video-mux", "音视频混流", "替换 / 追加音轨，视频流原样复制", "mux", true, "video"),
       m("video", "video-gif", "转 GIF", "区间截取 + 调色板优化", "gif", true, "video"),
+      m("video", "video-split", "视频分割", "按时间点切分，流复制或重编码", "split", true, "video"),
       m("video", "image-seq-video", "图片序列转视频", "帧率 / 起始编号 / 尺寸统一 / 编码器", "film", true, "sequence"),
       m("video", "video-frames", "视频转图片序列", "按 fps 抽帧，PNG / JPG", "camera", true, "frames"),
     ],
@@ -79,7 +80,7 @@ export const sections: SectionDef[] = [
       m("image", "image-crop", "图片裁剪", "比例或自定义矩形，可与缩放叠加", "crop", true, "image"),
       m("image", "image-watermark", "图片加水印", "批量位置 / 透明度", "watermark", true, "image"),
       m("image", "image-collage", "图片拼图", "网格布局、间距、底色、单元尺寸", "grid", true, "collage"),
-      m("image", "image-gif", "图片转 GIF", "多帧合成与延时控制", "gif", false),
+      m("image", "image-gif", "图片转 GIF", "多帧合成与延时控制", "gif", true, "image"),
     ],
   },
   {

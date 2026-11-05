@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { formatBytes, formatDuration } from "@formatforge/design-tokens";
-import { api, type CompressParams, type ImageParams, type Job, type WatermarkParams } from "../lib/api";
+import { api, type CompressParams, type ImageGifParams, type ImageParams, type Job, type WatermarkParams } from "../lib/api";
 import { DropZone, Field, FileTable, Group, OutputNaming, Segmented, SwitchRow, useMediaFiles, type NamingPrefs } from "./shared";
 import { loadPanelPrefs, savePanelPrefs } from "../lib/panelPrefs";
 import { WATERMARK_DEFAULTS, normalizeWatermark, pickWatermarkImage } from "../lib/watermark";
@@ -102,6 +102,14 @@ export function ImagePanel({
   useEffect(() => savePanelPrefs(`image:${methodId}`, params), [methodId, params]);
   useEffect(() => savePanelPrefs(`naming:${methodId}`, naming), [methodId, naming]);
   const [customEdge, setCustomEdge] = useState("");
+  const [gif, setGif] = useState<ImageGifParams>(() =>
+    loadPanelPrefs(`image:${methodId}:gif`, { fps: 10, loopCount: 0, maxWidth: 0, dither: true }),
+  );
+  useEffect(() => savePanelPrefs(`image:${methodId}:gif`, gif), [methodId, gif]);
+  const setGifField = <K extends keyof ImageGifParams>(key: K, value: ImageGifParams[K]) =>
+    setGif((prev) => ({ ...prev, [key]: value }));
+
+  const isGif = methodId === "image-gif";
 
   const set = <K extends keyof ImageParams>(key: K, value: ImageParams[K]) =>
     setParams((prev) => ({ ...prev, [key]: value }));
@@ -135,6 +143,14 @@ export function ImagePanel({
       toast("未找到 ffmpeg，无法开始转换", "error");
       return;
     }
+    if (isGif && files.filter((file) => !file.error).length < 2) {
+      toast("图片转 GIF 至少需要 2 张图片，请多选后再开始", "error");
+      return;
+    }
+    if (isGif && (gif.fps < 1 || gif.fps > 30)) {
+      toast("GIF 帧率必须在 1–30 之间", "error");
+      return;
+    }
     if (isWatermark && params.watermark.enabled && !params.watermark.path.trim()) {
       toast("水印已开启，请先选择水印图片（png / jpg / jpeg / webp）", "error");
       return;
@@ -145,6 +161,27 @@ export function ImagePanel({
     }
     setStarting(true);
     try {
+      if (isGif) {
+        // 多张图合并成一个任务：按文件名自然排序（img2 < img10），input=第一张，其余走 inputs。
+        const sorted = files
+          .filter((file) => !file.error)
+          .slice()
+          .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }));
+        const spec = {
+          kind: "image-gif" as const,
+          input: sorted[0].path,
+          inputs: sorted.slice(1).map((file) => file.path),
+          outputDir,
+          params: { ...gif },
+          nameTemplate: naming.template.trim() || undefined,
+          conflict: naming.conflict,
+        };
+        const jobs = await api.enqueue([spec]);
+        onEnqueued(jobs);
+        toast(`已加入 ${jobs.length} 个任务（${sorted.length} 张图合成 GIF）`, "ok");
+        clear();
+        return;
+      }
       // 水印关闭时不携带 watermark；非压缩方法不携带 compress，保持原逻辑完全一致。
       const { watermark, compress, ...paramsWithoutOptional } = params;
       const specs = files
@@ -184,8 +221,8 @@ export function ImagePanel({
             ← 方法列表
           </button>
           <div>
-            <h1>{methodId === "image-watermark" ? "图片加水印" : methodId === "image-resize" ? "图片批量缩放" : methodId === "image-crop" ? "图片批量裁剪" : methodId === "image-compress" ? "图片压缩" : "图片批量转换"}</h1>
-            <p>等比缩放不拉伸 · 永不覆盖原图 · 输出目录与源目录相同时自动加序号</p>
+            <h1>{methodId === "image-watermark" ? "图片加水印" : methodId === "image-resize" ? "图片批量缩放" : methodId === "image-crop" ? "图片批量裁剪" : methodId === "image-compress" ? "图片压缩" : methodId === "image-gif" ? "图片转 GIF" : "图片批量转换"}</h1>
+            <p>{isGif ? "多张图片按文件名自然排序合成 GIF · 两遍调色板（palettegen + paletteuse）" : "等比缩放不拉伸 · 永不覆盖原图 · 输出目录与源目录相同时自动加序号"}</p>
           </div>
           <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
             <Icon name="plus" size={14} />
@@ -208,7 +245,64 @@ export function ImagePanel({
           <span className="sub">{files.length} 张图片</span>
         </div>
         <div className="inspector-body">
-          <Group title="目标格式" icon="image">
+          {isGif ? (
+            <Group title="GIF" icon="gif">
+              <Field label="帧率（fps）" tag="1–30">
+                <input
+                  className="input"
+                  type="number"
+                  min={1}
+                  max={30}
+                  step={1}
+                  value={gif.fps}
+                  onChange={(event) => setGifField("fps", clampNumber(event.target.value, 1, 30, gif.fps))}
+                />
+              </Field>
+              <Field label="循环次数" tag="0 = 无限循环">
+                <input
+                  className="input"
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={gif.loopCount}
+                  onChange={(event) =>
+                    setGifField("loopCount", clampNumber(event.target.value, 0, 999, gif.loopCount))
+                  }
+                />
+              </Field>
+              <Field label="最大宽度（px）" tag="0 = 保持首图宽度">
+                <input
+                  className="input"
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={gif.maxWidth}
+                  onChange={(event) => {
+                    const raw = Number(event.target.value);
+                    if (!Number.isFinite(raw) || raw < 0) return;
+                    if (raw > 2000) {
+                      setGifField("maxWidth", 1280);
+                      toast("最大宽度超过 2000px，已自动降到 1280px（GIF 过大会显著增大体积）", "info");
+                    } else {
+                      setGifField("maxWidth", Math.round(raw));
+                    }
+                  }}
+                />
+              </Field>
+              <SwitchRow
+                label="抖动（dither）"
+                hint="paletteuse 用 sierra2_4a 抖动，色彩过渡更平滑；关闭后颜色更锐利但可能断层"
+                on={gif.dither}
+                onChange={(value) => setGifField("dither", value)}
+              />
+              <div className="note">
+                按文件名自然排序（img2 在 img10 之前）后合成一个任务；每张图显示 1/fps 秒。GIF 只使用本组参数，
+                上方格式 / 裁剪 / 尺寸设置不参与。GIF 后端固定用两遍调色板，避免单遍编码产生偏色。
+              </div>
+            </Group>
+          ) : null}
+
+          {!isGif ? <Group title="目标格式" icon="image">
             <Field label="格式">
               <Segmented
                 value={params.format}
@@ -236,7 +330,7 @@ export function ImagePanel({
             ) : (
               <div className="note">{params.format.toUpperCase()} 为无损 / 无损压缩格式，质量滑块不生效。</div>
             )}
-          </Group>
+          </Group> : null}
 
           {isCompress ? (
             <Group title="压缩" icon="compress">
@@ -678,7 +772,7 @@ export function ImagePanel({
           title={compressUnsupported ? "BMP / TIFF 不支持压缩" : undefined}
         >
           <Icon name="play" size={14} />
-          {starting ? "正在入队…" : isCompress ? "开始压缩" : "开始转换"}
+          {starting ? "正在入队…" : isGif ? "生成 GIF" : isCompress ? "开始压缩" : "开始转换"}
         </button>
       </div>
     </div>

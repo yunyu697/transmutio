@@ -229,6 +229,25 @@ async fn get_job(ctx: &Ctx, id: &str) -> Option<Job> {
     inner.jobs.iter().find(|j| j.id == id).cloned()
 }
 
+/// 从任务参数里读出分割参数（前端把 split 对象嵌在 VideoParams 内）。
+fn split_params(params: &Value) -> args::SplitParams {
+    params
+        .get("split")
+        .and_then(|value| serde_json::from_value::<args::SplitParams>(value.clone()).ok())
+        .unwrap_or_default()
+}
+
+/// 秒数展示：最多 3 位小数并去掉尾随 0（0.000 → 0，2.500 → 2.5）。
+fn fmt_sec_short(value: f64) -> String {
+    let text = format!("{value:.3}");
+    let trimmed = text.trim_end_matches('0').trim_end_matches('.');
+    if trimmed.is_empty() {
+        "0".into()
+    } else {
+        trimmed.to_string()
+    }
+}
+
 fn kind_ext(kind: &str, params: &Value) -> String {
     match kind {
         // 音频格式由 params.format 决定；kind 仅用于任务分类（历史 id 保持兼容）。
@@ -249,7 +268,22 @@ fn kind_ext(kind: &str, params: &Value) -> String {
                 .unwrap_or("mp4")
                 .to_string()
         }
-        "video-gif" => "gif".into(),
+        "video-gif" | "image-gif" => "gif".into(),
+        // 分割输出容器取自 params.split.container（前端同时回填 params.container）。
+        "video-split" => {
+            let split = split_params(params);
+            let container = if split.container.trim().is_empty() {
+                params
+                    .get("container")
+                    .and_then(Value::as_str)
+                    .unwrap_or("mp4")
+            } else {
+                split.container.as_str()
+            };
+            containers::container_ext(container)
+                .unwrap_or("mp4")
+                .to_string()
+        }
         "pdf-merge" | "pdf-split" => "pdf".into(),
         "pdf-image" => {
             let format = params
@@ -478,13 +512,38 @@ fn precheck_spec(
             }
             args::validate_watermark(&p.watermark)?;
             args::validate_subtitle(&p.subtitle, &p.container, p.speed)?;
+            args::validate_volume(&p.volume)?;
+            if p.audio_mode == "copy" && p.volume.enabled && !p.volume.mute {
+                return Err(
+                    "音量增益需要对音轨做滤镜处理，但当前是「原样复制」（-c:a copy），无法应用滤镜：请改为按容器转码，或关闭音量增益"
+                        .into(),
+                );
+            }
             containers::validate_video(&p.container, &p.codec)
         }
         "audio-mp3" | "audio-aac" => {
             let p: args::AudioParams = serde_json::from_value(params.clone())
                 .map_err(|e| format!("音频参数格式错误：{e}"))?;
             args::validate_speed(p.speed)?;
+            args::validate_volume(&p.volume)?;
+            args::validate_audio_volume(&p)?;
             containers::validate_audio(&p.format)
+        }
+        "video-split" => {
+            let split = split_params(params);
+            // precheck 阶段拿不到源时长，先用 INFINITY 跳过上界；enqueue 探测后再补校。
+            args::validate_split(&split, f64::INFINITY)
+        }
+        "image-gif" => {
+            let p: args::ImageGifParams = serde_json::from_value(params.clone())
+                .map_err(|e| format!("GIF 参数格式错误：{e}"))?;
+            if !(1..=30).contains(&p.fps) {
+                return Err(format!("GIF 帧率必须在 1–30 之间（当前 {}）", p.fps));
+            }
+            if inputs.len() < 2 {
+                return Err("图片转 GIF 至少需要 2 张图片：请多选图片后再入队".into());
+            }
+            Ok(())
         }
         "video-merge" | "video-mux" | "video-gif" => {
             if inputs.is_empty() {
@@ -588,7 +647,7 @@ fn precheck_spec(
             Ok(())
         }
         other => Err(format!(
-            "未知任务类型「{other}」；支持 video-mp4 / video-merge / video-mux / video-gif / audio-mp3 / audio-aac / image / image-compress / image-seq-video / video-frames / image-collage / pdf-merge / pdf-split / pdf-image"
+            "未知任务类型「{other}」；支持 video-mp4 / video-split / video-merge / video-mux / video-gif / image-gif / audio-mp3 / audio-aac / image / image-compress / image-seq-video / video-frames / image-collage / pdf-merge / pdf-split / pdf-image"
         )),
     }
 }
@@ -690,6 +749,14 @@ pub async fn enqueue(ctx: &Ctx, specs: Vec<JobSpec>) -> Result<Vec<Job>, String>
             total_duration = Some(inputs.len() as f64 / fps as f64);
         }
 
+        // 分割任务：探测到源时长后补校上界，并把任务时长改为本段请求时长。
+        if spec.kind == "video-split" {
+            let split = split_params(&spec.params);
+            let source_duration = info.duration_sec.unwrap_or(f64::INFINITY);
+            args::validate_split(&split, source_duration)?;
+            total_duration = Some((split.end_sec - split.start_sec).max(0.0));
+        }
+
         // 合并任务的总时长/进度依赖全部输入，这里一次性探测并累加。
         if spec.kind == "video-merge" {
             let mut sum = 0.0f64;
@@ -710,6 +777,16 @@ pub async fn enqueue(ctx: &Ctx, specs: Vec<JobSpec>) -> Result<Vec<Job>, String>
         }
         if inputs.len() > 1 {
             info.name = format!("{} +{}", info.name, inputs.len() - 1);
+        }
+        // 分割的每段是独立任务：任务名带上段时间区间，失败时能直接定位是哪一段。
+        if spec.kind == "video-split" {
+            let split = split_params(&spec.params);
+            info.name = format!(
+                "{}（{}s–{}s）",
+                info.name,
+                fmt_sec_short(split.start_sec),
+                fmt_sec_short(split.end_sec)
+            );
         }
 
         let dir = PathBuf::from(&spec.output_dir);
@@ -735,6 +812,15 @@ pub async fn enqueue(ctx: &Ctx, specs: Vec<JobSpec>) -> Result<Vec<Job>, String>
             .ends_with(&format!(".{}", ext.to_ascii_lowercase()))
         {
             stem[..stem.len() - ext.len() - 1].to_string()
+        } else {
+            stem
+        };
+        // 分割：每段追加 -partN，避免多段彼此覆盖（冲突策略仍按 suffix/skip/overwrite 生效）。
+        let stem = if spec.kind == "video-split" {
+            format!(
+                "{stem}-part{}",
+                split_params(&spec.params).segment_index + 1
+            )
         } else {
             stem
         };
@@ -2364,6 +2450,389 @@ async fn run_frames(ctx: Ctx, id: String, job: Job, ffmpeg: String, dir: PathBuf
     finish_slot(&ctx, &id).await;
 }
 
+/// 把切分时长核对追加到任务日志末尾。日志本身由 write_job_log 覆盖写入，这里只做追加。
+async fn append_split_log(ctx: &Ctx, id: &str, line: &str) {
+    let Some(log_path) = get_job(ctx, id).await.and_then(|job| job.log_path) else {
+        return;
+    };
+    use std::io::Write as _;
+    if let Ok(mut file) = std::fs::OpenOptions::new().append(true).open(&log_path) {
+        let _ = write!(file, "\n--- 切分时长核对 ---\n{line}\n");
+    }
+}
+
+/// 按时间点切分单段。
+/// copy 只能切在关键帧，实测偏移会写入任务消息与日志；encode 走重编码，帧级准确。
+#[allow(clippy::too_many_arguments)]
+async fn run_split(
+    ctx: Ctx,
+    id: String,
+    job: Job,
+    ffmpeg: String,
+    caps: Option<probe::Capabilities>,
+    ffprobe: Option<String>,
+    temp: PathBuf,
+) {
+    let split = split_params(&job.params);
+    let encoder = pick_sequence_encoder(caps.as_ref());
+    let requested = (split.end_sec - split.start_sec).max(0.0);
+    let argv = args::build_split(
+        &job.input,
+        temp.to_string_lossy().as_ref(),
+        &split,
+        &encoder,
+    );
+    let mode_label = if split.mode == "encode" {
+        "重编码"
+    } else {
+        "流复制"
+    };
+    let _ = set_job(&ctx, &id, |job| {
+        job.message = Some(format!(
+            "正在{}切分 {}s–{}s…",
+            mode_label,
+            fmt_sec_short(split.start_sec),
+            fmt_sec_short(split.end_sec)
+        ));
+    })
+    .await;
+
+    let outcome = execute_streaming(&ctx, &id, &ffmpeg, argv, Some(requested), (0.0, 0.95)).await;
+    if !outcome.success {
+        let (kind, message) = if outcome.killed {
+            ("cancelled".to_string(), "已取消".to_string())
+        } else {
+            let (kind, err) = classify(&outcome.stderr);
+            (kind, format!("{mode_label}切分失败：{err}"))
+        };
+        let _ = set_job(&ctx, &id, |job| {
+            job.status = if kind == "cancelled" {
+                "cancelled".into()
+            } else {
+                "failed".into()
+            };
+            job.error_kind = Some(kind.clone());
+            job.message = Some(message.clone());
+            job.finished_at = Some(now_ms());
+        })
+        .await;
+        write_job_log(
+            &ctx,
+            &id,
+            if kind == "cancelled" {
+                "cancelled"
+            } else {
+                "failed"
+            },
+            &[],
+            &outcome.stderr,
+        )
+        .await;
+        if kind != "cancelled" {
+            maybe_auto_retry(&ctx, &id, &kind).await;
+        }
+        let _ = std::fs::remove_file(&temp);
+        finish_slot(&ctx, &id).await;
+        return;
+    }
+
+    // 用 ffprobe 复核输出实测时长，偏移写进消息与日志（copy 的 GOP 偏移属正常）。
+    let actual = match ffprobe.as_deref() {
+        Some(bin) => {
+            probe::probe_media(bin, temp.to_string_lossy().as_ref())
+                .await
+                .duration_sec
+        }
+        None => None,
+    };
+    let offset = actual.map(|value| value - requested).unwrap_or(0.0);
+    let message = match actual {
+        Some(actual) if split.mode == "encode" => format!(
+            "重编码切分：请求 {}–{}s，实测 {:.3}s，偏移 {offset:+.3}s",
+            fmt_sec_short(split.start_sec),
+            fmt_sec_short(split.end_sec),
+            actual
+        ),
+        Some(actual) => format!(
+            "流复制切分：请求 {}–{}s，实测 {:.3}s，偏移 {offset:+.3}s（-c copy 只能切在关键帧，偏移属正常）",
+            fmt_sec_short(split.start_sec),
+            fmt_sec_short(split.end_sec),
+            actual
+        ),
+        None => format!(
+            "{}切分已完成（未找到 ffprobe，无法核对实测时长）",
+            mode_label
+        ),
+    };
+    let detail = match actual {
+        Some(actual) => format!(
+            "请求 {:.3}s，实测 {:.3}s，偏移 {:+.3}s（模式 {}）",
+            requested, actual, offset, split.mode
+        ),
+        None => format!(
+            "请求 {:.3}s，模式 {}，未取得实测时长",
+            requested, split.mode
+        ),
+    };
+
+    if std::fs::metadata(&temp).map(|m| m.len()).unwrap_or(0) == 0 {
+        let message = format!("{mode_label}切分没有产生输出文件");
+        let _ = set_job(&ctx, &id, |job| {
+            job.status = "failed".into();
+            job.error_kind = Some("output".into());
+            job.message = Some(message.clone());
+            job.finished_at = Some(now_ms());
+        })
+        .await;
+        write_job_log(&ctx, &id, "failed", &[], &outcome.stderr).await;
+        let _ = std::fs::remove_file(&temp);
+        finish_slot(&ctx, &id).await;
+        return;
+    }
+
+    let target = PathBuf::from(&job.output);
+    if target.is_file() {
+        let _ = std::fs::remove_file(&target);
+    }
+    if let Err(e) = std::fs::rename(&temp, &target) {
+        let message = format!("写入输出失败（{}）：{e}", target.display());
+        let _ = set_job(&ctx, &id, |job| {
+            job.status = "failed".into();
+            job.error_kind = Some("output".into());
+            job.message = Some(message.clone());
+            job.finished_at = Some(now_ms());
+        })
+        .await;
+        write_job_log(&ctx, &id, "failed", &[], &outcome.stderr).await;
+        let _ = std::fs::remove_file(&temp);
+        finish_slot(&ctx, &id).await;
+        return;
+    }
+
+    let size = std::fs::metadata(&target).map(|m| m.len()).unwrap_or(0);
+    let _ = set_job(&ctx, &id, |job| {
+        job.status = "done".into();
+        job.progress = 1.0;
+        job.output = target.to_string_lossy().to_string();
+        job.output_size = Some(size);
+        job.message = Some(message.clone());
+        job.duration_sec = actual;
+        job.encoder_used = Some(if split.mode == "encode" {
+            encoder.clone()
+        } else {
+            "copy".into()
+        });
+        job.finished_at = Some(now_ms());
+    })
+    .await;
+    write_job_log(&ctx, &id, "done", &[], &outcome.stderr).await;
+    append_split_log(&ctx, &id, &detail).await;
+    finish_slot(&ctx, &id).await;
+}
+
+/// 多图转 GIF：palettegen（第 1 遍）+ paletteuse（第 2 遍）。
+/// concat 清单与调色板写在临时目录，结束后清理；失败消息注明是第几遍。
+async fn run_image_gif(
+    ctx: Ctx,
+    id: String,
+    job: Job,
+    ffmpeg: String,
+    ffprobe: Option<String>,
+    dir: PathBuf,
+    temp: PathBuf,
+) {
+    let p: args::ImageGifParams = serde_json::from_value(job.params.clone()).unwrap_or_default();
+    let inputs = if job.inputs.is_empty() {
+        vec![job.input.clone()]
+    } else {
+        job.inputs.clone()
+    };
+    let tmpdir = dir.join(format!(".ff-tmp-gif-{id}"));
+    let _ = std::fs::remove_dir_all(&tmpdir);
+
+    let fail = |ctx: Ctx, id: String, tmpdir: PathBuf, kind: &str, message: String| {
+        let kind = kind.to_string();
+        async move {
+            let _ = set_job(&ctx, &id, |job| {
+                job.status = "failed".into();
+                job.error_kind = Some(kind.clone());
+                job.message = Some(message.clone());
+                job.finished_at = Some(now_ms());
+            })
+            .await;
+            write_job_log(&ctx, &id, "failed", &[], &message).await;
+            let _ = std::fs::remove_dir_all(&tmpdir);
+            finish_slot(&ctx, &id).await;
+        }
+    };
+
+    if inputs.len() < 2 {
+        fail(
+            ctx,
+            id,
+            tmpdir,
+            "invalid-params",
+            "图片转 GIF 至少需要 2 张图片".to_string(),
+        )
+        .await;
+        return;
+    }
+    if let Err(e) = std::fs::create_dir_all(&tmpdir) {
+        fail(ctx, id, tmpdir, "output", format!("无法创建临时目录：{e}")).await;
+        return;
+    }
+    let list = tmpdir.join("list.txt");
+    let palette = tmpdir.join("palette.png");
+    if let Err(e) = std::fs::write(&list, args::gif_concat_list(&inputs, p.fps)) {
+        fail(ctx, id, tmpdir, "output", format!("无法写入 GIF 清单：{e}")).await;
+        return;
+    }
+
+    let first_width = match ffprobe.as_deref() {
+        Some(bin) => probe::probe_media(bin, &inputs[0]).await.width.unwrap_or(0),
+        None => 0,
+    };
+    let width = args::gif_target_width(p.max_width, first_width);
+    if width == 0 {
+        fail(
+            ctx,
+            id,
+            tmpdir,
+            "input",
+            "无法读取首图宽度：请填写最大宽度后重试".to_string(),
+        )
+        .await;
+        return;
+    }
+
+    let _ = set_job(&ctx, &id, |job| {
+        job.progress = 0.05;
+        job.message = Some("正在生成全局调色板（第 1/2 遍 palettegen）…".into());
+    })
+    .await;
+    let pass1 = args::build_gif_pass1(
+        list.to_string_lossy().as_ref(),
+        palette.to_string_lossy().as_ref(),
+        &p,
+        width,
+    );
+    let outcome1 = execute_streaming(&ctx, &id, &ffmpeg, pass1, None, (0.05, 0.5)).await;
+    if !outcome1.success {
+        let (kind, message) = if outcome1.killed {
+            ("cancelled".to_string(), "已取消".to_string())
+        } else {
+            let (kind, err) = classify(&outcome1.stderr);
+            (kind, format!("第 1 遍（palettegen）失败：{err}"))
+        };
+        if kind == "cancelled" {
+            let _ = set_job(&ctx, &id, |job| {
+                job.status = "cancelled".into();
+                job.error_kind = Some(kind.clone());
+                job.message = Some(message.clone());
+                job.finished_at = Some(now_ms());
+            })
+            .await;
+            write_job_log(&ctx, &id, "cancelled", &[], &outcome1.stderr).await;
+            let _ = std::fs::remove_dir_all(&tmpdir);
+            finish_slot(&ctx, &id).await;
+        } else {
+            fail(ctx, id, tmpdir, &kind, message).await;
+        }
+        return;
+    }
+    // 调色板文件是「两遍确实执行」的硬证据；缺失说明第 1 遍没有真正产出。
+    if !palette.is_file() {
+        fail(
+            ctx,
+            id,
+            tmpdir,
+            "output",
+            "第 1 遍（palettegen）没有生成调色板文件".to_string(),
+        )
+        .await;
+        return;
+    }
+
+    let _ = set_job(&ctx, &id, |job| {
+        job.progress = 0.5;
+        job.message = Some("正在合成 GIF（第 2/2 遍 paletteuse）…".into());
+    })
+    .await;
+    let mut pass2 = args::build_gif_pass2(
+        list.to_string_lossy().as_ref(),
+        palette.to_string_lossy().as_ref(),
+        temp.to_string_lossy().as_ref(),
+        &p,
+        width,
+    );
+    // concat 末行重复会多出一帧，按图片张数封顶。
+    args::limit_gif_frames(&mut pass2, inputs.len() as u32);
+    let outcome2 = execute_streaming(&ctx, &id, &ffmpeg, pass2, None, (0.5, 0.95)).await;
+    if !outcome2.success {
+        let (kind, message) = if outcome2.killed {
+            ("cancelled".to_string(), "已取消".to_string())
+        } else {
+            let (kind, err) = classify(&outcome2.stderr);
+            (kind, format!("第 2 遍（paletteuse）失败：{err}"))
+        };
+        if kind == "cancelled" {
+            let _ = set_job(&ctx, &id, |job| {
+                job.status = "cancelled".into();
+                job.error_kind = Some(kind.clone());
+                job.message = Some(message.clone());
+                job.finished_at = Some(now_ms());
+            })
+            .await;
+            write_job_log(&ctx, &id, "cancelled", &[], &outcome2.stderr).await;
+            let _ = std::fs::remove_dir_all(&tmpdir);
+            finish_slot(&ctx, &id).await;
+        } else {
+            fail(ctx, id, tmpdir, &kind, message).await;
+        }
+        return;
+    }
+
+    let target = PathBuf::from(&job.output);
+    if target.is_file() {
+        let _ = std::fs::remove_file(&target);
+    }
+    if let Err(e) = std::fs::rename(&temp, &target) {
+        fail(
+            ctx,
+            id,
+            tmpdir,
+            "output",
+            format!("写入输出失败（{}）：{e}", target.display()),
+        )
+        .await;
+        return;
+    }
+    let size = std::fs::metadata(&target).map(|m| m.len()).unwrap_or(0);
+    let message = format!(
+        "已生成 GIF（{} fps，{}px 宽，{} 张图，2 遍调色板）",
+        p.fps,
+        width,
+        inputs.len()
+    );
+    let _ = set_job(&ctx, &id, |job| {
+        job.status = "done".into();
+        job.progress = 1.0;
+        job.output = target.to_string_lossy().to_string();
+        job.output_size = Some(size);
+        job.message = Some(message.clone());
+        job.finished_at = Some(now_ms());
+        job.encoder_used = Some("palettegen+paletteuse".into());
+    })
+    .await;
+    let stderr = format!(
+        "--- 第 1 遍 palettegen ---\n{}\n--- 第 2 遍 paletteuse ---\n{}",
+        outcome1.stderr, outcome2.stderr
+    );
+    write_job_log(&ctx, &id, "done", &[], &stderr).await;
+    let _ = std::fs::remove_dir_all(&tmpdir);
+    finish_slot(&ctx, &id).await;
+}
+
 /// 读取「最终画面」与「水印源图」的真实尺寸。水印开启后任一步失败都返回可读原因，
 /// 由 run_job 直接失败任务（缺失/损坏的水印绝不能被静默跳过）。
 async fn watermark_dims_for_job(
@@ -2744,6 +3213,41 @@ async fn run_job(ctx: Ctx, id: String) {
             job.clone(),
             ffmpeg.clone(),
             dir.clone(),
+        )
+        .await;
+        return;
+    }
+
+    let ffprobe = tools_snapshot
+        .as_ref()
+        .and_then(|t| t.ffprobe.as_ref())
+        .map(|p| p.path.clone());
+
+    // 按时间点切分：单段一个任务，跑完后用 ffprobe 核对实测时长。
+    if job.kind == "video-split" {
+        run_split(
+            ctx.clone(),
+            id.clone(),
+            job.clone(),
+            ffmpeg.clone(),
+            caps.clone(),
+            ffprobe.clone(),
+            temp.clone(),
+        )
+        .await;
+        return;
+    }
+
+    // 多图转 GIF：palettegen + paletteuse 两遍，临时目录存放 concat 清单与调色板。
+    if job.kind == "image-gif" {
+        run_image_gif(
+            ctx.clone(),
+            id.clone(),
+            job.clone(),
+            ffmpeg.clone(),
+            ffprobe.clone(),
+            dir.clone(),
+            temp.clone(),
         )
         .await;
         return;
@@ -3508,5 +4012,103 @@ mod tests {
         let date = utc_date();
         assert_eq!(date.len(), 8, "{date}");
         assert!(date.chars().all(|c| c.is_ascii_digit()), "{date}");
+    }
+
+    // ===== 第九轮：音量 / 分割 / 图片 GIF =====
+
+    #[test]
+    fn precheck_rejects_volume_gain_with_audio_copy() {
+        let params = json!({
+            "audioMode": "copy",
+            "volume": { "enabled": true, "gainDb": 6.0, "mute": false }
+        });
+        let err = precheck_spec("video-mp4", &["in.mp4".into()], &params, None).unwrap_err();
+        assert!(err.contains("原样复制"), "{err}");
+        assert!(err.contains("无法应用滤镜"), "{err}");
+
+        // 关闭增益后不再因 copy 被拒（容器为空是下一个校验点，说明已越过音量检查）。
+        let params = json!({
+            "audioMode": "copy",
+            "container": "mp4",
+            "codec": "h264",
+            "volume": { "enabled": false, "gainDb": 6.0, "mute": false }
+        });
+        assert!(precheck_spec("video-mp4", &["in.mp4".into()], &params, None).is_ok());
+    }
+
+    #[test]
+    fn precheck_audio_rejects_normalize_with_volume() {
+        let params = json!({
+            "format": "mp3",
+            "normalize": true,
+            "volume": { "enabled": true, "gainDb": 6.0, "mute": false }
+        });
+        let err = precheck_spec("audio-mp3", &["in.wav".into()], &params, None).unwrap_err();
+        assert!(err.contains("-16 LUFS"), "{err}");
+        assert!(err.contains("请二选一"), "{err}");
+    }
+
+    #[test]
+    fn precheck_split_validates_mode_range_and_container() {
+        let mut params = json!({
+            "split": {
+                "mode": "copy",
+                "container": "mp4",
+                "segmentIndex": 0,
+                "startSec": 0.0,
+                "endSec": 30.0
+            }
+        });
+        assert!(precheck_spec("video-split", &["in.mp4".into()], &params, None).is_ok());
+
+        params["split"]["mode"] = json!("bad");
+        let err = precheck_spec("video-split", &["in.mp4".into()], &params, None).unwrap_err();
+        assert!(err.contains("分割模式"), "{err}");
+
+        params["split"]["mode"] = json!("copy");
+        params["split"]["endSec"] = json!(0.0);
+        let err = precheck_spec("video-split", &["in.mp4".into()], &params, None).unwrap_err();
+        assert!(err.contains("大于开始时间"), "{err}");
+
+        params["split"]["endSec"] = json!(30.0);
+        params["split"]["container"] = json!("flv");
+        let err = precheck_spec("video-split", &["in.mp4".into()], &params, None).unwrap_err();
+        assert!(err.contains("分割输出容器"), "{err}");
+    }
+
+    #[test]
+    fn precheck_image_gif_requires_two_images_and_valid_fps() {
+        let params = json!({ "fps": 10, "loopCount": 0, "maxWidth": 0, "dither": true });
+        let err = precheck_spec("image-gif", &["a.png".into()], &params, None).unwrap_err();
+        assert!(err.contains("至少需要 2 张"), "{err}");
+
+        let inputs = vec!["a.png".to_string(), "b.png".to_string()];
+        let bad = json!({ "fps": 0, "loopCount": 0, "maxWidth": 0, "dither": true });
+        let err = precheck_spec("image-gif", &inputs, &bad, None).unwrap_err();
+        assert!(err.contains("1–30"), "{err}");
+
+        let high = json!({ "fps": 31, "loopCount": 0, "maxWidth": 0, "dither": true });
+        let err = precheck_spec("image-gif", &inputs, &high, None).unwrap_err();
+        assert!(err.contains("1–30"), "{err}");
+
+        assert!(precheck_spec("image-gif", &inputs, &params, None).is_ok());
+    }
+
+    #[test]
+    fn kind_ext_uses_split_container_and_gif_ext() {
+        let split =
+            json!({ "split": { "container": "mkv", "mode": "copy", "startSec": 0, "endSec": 3 } });
+        assert_eq!(kind_ext("video-split", &split), "mkv");
+        let split =
+            json!({ "split": { "container": "webm", "mode": "copy", "startSec": 0, "endSec": 3 } });
+        assert_eq!(kind_ext("video-split", &split), "webm");
+        assert_eq!(kind_ext("image-gif", &json!({})), "gif");
+    }
+
+    #[test]
+    fn split_seconds_are_short_and_readable() {
+        assert_eq!(fmt_sec_short(0.0), "0");
+        assert_eq!(fmt_sec_short(2.5), "2.5");
+        assert_eq!(fmt_sec_short(10.05), "10.05");
     }
 }

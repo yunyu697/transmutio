@@ -335,6 +335,59 @@ check(
   "TaskCenter 按 targetMet === false 显示「未达标」徽标，并汇总「成功 / 未达标 / 失败」",
 );
 
+// 第九轮：音量增益 / 视频分割 / 图片 GIF。
+const videoSplitLine = catalog.split("\n").find((line) => line.includes('"video-split"')) ?? "";
+const imageGifLine = catalog.split("\n").find((line) => line.includes('"image-gif"')) ?? "";
+check(
+  "视频分割与图片 GIF 卡已启用",
+  !videoSplitLine.includes(", false") &&
+    videoSplitLine.includes('"视频分割"') &&
+    videoSplitLine.includes('"video"') &&
+    videoSplitLine.includes('"split"') &&
+    !imageGifLine.includes(", false") &&
+    imageGifLine.includes('"图片转 GIF"') &&
+    imageGifLine.includes('"image"'),
+  `video-split=${videoSplitLine.trim() || "缺失"}；image-gif=${imageGifLine.trim() || "缺失"}`,
+);
+
+check(
+  "音量与 loudnorm 互斥且有明确文案",
+  argsSource.includes("validate_audio_volume") &&
+    argsSource.includes("音量增益与响度归一化不能同时开启") &&
+    argsSource.includes("-16 LUFS") &&
+    videoPanel.includes("音量＝相对增益") &&
+    videoPanel.includes("-16 LUFS") &&
+    audioPanel.includes("volume") &&
+    audioPanel.includes("-16 LUFS") &&
+    apiSource.includes("export interface VolumeParams"),
+  "args.rs 的 validate_audio_volume 与两个面板都写明「相对增益 vs -16 LUFS」的差异和互斥原因",
+);
+
+check(
+  "视频分割提供流复制与重编码两种模式",
+  argsSource.includes("pub fn build_split") &&
+    argsSource.includes("-avoid_negative_ts") &&
+    argsSource.includes("make_zero") &&
+    argsSource.includes("pub fn validate_split") &&
+    videoPanel.includes("流复制") &&
+    videoPanel.includes("重编码") &&
+    apiSource.includes("export interface SplitParams") &&
+    apiSource.includes('"video-split"'),
+  "build_split 含 -avoid_negative_ts make_zero，validate_split 校验区间/模式/容器；面板提供流复制/重编码两档",
+);
+
+check(
+  "图片 GIF 走 palettegen + paletteuse 两遍",
+  argsSource.includes("build_gif_pass1") &&
+    argsSource.includes("build_gif_pass2") &&
+    argsSource.includes("palettegen=stats_mode=diff") &&
+    argsSource.includes("paletteuse=dither=") &&
+    argsSource.includes("gif_concat_list") &&
+    imagePanel.includes('kind: "image-gif" as const') &&
+    apiSource.includes("export interface ImageGifParams"),
+  "args.rs 两遍构建器与 concat 清单独实现；ImagePanel 以单任务 kind=image-gif 入队",
+);
+
 check(
   "静态断言数量 ≥ 26",
   results.length + 1 >= 26,

@@ -38,6 +38,12 @@ pub struct VideoParams {
     /// 字幕：内嵌（soft）或烧录（hard），默认关闭
     #[serde(default)]
     pub subtitle: SubtitleParams,
+    /// 相对音量增益（与音频卡的 loudnorm 语义不同）
+    #[serde(default)]
+    pub volume: VolumeParams,
+    /// 按时间点切分（仅 video-split 任务读取）
+    #[serde(default)]
+    pub split: SplitParams,
 }
 
 /// 字幕参数。`baseHeight` 由后端探测后回填（`#[serde(skip)]`），
@@ -107,6 +113,64 @@ pub struct AudioParams {
     /// 变速时保持音高（默认 true：用 atempo；false 时音高随速度变化）
     #[serde(default = "default_true")]
     pub keep_pitch: bool,
+    /// 相对音量增益（与「响度归一化」互斥，见 validate_audio_volume）
+    #[serde(default)]
+    pub volume: VolumeParams,
+}
+
+/// 相对音量增益。只把整条音轨统一放大/衰减固定 dB，不改变动态范围；
+/// 与音频卡「响度归一化」（loudnorm，把整体拉回 -16 LUFS）语义不同。
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct VolumeParams {
+    pub enabled: bool,
+    /// 相对增益 dB，合法范围 -20..=20
+    pub gain_db: f64,
+    /// 静音：直接丢弃音轨，优先于增益
+    pub mute: bool,
+}
+
+/// 音量增益校验：静音时忽略增益；否则必须有限且在 -20..=20。
+pub fn validate_volume(v: &VolumeParams) -> Result<(), String> {
+    if v.mute {
+        return Ok(());
+    }
+    if !v.gain_db.is_finite() {
+        return Err("音量增益必须是有限数值（-20 至 20 dB）".into());
+    }
+    if !(-20.0..=20.0).contains(&v.gain_db) {
+        return Err(format!(
+            "音量增益 {} dB 超出支持范围：-20 至 20 dB",
+            fmt_num(v.gain_db)
+        ));
+    }
+    Ok(())
+}
+
+/// 按时间点切分参数。一个任务只切一段，前端按段生成多个 JobSpec。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SplitParams {
+    /// copy（流复制，只能切在关键帧） | encode（重编码，帧级准确）
+    pub mode: String,
+    /// mp4 | mkv | webm | mov | ts | avi
+    pub container: String,
+    /// 段序号（0 起），仅用于文件名 -partN
+    pub segment_index: u32,
+    pub start_sec: f64,
+    pub end_sec: f64,
+}
+
+impl Default for SplitParams {
+    fn default() -> Self {
+        Self {
+            mode: "copy".into(),
+            container: "mp4".into(),
+            segment_index: 0,
+            start_sec: 0.0,
+            end_sec: 0.0,
+        }
+    }
 }
 
 fn default_true() -> bool {
@@ -322,6 +386,30 @@ pub struct GifParams {
     /// 0 表示到片尾
     pub duration_sec: f64,
     pub optimize: bool,
+}
+
+/// 多张图片合成 GIF（palettegen + paletteuse 两遍）。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ImageGifParams {
+    /// 1..=30
+    pub fps: u32,
+    /// 0 = 无限循环
+    pub loop_count: u32,
+    /// 0 = 保持首图宽度；前端 >2000 时提示并自动填 1280（后端不改参数）
+    pub max_width: u32,
+    pub dither: bool,
+}
+
+impl Default for ImageGifParams {
+    fn default() -> Self {
+        Self {
+            fps: 10,
+            loop_count: 0,
+            max_width: 0,
+            dither: true,
+        }
+    }
 }
 
 pub fn image_ext(format: &str) -> &'static str {
@@ -1041,6 +1129,34 @@ pub fn speed_filters(speed: f64, keep_pitch: bool) -> Option<(String, String)> {
     Some((video, audio))
 }
 
+/// 音频滤镜链：音量增益最前（相对增益），随后变速（atempo），最后响度归一化（仅音频卡）。
+/// 返回 None 表示整条链为空，调用方不应插入 `-af`。
+fn audio_filters(
+    volume: &VolumeParams,
+    speed: f64,
+    keep_pitch: bool,
+    normalize: bool,
+) -> Option<String> {
+    let mut chain: Vec<String> = Vec::new();
+    if volume.mute {
+        // 音频任务不能像视频那样 -an（会没有输出音轨），改用 volume=0 输出等长静音。
+        chain.push("volume=0".into());
+    } else if volume.enabled {
+        chain.push(format!("volume={}dB", fmt_num(volume.gain_db)));
+    }
+    if let Some((_, audio_filter)) = speed_filters(speed, keep_pitch) {
+        chain.push(audio_filter);
+    }
+    if normalize {
+        chain.push("loudnorm=I=-16:TP=-1.5:LRA=11".into());
+    }
+    if chain.is_empty() {
+        None
+    } else {
+        Some(chain.join(","))
+    }
+}
+
 /// 0 / 负数 / NaN 视为「未启用」，返回 1.0。
 pub fn speed_or_default(speed: f64) -> f64 {
     if !speed.is_finite() || speed <= 0.0 {
@@ -1048,6 +1164,18 @@ pub fn speed_or_default(speed: f64) -> f64 {
     } else {
         speed
     }
+}
+
+/// 音频卡专用：音量增益与响度归一化不能同时开启。
+/// loudnorm 是「测量后把整体响度拉回 -16 LUFS」，相对增益会先被它抵消，二者语义冲突。
+pub fn validate_audio_volume(p: &AudioParams) -> Result<(), String> {
+    if p.normalize && p.volume.enabled {
+        return Err(
+            "音量增益与响度归一化不能同时开启：loudnorm 会把整体响度拉回 -16 LUFS，增益会被抵消；两者语义不同，请二选一"
+                .into(),
+        );
+    }
+    Ok(())
 }
 
 /// 入队校验：0 视为未启用（通过）；非 0 时必须在 0.25–4.0，否则拒绝并给出可读原因。
@@ -1584,7 +1712,8 @@ pub fn build_video(
     } else {
         args.push("0:v:0".into());
     }
-    if p.audio_mode != "none" {
+    // 静音时不映射源音轨（无论 audio_mode），输出端另行追加 -an。
+    if p.audio_mode != "none" && !p.volume.mute {
         args.push("-map".into());
         args.push("0:a:0?".into());
     }
@@ -1667,34 +1796,40 @@ pub fn build_video(
     let mut rate = rate_args(encoder, p);
     args.append(&mut rate);
 
-    match p.audio_mode.as_str() {
-        "copy" => {
-            args.push("-c:a".into());
-            args.push("copy".into());
-        }
-        "none" => {
-            args.push("-an".into());
-        }
-        _ => {
-            let kbps = if p.audio_bitrate_kbps > 0 {
-                p.audio_bitrate_kbps
-            } else {
-                192
-            };
-            let audio = if container_audio.trim().is_empty() {
-                "aac"
-            } else {
-                container_audio
-            };
-            // 变速只影响转码音轨；「原样复制」由 precheck 拒绝组合。
-            if let Some((_, audio_filter)) = speed_filters(p.speed, p.keep_pitch) {
-                args.push("-af".into());
-                args.push(audio_filter);
+    if p.volume.mute {
+        // 静音优先：丢弃音轨，不产生任何音频滤镜（也不再有 -map 0:a）。
+        args.push("-an".into());
+    } else {
+        match p.audio_mode.as_str() {
+            "copy" => {
+                args.push("-c:a".into());
+                args.push("copy".into());
             }
-            args.push("-c:a".into());
-            args.push(audio.into());
-            args.push("-b:a".into());
-            args.push(format!("{kbps}k"));
+            "none" => {
+                args.push("-an".into());
+            }
+            _ => {
+                let kbps = if p.audio_bitrate_kbps > 0 {
+                    p.audio_bitrate_kbps
+                } else {
+                    192
+                };
+                let audio = if container_audio.trim().is_empty() {
+                    "aac"
+                } else {
+                    container_audio
+                };
+                // 音量增益最前、变速其后；「原样复制」+ 音量由 precheck 拒绝。
+                // 全链只插入一次 -af。
+                if let Some(audio_filter) = audio_filters(&p.volume, p.speed, p.keep_pitch, false) {
+                    args.push("-af".into());
+                    args.push(audio_filter);
+                }
+                args.push("-c:a".into());
+                args.push(audio.into());
+                args.push("-b:a".into());
+                args.push(format!("{kbps}k"));
+            }
         }
     }
     if let Some(codec) = soft_codec {
@@ -1786,21 +1921,113 @@ pub fn build_audio(encoder: &str, input: &str, output: &str, p: &AudioParams) ->
         }
         _ => {}
     }
-    // 变速在前、响度归一化在后；非空时只插入一次 -af。
-    let mut audio_filters: Vec<String> = Vec::new();
-    if let Some((_, audio_filter)) = speed_filters(p.speed, p.keep_pitch) {
-        audio_filters.push(audio_filter);
-    }
-    if p.normalize {
-        // EBU R128 单遍响度归一化；libebur128 缺失时 ffmpeg 会明确报错，任务不会被静默标成功。
-        audio_filters.push("loudnorm=I=-16:TP=-1.5:LRA=11".into());
-    }
-    if !audio_filters.is_empty() {
+    // 音量增益最前、变速其后、响度归一化最后；非空时只插入一次 -af。
+    // 与 loudnorm 的组合由 validate_audio_volume 拒绝（增益会被拉回 -16 LUFS 抵消）。
+    if let Some(audio_filter) = audio_filters(&p.volume, p.speed, p.keep_pitch, p.normalize) {
         args.push("-af".into());
-        args.push(audio_filters.join(","));
+        args.push(audio_filter);
     }
     args.push(output.into());
     args
+}
+
+/// 按时间点切分。copy 走流复制（受关键帧约束），encode 重编码（帧级准确）。
+/// 一个任务只切一段；多段由前端拆成多个 JobSpec。
+pub fn build_split(input: &str, output: &str, p: &SplitParams, encoder: &str) -> Vec<String> {
+    let container = if p.container.trim().is_empty() {
+        "mp4"
+    } else {
+        &p.container
+    };
+    let spec = crate::containers::find_container(container);
+    let muxer = spec.map(|c| c.muxer).unwrap_or("mp4");
+    let mut args: Vec<String> = vec![
+        "-hide_banner".into(),
+        "-nostdin".into(),
+        "-y".into(),
+        "-loglevel".into(),
+        "warning".into(),
+        "-progress".into(),
+        "pipe:1".into(),
+        "-ss".into(),
+        fmt_num(p.start_sec),
+        "-to".into(),
+        fmt_num(p.end_sec),
+        "-i".into(),
+        input.into(),
+    ];
+    if p.mode == "encode" {
+        args.push("-map".into());
+        args.push("0:v:0".into());
+        args.push("-map".into());
+        args.push("0:a:0?".into());
+        args.push("-c:v".into());
+        args.push(encoder.into());
+        args.push("-preset".into());
+        args.push("veryfast".into());
+        args.push("-crf".into());
+        args.push("20".into());
+        args.push("-pix_fmt".into());
+        args.push("yuv420p".into());
+        args.push("-c:a".into());
+        args.push("aac".into());
+        args.push("-b:a".into());
+        args.push("192k".into());
+        if container == "mp4" {
+            args.push("-movflags".into());
+            args.push("+faststart".into());
+        }
+    } else {
+        args.push("-map".into());
+        args.push("0".into());
+        args.push("-c".into());
+        args.push("copy".into());
+        // 输入侧 -ss 会让输出从非零时间戳开始；make_zero 让每段都从 0 起，播放器兼容性更好。
+        args.push("-avoid_negative_ts".into());
+        args.push("make_zero".into());
+    }
+    args.push("-f".into());
+    args.push(muxer.into());
+    args.push(output.into());
+    args
+}
+
+/// 切分参数校验。`source_duration` 未知时传 f64::INFINITY（跳过时长上界）。
+pub fn validate_split(p: &SplitParams, source_duration: f64) -> Result<(), String> {
+    if !p.start_sec.is_finite() || p.start_sec < 0.0 {
+        return Err("切分开始时间必须 ≥ 0".into());
+    }
+    if !p.end_sec.is_finite() || p.end_sec <= p.start_sec {
+        return Err(format!(
+            "切分结束时间必须大于开始时间（{}s → {}s）",
+            fmt_num(p.start_sec),
+            fmt_num(p.end_sec)
+        ));
+    }
+    if source_duration.is_finite() && p.end_sec > source_duration + 0.05 {
+        return Err(format!(
+            "切分结束时间 {}s 超出源视频时长 {}s（允许 +0.05s 误差）",
+            fmt_num(p.end_sec),
+            fmt_num(source_duration)
+        ));
+    }
+    if !["copy", "encode"].contains(&p.mode.as_str()) {
+        return Err(format!(
+            "不支持的分割模式「{}」，可选 copy（流复制）/ encode（重编码）",
+            p.mode
+        ));
+    }
+    let container = if p.container.trim().is_empty() {
+        "mp4"
+    } else {
+        &p.container
+    };
+    if crate::containers::find_container(container).is_none() {
+        return Err(format!(
+            "不支持的分割输出容器「{container}」，可选 mp4 / mkv / webm / mov / ts / avi"
+        ));
+    }
+    Ok(())
 }
 
 pub fn build_image(input: &str, output: &str, p: &ImageParams) -> Result<Vec<String>, String> {
@@ -2297,6 +2524,121 @@ pub fn build_gif(input: &str, output: &str, p: &GifParams) -> Vec<String> {
     args
 }
 
+/// 多图 GIF 的 concat 清单：每张图 `file` + `duration 1/fps`，最后一张重复一次
+/// （concat demuxer 要求最后一条不带 duration 的 file 行，否则尾帧会被截断）。
+pub fn gif_concat_list(inputs: &[String], fps: u32) -> String {
+    let fps = if fps > 0 { fps } else { 10 };
+    let mut text = String::new();
+    for input in inputs {
+        // 与 concat_list 一致：反斜杠转正斜杠，单引号按 concat demuxer 规则转义。
+        let normalized = input.replace('\\', "/");
+        let escaped = normalized.replace('\'', "'\\''");
+        text.push_str(&format!("file '{escaped}'\n"));
+        text.push_str(&format!("duration {}\n", fmt_num(1.0 / f64::from(fps))));
+    }
+    if let Some(last) = inputs.last() {
+        let normalized = last.replace('\\', "/");
+        let escaped = normalized.replace('\'', "'\\''");
+        text.push_str(&format!("file '{escaped}'\n"));
+    }
+    text
+}
+
+/// 目标宽度：max_width>0 用它，否则用首图宽度。宽度为 0 时省略 scale 滤镜。
+pub fn gif_target_width(max_width: u32, first_width: u32) -> u32 {
+    if max_width > 0 {
+        max_width
+    } else {
+        first_width
+    }
+}
+
+/// GIF 第一遍：从 concat 清单生成全局调色板。
+pub fn build_gif_pass1(
+    concat_list: &str,
+    palette_path: &str,
+    p: &ImageGifParams,
+    width: u32,
+) -> Vec<String> {
+    let fps = if p.fps > 0 { p.fps.clamp(1, 30) } else { 10 };
+    let mut filters: Vec<String> = vec![format!("fps={fps}")];
+    if width > 0 {
+        filters.push(format!("scale={width}:-2:flags=lanczos"));
+    }
+    filters.push("palettegen=stats_mode=diff".into());
+    vec![
+        "-hide_banner".into(),
+        "-nostdin".into(),
+        "-y".into(),
+        "-loglevel".into(),
+        "warning".into(),
+        "-progress".into(),
+        "pipe:1".into(),
+        "-f".into(),
+        "concat".into(),
+        "-safe".into(),
+        "0".into(),
+        "-i".into(),
+        concat_list.into(),
+        "-vf".into(),
+        filters.join(","),
+        palette_path.into(),
+    ]
+}
+
+/// 给 GIF 第二遍命令加帧数上限。
+/// concat 清单末尾重复的 file 行会让 fps 滤镜多输出一帧（尾帧重复），
+/// 按输入图片数量封顶后，帧数严格等于图片张数。
+pub fn limit_gif_frames(argv: &mut Vec<String>, frames: u32) {
+    if frames == 0 || argv.is_empty() {
+        return;
+    }
+    let out_index = argv.len() - 1;
+    argv.splice(
+        out_index..out_index,
+        ["-frames:v".to_string(), frames.to_string()],
+    );
+}
+
+/// GIF 第二遍：用第一遍的全局调色板合成 GIF（禁止单遍 -vf gif）。
+pub fn build_gif_pass2(
+    concat_list: &str,
+    palette_path: &str,
+    out: &str,
+    p: &ImageGifParams,
+    width: u32,
+) -> Vec<String> {
+    let fps = if p.fps > 0 { p.fps.clamp(1, 30) } else { 10 };
+    let mut filters: Vec<String> = vec![format!("fps={fps}")];
+    if width > 0 {
+        filters.push(format!("scale={width}:-2:flags=lanczos"));
+    }
+    let dither = if p.dither { "sierra2_4a" } else { "none" };
+    filters.push(format!("paletteuse=dither={dither}"));
+    vec![
+        "-hide_banner".into(),
+        "-nostdin".into(),
+        "-y".into(),
+        "-loglevel".into(),
+        "warning".into(),
+        "-progress".into(),
+        "pipe:1".into(),
+        "-f".into(),
+        "concat".into(),
+        "-safe".into(),
+        "0".into(),
+        "-i".into(),
+        concat_list.into(),
+        "-i".into(),
+        palette_path.into(),
+        "-lavfi".into(),
+        filters.join(","),
+        "-loop".into(),
+        p.loop_count.to_string(),
+        out.into(),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2321,6 +2663,8 @@ mod tests {
             keep_pitch: true,
             watermark: WatermarkParams::default(),
             subtitle: SubtitleParams::default(),
+            volume: VolumeParams::default(),
+            split: SplitParams::default(),
         }
     }
 
@@ -2470,6 +2814,7 @@ mod tests {
             normalize: true,
             speed: 1.5,
             keep_pitch: true,
+            volume: VolumeParams::default(),
         };
         let args = build_audio("libmp3lame", "in.wav", "out.mp3", &p);
         assert_eq!(count_flag(&args, "-af"), 1);
@@ -2547,6 +2892,7 @@ mod tests {
             normalize: true,
             speed: 1.0,
             keep_pitch: true,
+            volume: VolumeParams::default(),
         };
         let args = build_audio("libmp3lame", "in.wav", "out.mp3", &p);
         let pos = args.iter().position(|a| a == "-af").expect("应插入 -af");
@@ -3562,5 +3908,311 @@ mod tests {
         assert!(validate_subtitle(&s, "mp4", 1.0)
             .unwrap_err()
             .contains("字幕文件不存在"));
+    }
+
+    // ===== 第九轮：音量增益 / 视频分割 / 图片 GIF =====
+
+    #[test]
+    fn volume_filter_is_first_and_single_af() {
+        let mut p = video_params();
+        p.audio_mode = "aac".into();
+        p.speed = 1.5;
+        p.volume = VolumeParams {
+            enabled: true,
+            gain_db: 6.0,
+            mute: false,
+        };
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
+        assert_eq!(count_flag(&args, "-af"), 1, "只允许一个 -af");
+        assert_eq!(
+            audio_filter_arg(&args).as_deref(),
+            Some("volume=6dB,atempo=1.5"),
+            "音量必须在变速之前"
+        );
+    }
+
+    #[test]
+    fn volume_mute_emits_an_without_af_or_audio_map() {
+        let mut p = video_params();
+        p.audio_mode = "aac".into();
+        p.volume = VolumeParams {
+            enabled: true,
+            gain_db: 6.0,
+            mute: true,
+        };
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
+        assert_eq!(count_flag(&args, "-an"), 1, "静音必须生成 -an");
+        assert_eq!(count_flag(&args, "-af"), 0, "静音不应产生音频滤镜");
+        assert!(
+            !args.contains(&"0:a:0?".to_string()),
+            "静音时不应再映射源音轨: {args:?}"
+        );
+    }
+
+    #[test]
+    fn volume_watermark_hard_subtitle_keep_single_complex_and_af() {
+        let mut p = video_params();
+        p.audio_mode = "aac".into();
+        p.speed = 1.0;
+        p.volume = VolumeParams {
+            enabled: true,
+            gain_db: 6.0,
+            mute: false,
+        };
+        p.watermark = WatermarkParams {
+            enabled: true,
+            path: "wm.png".into(),
+            base_width: 640,
+            base_height: 480,
+            wm_width: 96,
+            wm_height: 96,
+            ..Default::default()
+        };
+        p.subtitle = SubtitleParams {
+            enabled: true,
+            mode: "hard".into(),
+            path: "sub.srt".into(),
+            base_height: 480,
+            ..Default::default()
+        };
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
+        assert_eq!(count_flag(&args, "-filter_complex"), 1);
+        assert_eq!(count_flag(&args, "-af"), 1);
+        assert_eq!(
+            audio_filter_arg(&args).as_deref(),
+            Some("volume=6dB"),
+            "无变速时音量链只有 volume"
+        );
+        let graph = complex_arg(&args).unwrap();
+        assert!(graph.contains("subtitles="), "{graph}");
+        assert!(
+            graph.contains("[base][wm]overlay=") || graph.contains("overlay="),
+            "{graph}"
+        );
+    }
+
+    #[test]
+    fn audio_normalize_conflicts_with_volume_gain() {
+        let mut p = AudioParams {
+            format: "mp3".into(),
+            bitrate_kbps: 192,
+            sample_rate: "source".into(),
+            channels: "source".into(),
+            normalize: true,
+            speed: 1.0,
+            keep_pitch: true,
+            volume: VolumeParams {
+                enabled: true,
+                gain_db: 6.0,
+                mute: false,
+            },
+        };
+        let err = validate_audio_volume(&p).unwrap_err();
+        assert!(err.contains("音量增益与响度归一化不能同时开启"), "{err}");
+        assert!(err.contains("-16 LUFS"), "{err}");
+        p.volume.enabled = false;
+        assert!(validate_audio_volume(&p).is_ok());
+    }
+
+    #[test]
+    fn audio_volume_precedes_speed_and_is_single_af() {
+        let p = AudioParams {
+            format: "mp3".into(),
+            bitrate_kbps: 192,
+            sample_rate: "source".into(),
+            channels: "source".into(),
+            normalize: false,
+            speed: 1.5,
+            keep_pitch: true,
+            volume: VolumeParams {
+                enabled: true,
+                gain_db: 6.0,
+                mute: false,
+            },
+        };
+        let args = build_audio("libmp3lame", "in.wav", "out.mp3", &p);
+        assert_eq!(count_flag(&args, "-af"), 1);
+        assert_eq!(
+            audio_filter_arg(&args).as_deref(),
+            Some("volume=6dB,atempo=1.5")
+        );
+    }
+
+    #[test]
+    fn validate_volume_accepts_bounds_and_rejects_out_of_range() {
+        let mut p = VolumeParams {
+            enabled: true,
+            gain_db: -20.0,
+            mute: false,
+        };
+        assert!(validate_volume(&p).is_ok());
+        p.gain_db = 20.0;
+        assert!(validate_volume(&p).is_ok());
+        p.gain_db = -21.0;
+        assert!(validate_volume(&p).unwrap_err().contains("超出支持范围"));
+        p.gain_db = 20.1;
+        assert!(validate_volume(&p).unwrap_err().contains("超出支持范围"));
+        p.gain_db = f64::NAN;
+        assert!(validate_volume(&p).unwrap_err().contains("有限数值"));
+        // 静音时忽略增益
+        p.gain_db = 999.0;
+        p.mute = true;
+        assert!(validate_volume(&p).is_ok());
+    }
+
+    #[test]
+    fn split_copy_uses_timestamps_stream_copy_and_muxer() {
+        let p = SplitParams {
+            mode: "copy".into(),
+            container: "mkv".into(),
+            segment_index: 0,
+            start_sec: 0.0,
+            end_sec: 30.0,
+        };
+        let args = build_split("in.mp4", "out.mkv", &p, "libx264");
+        assert!(
+            args.windows(2).any(|w| w[0] == "-ss" && w[1] == "0"),
+            "{args:?}"
+        );
+        assert!(
+            args.windows(2).any(|w| w[0] == "-to" && w[1] == "30"),
+            "{args:?}"
+        );
+        assert!(
+            args.windows(2).any(|w| w[0] == "-c" && w[1] == "copy"),
+            "{args:?}"
+        );
+        assert!(
+            args.windows(2)
+                .any(|w| w[0] == "-avoid_negative_ts" && w[1] == "make_zero"),
+            "{args:?}"
+        );
+        assert!(
+            args.windows(2).any(|w| w[0] == "-f" && w[1] == "matroska"),
+            "mkv 的 muxer 应为 matroska: {args:?}"
+        );
+        assert!(!args.iter().any(|a| a == "-c:v"), "copy 模式不应重编码");
+    }
+
+    #[test]
+    fn split_encode_uses_encoder_and_faststart_for_mp4() {
+        let p = SplitParams {
+            mode: "encode".into(),
+            container: "mp4".into(),
+            segment_index: 1,
+            start_sec: 2.0,
+            end_sec: 4.0,
+        };
+        let args = build_split("in.mp4", "out.mp4", &p, "libopenh264");
+        assert!(args
+            .windows(2)
+            .any(|w| w[0] == "-c:v" && w[1] == "libopenh264"));
+        assert!(args.windows(2).any(|w| w[0] == "-crf" && w[1] == "20"));
+        assert!(args
+            .windows(2)
+            .any(|w| w[0] == "-pix_fmt" && w[1] == "yuv420p"));
+        assert!(args
+            .windows(2)
+            .any(|w| w[0] == "-movflags" && w[1] == "+faststart"));
+        assert!(args.windows(2).any(|w| w[0] == "-c:a" && w[1] == "aac"));
+    }
+
+    #[test]
+    fn validate_split_rejects_bad_ranges_modes_and_containers() {
+        let mut p = SplitParams::default();
+        p.start_sec = -1.0;
+        p.end_sec = 1.0;
+        assert!(validate_split(&p, 10.0).unwrap_err().contains("开始时间"));
+        p.start_sec = 5.0;
+        p.end_sec = 5.0;
+        assert!(validate_split(&p, 10.0)
+            .unwrap_err()
+            .contains("大于开始时间"));
+        p.end_sec = 10.1;
+        assert!(validate_split(&p, 10.0)
+            .unwrap_err()
+            .contains("超出源视频时长"));
+        p.mode = "whatever".into();
+        p.start_sec = 0.0;
+        p.end_sec = 3.0;
+        assert!(validate_split(&p, 10.0).unwrap_err().contains("分割模式"));
+        p.mode = "copy".into();
+        p.container = "flv".into();
+        assert!(validate_split(&p, 10.0)
+            .unwrap_err()
+            .contains("分割输出容器"));
+        // +0.05s 容差内通过
+        p.container = "mp4".into();
+        p.start_sec = 0.0;
+        p.end_sec = 10.05;
+        assert!(validate_split(&p, 10.0).is_ok());
+        assert!(validate_split(&p, f64::INFINITY).is_ok());
+    }
+
+    #[test]
+    fn gif_two_passes_use_palettegen_and_paletteuse() {
+        let p = ImageGifParams {
+            fps: 10,
+            loop_count: 0,
+            max_width: 0,
+            dither: true,
+        };
+        let pass1 = build_gif_pass1("list.txt", "palette.png", &p, 320);
+        assert!(
+            pass1
+                .iter()
+                .any(|a| a.contains("palettegen=stats_mode=diff")),
+            "{pass1:?}"
+        );
+        assert!(
+            pass1
+                .iter()
+                .any(|a| a.contains("fps=10,scale=320:-2:flags=lanczos")),
+            "{pass1:?}"
+        );
+        assert!(!pass1.iter().any(|a| a.contains("paletteuse")));
+
+        let pass2 = build_gif_pass2("list.txt", "palette.png", "out.gif", &p, 320);
+        assert!(
+            pass2
+                .iter()
+                .any(|a| a.contains("paletteuse=dither=sierra2_4a")),
+            "{pass2:?}"
+        );
+        assert!(pass2.windows(2).any(|w| w[0] == "-loop" && w[1] == "0"));
+        assert!(pass2
+            .windows(2)
+            .any(|w| w[0] == "-i" && w[1] == "palette.png"));
+        // concat 末行重复多出的一帧用 -frames:v 封顶，且必须插在输出文件之前。
+        let mut capped = pass2;
+        limit_gif_frames(&mut capped, 3);
+        assert!(
+            capped
+                .windows(2)
+                .any(|w| w[0] == "-frames:v" && w[1] == "3"),
+            "{capped:?}"
+        );
+        assert_eq!(capped.last().map(String::as_str), Some("out.gif"));
+
+        // 关闭 dither
+        let p2 = ImageGifParams { dither: false, ..p };
+        let pass2 = build_gif_pass2("list.txt", "palette.png", "out.gif", &p2, 320);
+        assert!(
+            pass2.iter().any(|a| a.contains("paletteuse=dither=none")),
+            "{pass2:?}"
+        );
+    }
+
+    #[test]
+    fn gif_target_width_and_concat_list() {
+        assert_eq!(gif_target_width(0, 480), 480);
+        assert_eq!(gif_target_width(1280, 480), 1280);
+
+        let list = gif_concat_list(&["C:\\dir\\a.png".into(), "C:\\dir\\b.png".into()], 10);
+        let expected = "file 'C:/dir/a.png'\nduration 0.1\nfile 'C:/dir/b.png'\nduration 0.1\nfile 'C:/dir/b.png'\n";
+        assert_eq!(list, expected);
+
+        let quoted = gif_concat_list(&["/tmp/it's.png".into()], 5);
+        assert!(quoted.contains("file '/tmp/it'\\''s.png'"), "{quoted}");
     }
 }
