@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  FFmpeg / FFprobe sidecar entitlements（macOS）。
+  最小权限：ffmpeg 是独立可执行文件，不需要 JIT、不需要访问通讯录/相册等。
+  注意：
+  - 必须使用 arm64 原生二进制（Apple Silicon 上不要用 Rosetta 转译的 x86_64 版本）。
+  - sidecar 必须先于 .app 签名；签名链不完整会导致 Gatekeeper 拒绝执行，硬编能力随之不可用。
+  - 如使用 universal binary（lipo 合并 arm64 + x86_64），签名时同样对整个 fat 文件签名。
+-->
+<plist version="1.0">
+<dict>
+  <!-- 允许加载系统自带的 VideoToolbox / AudioToolbox 等框架 -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+</dict>
+</plist>

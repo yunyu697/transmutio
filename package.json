@@ -1,0 +1,55 @@
+{
+  "name": "formatforge",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "app:dev": "tauri dev",
+    "app:build": "tauri build",
+    "build:lgpl": "node scripts/build-flavor.mjs lgpl",
+    "build:gpl": "node scripts/build-flavor.mjs gpl",
+    "verify:flavor:lgpl": "cargo run --manifest-path src-tauri/Cargo.toml --features dev-tools --bin flavor-check -- samples/flavor-check-lgpl.json",
+    "verify:flavor:gpl": "cargo run --manifest-path src-tauri/Cargo.toml --features dev-tools,gpl --bin flavor-check -- samples/flavor-check-gpl.json",
+    "check:bundle": "node scripts/check-bundle-compliance.mjs",
+    "verify:legacy-guard": "node scripts/legacy-guard-check.mjs all",
+    "icons": "tauri icon",
+    "samples": "node scripts/make-samples.mjs",
+    "verify": "node scripts/verify-mvp.mjs",
+    "verify:app": "node scripts/app-e2e.mjs",
+    "verify:core": "cargo run --manifest-path src-tauri/Cargo.toml --features dev-tools --bin headless-check -- samples/core-e2e-report.json",
+    "verify:setup": "cargo run --manifest-path src-tauri/Cargo.toml --features dev-tools --bin setup-check -- samples/setup-install-report.json",
+    "verify:ui": "node scripts/setup-ui-check.mjs",
+    "verify:formats": "node scripts/formats-check.mjs",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "check:ffmpeg-license": "node scripts/check-ffmpeg-license.mjs"
+  },
+  "dependencies": {
+    "@formatforge/design-tokens": "*",
+    "@formatforge/i18n": "*",
+    "@formatforge/settings": "*",
+    "@formatforge/task-queue": "*",
+    "@formatforge/telemetry": "*",
+    "@formatforge/updater": "*",
+    "@tauri-apps/api": "^2.9.0",
+    "@tauri-apps/plugin-dialog": "^2.4.0",
+    "@tauri-apps/plugin-opener": "^2.5.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.9.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "playwright-core": "^1.64.1",
+    "typescript": "~5.9.0",
+    "vite": "^7.1.0"
+  }
+}

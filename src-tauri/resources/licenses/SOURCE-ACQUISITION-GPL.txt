@@ -1,0 +1,74 @@
+FormatForge GPL 版 FFmpeg 源码与二进制获取说明
+==============================================
+
+结论（与实际行为一致，不要误读为源码要约）
+------------------------------------------
+FormatForge GPL（FormatForge GPL）安装包 **不随包分发任何 ffmpeg / ffprobe 二进制**。
+FFmpeg 由用户在本机自行下载、校验并落位（应用只在落位时读取版本、构建配置、
+哈希与编码器列表）。
+
+因此：
+
+  * 本应用 **不提供** GPLv2/GPLv3 §3 意义上的「源码书面要约」，因为没有发生
+    FFmpeg 二进制的再分发；本文件不含要约有效期与联系人，也不应被解读为要约；
+  * 若未来改为随包分发 GPL 构建的 FFmpeg 二进制，必须同时：
+      1) 随附完整对应源码（Preferred form for modification），或
+      2) 提供有效期不少于三年的书面要约，写清联系人/地址与获取方式，
+    并在本文件中替换掉上面这条「不随包分发」的声明。
+  * 无论哪种方式，**说明必须与实际行为一致**：不能一边声明「提供源码要约」，
+    一边把二进制塞进安装包却不提供源码。
+
+参考构建（仅用于发布验证，未随包分发）
+--------------------------------------
+  资产     ffmpeg-9.0.2-full_build（www.gyan.dev）
+  版本     9.0.2-full_build-www.gyan.dev（gcc 16.2.0, MSYS2）
+  许可     GPL v3（--enable-gpl --enable-version3）；同时适用 GPLv2-or-later 的上游条款
+  软件编码器 libx264、libx265（--enable-libx264 --enable-libx265）
+
+对应源码版本
+  上游发布版 FFmpeg 9.0.2。
+  获取地址：https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz
+            https://git.ffmpeg.org/ffmpeg.git （tag n9.0.2）
+  构建方说明与源码链接：https://www.gyan.dev/ffmpeg/builds/
+  （gyan.dev 在其构建页提供每个构建对应的源码与构建脚本链接；以其页面为准。）
+
+参考构建的 configure 参数（摘自该二进制的 `ffmpeg -version`，完整照录）
+-----------------------------------------------------------------------
+--enable-gpl --enable-version3 --enable-static --disable-w32threads --disable-autodetect
+--enable-cairo --enable-fontconfig --enable-iconv --enable-gnutls --enable-lcms2 --enable-libxml2
+--enable-gmp --enable-bzlib --enable-lzma --enable-libsnappy --enable-zlib --enable-librist
+--enable-libsrt --enable-libssh --enable-libzmq --enable-avisynth --enable-libbluray
+--enable-libcaca --enable-libdvdnav --enable-libdvdread --enable-sdl2 --enable-libaribb24
+--enable-libaribcaption --enable-libdav1d --enable-libdavs2 --enable-libopenjpeg --enable-libquirc
+--enable-libuavs3d --enable-libxevd --enable-libzvbi --enable-liboapv --enable-libqrencode
+--enable-librav1e --enable-libsvtav1 --enable-libvvenc --enable-libwebp --enable-libx264
+--enable-libx265 --enable-libxavs2 --enable-libxeve --enable-libxvid --enable-libaom --enable-libjxl
+--enable-libsvtjpegxs --enable-libvpx --enable-mediafoundation --enable-libass --enable-frei0r
+--enable-libfreetype --enable-libfribidi --enable-libharfbuzz --enable-liblensfun --enable-libvidstab
+--enable-libvmaf --enable-libzimg --enable-amf --enable-cuda-llvm --enable-cuvid --enable-dxva2
+--enable-d3d11va --enable-d3d12va --enable-ffnvcodec --enable-libvpl --enable-nvdec --enable-nvenc
+--enable-vaapi --enable-vulkan --enable-libplacebo --enable-opencl --enable-libcdio --enable-openal
+--enable-libgme --enable-libmodplug --enable-libopenmpt --enable-libopencore-amrwb
+--enable-libmp3lame --enable-libshine --enable-libtheora --enable-libtwolame
+--enable-libvo-amrwbenc --enable-libcodec2 --enable-libilbc --enable-libgsm --enable-liblc3
+--enable-libopencore-amrnb --enable-libopus --enable-libspeex --enable-libvorbis --enable-ladspa
+--enable-libbs2b --enable-libflite --enable-libmysofa --enable-librubberband --enable-libsoxr
+--enable-chromaprint --enable-whisper
+
+相关第三方许可
+--------------
+  libx264、libx265 为 GPL 组件；随 GPL 构建的 FFmpeg 一起分发时需同时满足其 GPL 条款。
+  构建配置中出现的其他库（如 libvmaf、libplacebo、OpenCL 等）各自许可见构建方说明。
+  本安装包不包含任何上述二进制。
+
+用户自行获取时的建议校验
+------------------------
+  * 只选择明确标注 GPL 的构建（Windows 推荐 gyan.dev 的 full/release；Linux 发行版通常为 GPL）；
+  * 确认 `ffmpeg -version` 的 configuration 含 `--enable-gpl`，且不含 `--enable-nonfree`
+    与 `--enable-libfdk-aac`（nonfree 组件任何变体都不接受）；
+  * 在引导页粘贴发布方提供的 SHA-256，应用会在落位前比对并在落位后复核。
+
+法律提示（需要法律确认）
+------------------------
+本文件中的 GPL 义务描述、源码提供方式与「书面要约」措辞 **尚未经过法律审查**，
+发布前需由法务确认，尤其是「不随包分发二进制」这一模式在目标法域下的合规表述。

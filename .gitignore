@@ -1,0 +1,50 @@
+# 依赖与构建产物
+node_modules/
+dist/
+src-tauri/target/
+dist-artifacts/
+
+# 安装包 / 可执行文件（不进仓库，发布走 Release 附件）
+*.msi
+*.exe
+*.dmg
+*.AppImage
+*.deb
+*.rpm
+*.app/
+
+# 第三方二进制与解压目录（FFmpeg / Poppler / 便携工具链）
+samples/_dl/
+samples/setup-check/appdata/
+samples/setup-check/out/
+tools/
+vendor/ffmpeg/
+vendor/poppler/
+
+# 生成的测试素材与报告（npm run samples / 各检查脚本可重建）
+samples/
+!samples/.gitkeep
+
+# 日志
+*.log
+*.log.*
+
+# 本地环境、密钥与证书（绝不入库）
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.cer
+*.crt
+*.sig
+secrets/
+.tauri-signing/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.tmp

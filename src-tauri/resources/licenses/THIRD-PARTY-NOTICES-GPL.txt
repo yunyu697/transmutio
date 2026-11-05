@@ -1,0 +1,49 @@
+FormatForge GPL 版第三方组件声明
+================================
+
+适用范围：FormatForge GPL（FormatForge GPL）安装包。
+本文件随安装包分发；同目录下另有许可证全文与 FFmpeg 获取说明。
+
+一、FFmpeg（不随安装包分发）
+---------------------------
+本安装包 **不包含** ffmpeg / ffprobe 二进制。FFmpeg 由用户自行下载、校验并落位到
+应用数据目录（见 SOURCE-ACQUISITION-GPL.txt）。因此我们不承担 FFmpeg 二进制再分发的
+源码提供义务，也不提供「书面要约」；FFmpeg 的使用与再分发条件以用户所选构建的
+许可证为准。
+
+本变体在发布验证中使用的参考构建（仅用于兼容性验证，未随包分发）：
+
+  资产：ffmpeg-9.0.2-full_build（www.gyan.dev）
+  版本：9.0.2-full_build-www.gyan.dev，gcc 16.2.0 (MSYS2)
+  许可：GPL v3（配置含 --enable-gpl --enable-version3）
+  软件编码器：libx264、libx265（配置含 --enable-libx264 --enable-libx265）
+  构建配置全文：见 SOURCE-ACQUISITION-GPL.txt
+
+对应许可证全文见同目录：
+  GPL-2.0.txt（GNU General Public License v2，FFmpeg 上游 GPL 选项之一）
+  GPL-3.0.txt（GNU General Public License v3，上述参考构建实际适用，因含 --enable-version3）
+
+重要：如果你把该 ffmpeg 二进制与 FormatForge GPL 一起再分发，你（再分发者）需要自行
+满足 GPL 的源码提供义务（例如随附对应源码或提供有效的书面要约）。本应用不做这件事，
+因为它不随包分发该二进制。
+
+二、应用自身与其依赖
+--------------------
+FormatForge 应用本体（本仓库源码与二进制）的许可尚未最终确定，见仓库根目录 LICENSING.md。
+
+运行时依赖（随应用二进制分发，均为宽松许可）：
+  - Tauri 2            MIT / Apache-2.0
+  - React 19           MIT
+  - serde / serde_json MIT / Apache-2.0
+  - sha2               MIT / Apache-2.0
+  - tokio              MIT
+  - tauri-plugin-dialog / tauri-plugin-opener   MIT / Apache-2.0
+
+仅开发/测试期使用（不随安装包分发）：
+  - Playwright Core    Apache-2.0
+  - TypeScript / Vite  Apache-2.0 / MIT
+
+三、说明
+--------
+本文件为合规披露，不构成法律意见。GPL 源码要约的措辞与有效期需法律确认；
+企业再分发前请自行完成法务审查。

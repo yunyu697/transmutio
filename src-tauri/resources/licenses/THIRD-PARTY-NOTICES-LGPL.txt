@@ -1,0 +1,44 @@
+FormatForge（LGPL 版）第三方组件声明
+======================================
+
+适用范围：FormatForge / FormatForge GPL 两个发行变体中的 LGPL 版安装包。
+本文件随安装包分发；同目录下另有许可证全文与 FFmpeg 获取说明。
+
+一、FFmpeg（不随安装包分发）
+---------------------------
+本安装包 **不包含** ffmpeg / ffprobe 二进制。FFmpeg 由用户自行下载、校验并落位到
+应用数据目录（见 SOURCE-ACQUISITION-LGPL.txt）。因此我们不承担 FFmpeg 二进制再分发的
+源码提供义务；FFmpeg 的使用条件以用户所选构建自带的许可证为准。
+
+本变体在发布验证中使用的参考构建（仅用于兼容性验证，未随包分发）：
+
+  资产：ffmpeg-master-latest-win64-lgpl（BtbN/FFmpeg-Builds）
+  版本：N-128352-gec887b13a8-20261103
+  许可：LGPL v3（配置含 --enable-version3，未含 --enable-gpl）
+  软件编码器：无 libx264 / libx265（配置为 --disable-libx264 --disable-libx265）
+  其他：--disable-libfdk-aac（不含 nonfree 组件）
+
+对应许可证全文见同目录：
+  LGPL-2.1.txt（GNU Lesser General Public License v2.1，FFmpeg 上游默认）
+  LGPL-3.0.txt（GNU Lesser General Public License v3，上述参考构建实际适用）
+
+二、应用自身与其依赖
+--------------------
+FormatForge 应用本体（本仓库源码与二进制）的许可尚未最终确定，见仓库根目录 LICENSING.md。
+
+运行时依赖（随应用二进制分发，均为宽松许可）：
+  - Tauri 2            MIT / Apache-2.0
+  - React 19           MIT
+  - serde / serde_json MIT / Apache-2.0
+  - sha2               MIT / Apache-2.0
+  - tokio              MIT
+  - tauri-plugin-dialog / tauri-plugin-opener   MIT / Apache-2.0
+
+仅开发/测试期使用（不随安装包分发）：
+  - Playwright Core    Apache-2.0
+  - TypeScript / Vite  Apache-2.0 / MIT
+
+三、说明
+--------
+本文件为合规披露，不构成法律意见。企业再分发前请自行完成法务审查；
+FFmpeg 的许可义务随所选构建变化，以实际构建的 `ffmpeg -version` 配置为准。

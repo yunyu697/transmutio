@@ -1,0 +1,65 @@
+[package]
+name = "formatforge"
+default-run = "formatforge"
+version = "0.1.0"
+description = "Transmutio · 跨平台多媒体转换"
+authors = ["Transmutio"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "formatforge_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+# GPL 变体的编译期开关：固定 allowGpl=true、只接受 GPL 构建的 ffmpeg。
+# 默认关闭 = LGPL 包；GPL 包必须显式 `--features gpl` 构建（见 scripts/build-flavor.mjs）。
+gpl = []
+# 只在后台验证时启用：用于构建 src/bin 下的检查二进制。
+dev-tools = []
+
+# 验证/检查用的辅助二进制：默认不构建，避免被 Tauri 一起打进安装包。
+[[bin]]
+name = "flavor-check"
+path = "src/bin/flavor-check.rs"
+required-features = ["dev-tools"]
+
+[[bin]]
+name = "flavor-report"
+path = "src/bin/flavor-report.rs"
+required-features = ["dev-tools"]
+
+[[bin]]
+name = "headless-check"
+path = "src/bin/headless-check.rs"
+required-features = ["dev-tools"]
+
+[[bin]]
+name = "setup-check"
+path = "src/bin/setup-check.rs"
+required-features = ["dev-tools"]
+
+[[bin]]
+name = "p2-check"
+path = "src/bin/p2-check.rs"
+required-features = ["dev-tools"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tokio = { version = "1", features = ["process", "sync", "time", "io-util", "macros", "rt-multi-thread"] }
+lopdf = "0.47.0"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

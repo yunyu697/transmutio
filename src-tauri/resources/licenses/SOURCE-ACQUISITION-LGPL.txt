@@ -1,0 +1,63 @@
+FormatForge（LGPL 版）FFmpeg 源码与二进制获取说明
+=================================================
+
+结论（与实际行为一致）
+----------------------
+FormatForge 的 LGPL 版安装包 **不随包分发任何 ffmpeg / ffprobe 二进制**。
+FFmpeg 由用户在本机自行下载、校验并落位（应用只在落位时读取版本、构建配置、
+哈希与编码器列表）。因此：
+
+  * 我们不提供 GPL/LGPL 意义上的「源码书面要约」，因为没有发生二进制再分发；
+  * 若未来改为随包分发 FFmpeg 二进制，必须同步更新本文件并补充有效的源码提供方式
+    （随附对应源码，或提供有效期不少于三年的书面要约与联系方式）。
+
+参考构建（仅用于发布验证，未随包分发）
+--------------------------------------
+  资产     ffmpeg-master-latest-win64-lgpl
+  来源     https://github.com/BtbN/FFmpeg-Builds/releases
+  版本     N-128352-gec887b13a8-20261103
+  许可     LGPL v3（--enable-version3，无 --enable-gpl）
+  编码器   无 libx264 / libx265（--disable-libx264 --disable-libx265），含 libopenh264 / libmp3lame / aac
+
+对应源码版本
+  FFmpeg git 提交 ec887b13a8（版本串中的 gec887b13a8），构建日期 2026-11-03。
+  获取地址：https://git.ffmpeg.org/ffmpeg.git
+            https://github.com/FFmpeg/FFmpeg
+  检出命令：git clone https://git.ffmpeg.org/ffmpeg.git && git checkout ec887b13a8
+  构建脚本：https://github.com/BtbN/FFmpeg-Builds（BtbN 的交叉编译脚本与依赖版本）
+
+参考构建的 configure 参数（摘自该二进制的 `ffmpeg -version`）
+------------------------------------------------------------
+--prefix=/ffbuild/prefix --pkg-config-flags=--static --pkg-config=pkg-config
+--cross-prefix=x86_64-w64-mingw32- --arch=x86_64 --target-os=mingw32 --enable-version3
+--disable-debug --disable-w32threads --enable-pthreads --enable-iconv --enable-zlib
+--enable-libxml2 --enable-libvmaf --enable-fontconfig --enable-libharfbuzz --enable-libfreetype
+--enable-libfribidi --enable-lcms2 --enable-vulkan --enable-libdav1d --enable-libvorbis
+--enable-librav1e --enable-librsvg --disable-libxcb --disable-xlib --disable-libpulse
+--enable-gmp --enable-lzma --enable-liblcevc-dec --enable-opencl --enable-amf --enable-libaom
+--disable-avisynth --enable-chromaprint --disable-libdavs2 --disable-libdvdread
+--disable-libdvdnav --disable-libfdk-aac --enable-ffnvcodec --enable-cuda-llvm --disable-frei0r
+--enable-libgme --enable-libkvazaar --enable-libaribb24 --enable-libaribcaption --enable-libass
+--enable-libbluray --enable-libcurl --enable-libjxl --enable-libmp3lame --enable-libopus
+--enable-libplacebo --enable-librist --enable-libssh --enable-libtheora --enable-libvpx
+--enable-libwebp --enable-libzmq --enable-lv2 --enable-libvpl --enable-openal --enable-liboapv
+--enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenh264 --enable-libopenjpeg
+--enable-libopenmpt --disable-librubberband --enable-schannel --enable-sdl2 --enable-libsnappy
+--enable-libsoxr --enable-libsrt --enable-libsvtav1 --enable-libtwolame --enable-libuavs3d
+--disable-libdrm --enable-vaapi --enable-vapoursynth --disable-libvidstab --enable-libvvenc
+--disable-whisper --disable-libx264 --disable-libx265 --disable-libxavs2 --disable-libxvid
+--enable-libzimg --enable-libzvbi --extra-cflags=-DLIBTWOLAME_STATIC --extra-cxxflags=
+--extra-libs=-lgomp --extra-ldflags=-pthread --extra-ldexeflags= --cc=x86_64-w64-mingw32-gcc
+--cxx=x86_64-w64-mingw32-g++ --ar=x86_64-w64-mingw32-gcc-ar --ranlib=x86_64-w64-mingw32-gcc-ranlib
+--nm=x86_64-w64-mingw32-gcc-nm --extra-version=20261103
+
+用户自行获取时的建议校验
+------------------------
+  * 只选择明确标注 LGPL 的构建；确认 `ffmpeg -version` 的 configuration 不含
+    `--enable-gpl`、`--enable-nonfree`、`--enable-libfdk-aac`；
+  * 在引导页粘贴发布方提供的 SHA-256，应用会在落位前比对并在落位后复核；
+  * 落位目录：<应用数据目录>/tools/ffmpeg-<版本>/（LGPL 版与 GPL 版目录不同）。
+
+法律提示
+--------
+本文件是事实性说明，不构成法律意见；再分发前请完成法务审查。

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  FormatForge 主程序 entitlements（macOS）。
+  说明：
+  - 应用未开启 App Sandbox；以下网络权限用于自动更新客户端。
+  - 若将来上架 Mac App Store，需要改为 sandbox 版本，并补充用户选择文件读写权限。
+  - 与 ffmpeg.entitlements.plist 分开：sidecar 只需最小权限，不要继承主程序全部权限。
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.network.client</key>
+  <true/>
+  <key>com.apple.security.files.user-selected.read-write</key>
+  <true/>
+</dict>
+</plist>

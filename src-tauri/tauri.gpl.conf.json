@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Transmutio GPL",
+  "identifier": "app.transmutio.desktop.gpl",
+  "mainBinaryName": "Transmutio GPL",
+  "app": {
+    "windows": [
+      {
+        "title": "Transmutio GPL",
+        "width": 1400,
+        "height": 880,
+        "minWidth": 1080,
+        "minHeight": 680,
+        "center": true,
+        "theme": "Dark",
+        "dragDropEnabled": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "resources": [
+      "resources/ffmpeg/*",
+      "resources/licenses/README.txt",
+      "resources/licenses/GPL-2.0.txt",
+      "resources/licenses/GPL-3.0.txt",
+      "resources/licenses/THIRD-PARTY-NOTICES-GPL.txt",
+      "resources/licenses/SOURCE-ACQUISITION-GPL.txt"
+    ],
+    "shortDescription": "跨平台多媒体转换（GPL 变体，含 x264/x265 软件编码）",
+    "longDescription": "Transmutio GPL：视频/音频/图片批量转换，允许 GPL 构建的 FFmpeg（libx264/libx265）。FFmpeg 由用户自行获取，不随包分发。",
+    "copyright": "Transmutio",
+    "windows": {
+      "nsis": {
+        "installerHooks": "installer-hooks.nsh"
+      },
+      "wix": {
+        "upgradeCode": "{B7E4D190-3C62-5A8F-9D2B-E6F1047C8A53}",
+        "fragmentPaths": ["wix/legacy-block.wxs"],
+        "componentGroupRefs": ["TransmutioLegacyGuard"]
+      }
+    }
+  }
+}
