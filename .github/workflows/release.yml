@@ -1,0 +1,63 @@
+name: Release（不含 FFmpeg 的安装包）
+
+# 触发：推送 v* 标签（如 v0.1.0）。
+# 约束：GitHub runner 上没有本项目本地使用的 FFmpeg / Poppler 便携二进制，
+# 因此产出的 MSI / NSIS 是「不含 FFmpeg 的版本」——首次启动由引导页让用户选择
+# 本机 FFmpeg 或使用公开下载源。release 说明必须写明这一点，不得声称与本地
+# 带 FFmpeg 的包一致。CI 也不打包任何未授权的第三方二进制。
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: npm ci
+      - name: 构建 LGPL 变体（MSI + NSIS）
+        run: npm run build:lgpl
+      - name: 构建 GPL 变体（MSI + NSIS）
+        run: npm run build:gpl
+      - name: 记录「不含 FFmpeg」声明
+        run: |
+          echo "### 说明" >> $env:GITHUB_STEP_SUMMARY
+          echo "此 Release 的安装包**不包含 FFmpeg / Poppler**（GitHub runner 无本项目本地便携二进制）。" >> $env:GITHUB_STEP_SUMMARY
+          echo "首次启动需在引导页选择本机 FFmpeg，或使用设置页的公开下载源。" >> $env:GITHUB_STEP_SUMMARY
+      - name: 上传安装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: transmutio-installers
+          path: |
+            dist-artifacts/lgpl/*.msi
+            dist-artifacts/lgpl/*.exe
+            dist-artifacts/gpl/*.msi
+            dist-artifacts/gpl/*.exe
+          if-no-files-found: error
+      - name: 创建 GitHub Release（草稿）
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: |
+            dist-artifacts/lgpl/*.msi
+            dist-artifacts/lgpl/*.exe
+            dist-artifacts/gpl/*.msi
+            dist-artifacts/gpl/*.exe
+          body: |
+            > **本 Release 不含 FFmpeg / Poppler 二进制**，与本地「带 FFmpeg」的验证包不同。
+            > 首次启动请在引导页选择本机 FFmpeg，或在设置页使用公开下载源。
+
+            - LGPL 变体：默认包，仅允许 LGPL 兼容编码器（libopenh264 / libvpx / SVT-AV1 / AOMedia / aac / libmp3lame / flac / vorbis / opus）
+            - GPL 变体：允许 x264 / x265 等 GPL 编码器（FFmpeg 构建来源与许可见 README）

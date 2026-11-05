@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 前端：类型检查、生产构建、不依赖真实 FFmpeg 的静态断言
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: 类型检查 + 生产构建
+        run: npm run build
+      - name: 格式清单静态断言（容器 ≥4 / 音频 ≥5 / 不兼容组合 / 探测提示）
+        run: npm run verify:formats
+
+  # 无损检查：cargo fmt / clippy / 单测
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: 安装 Tauri v2 Linux 系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - name: 格式检查（失败即修，不绕过）
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+      - name: Clippy（仅暴露警告，不阻断）
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --features dev-tools
+      - name: 单元测试（63 条：容器矩阵 / 命名 / 变体策略等）
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+  # 无头 UI：面板持久化 + localStorage 前缀迁移（需要浏览器，不需要 FFmpeg）
+  ui-headless:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: 面板持久化 / 前缀迁移（headless，无可见窗口）
+        run: node scripts/panel-persist-check.mjs
+
+  # 依赖真实 FFmpeg / Poppler 的用例（verify:core / p2-check / flavor 真实转码）
+  # 依赖本机或自托管 runner 上的 FFmpeg 与 Poppler，GitHub 默认 runner 不执行。
