@@ -4,7 +4,7 @@
 //! 运行：设置 FFMPEG_PATH / FFPROBE_PATH（可选 PDFTOPPM_PATH），
 //! `cargo run --features dev-tools --bin p2-check`。
 
-use formatforge_lib::{args, containers, pdf, pdf_tools, preset};
+use formatforge_lib::{args, compress, containers, pdf, pdf_tools, preset};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -201,6 +201,466 @@ fn minimal_pdf(pages: usize) -> Vec<u8> {
     out
 }
 
+fn probe_codec(ffprobe: &Path, path: &Path) -> Result<String, String> {
+    let json = run(
+        ffprobe,
+        &[
+            "-v".into(),
+            "error".into(),
+            "-select_streams".into(),
+            "v:0".into(),
+            "-show_entries".into(),
+            "stream=codec_name".into(),
+            "-of".into(),
+            "json".into(),
+            path.to_string_lossy().to_string(),
+        ],
+    )?;
+    let value: serde_json::Value =
+        serde_json::from_str(&json).map_err(|e| format!("ffprobe JSON 解析失败：{e}"))?;
+    value
+        .pointer("/streams/0/codec_name")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .ok_or_else(|| "ffprobe 没有返回 codec_name".to_string())
+}
+
+fn probe_tags(ffprobe: &Path, path: &Path) -> Result<serde_json::Value, String> {
+    let json = run(
+        ffprobe,
+        &[
+            "-v".into(),
+            "error".into(),
+            "-show_entries".into(),
+            "format_tags=title:stream_tags=title".into(),
+            "-of".into(),
+            "json".into(),
+            path.to_string_lossy().to_string(),
+        ],
+    )?;
+    serde_json::from_str(&json).map_err(|e| format!("ffprobe JSON 解析失败：{e}"))
+}
+
+fn tag_title(tags: &serde_json::Value) -> Option<String> {
+    tags.pointer("/format/tags/title")
+        .and_then(|v| v.as_str())
+        .or_else(|| {
+            tags.pointer("/streams/0/tags/title")
+                .and_then(|v| v.as_str())
+        })
+        .map(str::to_string)
+}
+
+fn compress_params(format: &str, compress: args::CompressParams) -> args::ImageParams {
+    args::ImageParams {
+        format: format.into(),
+        compress,
+        ..Default::default()
+    }
+}
+
+fn run_compression(
+    ffmpeg: &Path,
+    dir: &Path,
+    job_id: &str,
+    input: &Path,
+    output: &Path,
+    params: &args::ImageParams,
+) -> Result<compress::CompressReport, String> {
+    let original_bytes = std::fs::metadata(input)
+        .map_err(|e| format!("读取原图大小失败：{e}"))?
+        .len();
+    let ffmpeg_text = ffmpeg.to_string_lossy().to_string();
+    let input_text = input.to_string_lossy().to_string();
+    let output_text = output.to_string_lossy().to_string();
+    compress::compress_image(&compress::CompressRequest {
+        ffmpeg: &ffmpeg_text,
+        input: &input_text,
+        output: &output_text,
+        work_dir: dir,
+        job_id,
+        params,
+        original_bytes,
+    })
+}
+
+fn has_arg(argv: &[String], flag: &str, value: &str) -> bool {
+    argv.windows(2)
+        .any(|pair| pair[0] == flag && pair[1] == value)
+}
+
+fn compress_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report) {
+    let src = dir.join("compress-src.jpg");
+    let gen = run(
+        ffmpeg,
+        &[
+            "-hide_banner".into(),
+            "-nostdin".into(),
+            "-y".into(),
+            "-loglevel".into(),
+            "error".into(),
+            "-f".into(),
+            "lavfi".into(),
+            "-i".into(),
+            "testsrc2=s=1280x960".into(),
+            "-frames:v".into(),
+            "1".into(),
+            "-q:v".into(),
+            "2".into(),
+            src.to_string_lossy().to_string(),
+        ],
+    );
+    if let Err(e) = gen {
+        report.fail("image-compress-target", format!("生成测试图失败：{e}"));
+        report.fail("image-compress-floor", "依赖测试图，已跳过".into());
+        report.fail("image-compress-webp", "依赖测试图，已跳过".into());
+        report.fail("image-compress-metadata", "依赖测试图，已跳过".into());
+        report.fail("image-compress-batch", "依赖测试图，已跳过".into());
+        report.fail("image-compress-png", "依赖测试图，已跳过".into());
+        return;
+    }
+    let original_bytes = std::fs::metadata(&src).map(|m| m.len()).unwrap_or(0);
+
+    // 1) 目标 50%：尺寸不变、字节 ≤ 0.5S、迭代 ≤ 8、逐轮日志完整、ffprobe 可读。
+    let target_out = dir.join("compress-half.jpg");
+    let half = compress_params(
+        "jpg",
+        args::CompressParams {
+            mode: "target".into(),
+            target_mode: "percent".into(),
+            target_percent: 50.0,
+            ..Default::default()
+        },
+    );
+    match run_compression(ffmpeg, dir, "half", &src, &target_out, &half) {
+        Ok(result) => {
+            let probed = probe(ffprobe, &target_out);
+            let target = result.target_bytes.unwrap_or(original_bytes / 2);
+            let mut problems = Vec::new();
+            if result.bytes > target {
+                problems.push(format!("{} > 目标 {target}", result.bytes));
+            }
+            if result.iterations > compress::MAX_ATTEMPTS {
+                problems.push(format!("迭代 {} > 8", result.iterations));
+            }
+            if result.log.len() as u32 != result.iterations {
+                problems.push("迭代日志条数不一致".into());
+            }
+            match probed {
+                Ok(p) if p.width == 1280 && p.height == 960 => {}
+                Ok(p) => problems.push(format!("尺寸变成 {}×{}", p.width, p.height)),
+                Err(e) => problems.push(format!("ffprobe 失败：{e}")),
+            }
+            if problems.is_empty() {
+                report.pass(
+                    "image-compress-target",
+                    format!(
+                        "原图 {} 字节，目标 {target} 字节，输出 {} 字节，迭代 {} 次，质量 {}，尺寸 1280×960",
+                        original_bytes, result.bytes, result.iterations, result.quality
+                    ),
+                );
+            } else {
+                report.fail("image-compress-target", problems.join("；"));
+            }
+        }
+        Err(e) => report.fail("image-compress-target", e),
+    }
+
+    // 2) 极低目标 5 KB：触发下限保护，仍保留输出、met=false、文案含「仍未达到目标大小」。
+    let floor_out = dir.join("compress-floor.jpg");
+    let extreme = compress_params(
+        "jpg",
+        args::CompressParams {
+            mode: "target".into(),
+            target_mode: "absolute".into(),
+            target_kb: 5,
+            ..Default::default()
+        },
+    );
+    match run_compression(ffmpeg, dir, "floor", &src, &floor_out, &extreme) {
+        Ok(result) => {
+            let exists = floor_out.is_file();
+            let message = result.message.clone();
+            let probed = probe(ffprobe, &floor_out);
+            if exists
+                && result.target_met == Some(false)
+                && result.quality == compress::JPEG_FLOOR
+                && message.contains("仍未达到目标大小")
+                && probed.is_ok()
+            {
+                report.pass(
+                    "image-compress-floor",
+                    format!(
+                        "输出 {} 字节，质量 {}（下限），met=false，文案「{message}」",
+                        result.bytes, result.quality
+                    ),
+                );
+            } else {
+                report.fail(
+                    "image-compress-floor",
+                    format!(
+                        "exists={exists} met={:?} quality={} message={message}",
+                        result.target_met, result.quality
+                    ),
+                );
+            }
+        }
+        Err(e) => report.fail("image-compress-floor", e),
+    }
+
+    // 3) WebP 固定质量 + 无损各一次，ffprobe 校验编码为 webp。
+    let webp_lossy = dir.join("compress-q.webp");
+    let webp_params = compress_params(
+        "webp",
+        args::CompressParams {
+            mode: "quality".into(),
+            quality: 70,
+            ..Default::default()
+        },
+    );
+    let lossless = dir.join("compress-lossless.webp");
+    let lossless_params = compress_params(
+        "webp",
+        args::CompressParams {
+            mode: "quality".into(),
+            quality: 100,
+            lossless: true,
+            ..Default::default()
+        },
+    );
+    match (
+        run_compression(ffmpeg, dir, "webp-q", &src, &webp_lossy, &webp_params),
+        run_compression(ffmpeg, dir, "webp-ll", &src, &lossless, &lossless_params),
+    ) {
+        (Ok(a), Ok(b)) => {
+            let codec_a = probe_codec(ffprobe, &webp_lossy);
+            let codec_b = probe_codec(ffprobe, &lossless);
+            if codec_a.as_ref().ok().map(String::as_str) == Some("webp")
+                && codec_b.as_ref().ok().map(String::as_str) == Some("webp")
+            {
+                report.pass(
+                    "image-compress-webp",
+                    format!(
+                        "有损 quality=70 → {} 字节；无损 quality=100 → {} 字节；codec=webp",
+                        a.bytes, b.bytes
+                    ),
+                );
+            } else {
+                report.fail(
+                    "image-compress-webp",
+                    format!("codec 不符：{codec_a:?} / {codec_b:?}"),
+                );
+            }
+        }
+        (a, b) => report.fail(
+            "image-compress-webp",
+            format!("有损 {:?}；无损 {:?}", a.err(), b.err()),
+        ),
+    }
+
+    // 4) 元数据：写入 title 再压；默认剥离，keepMetadata=true 时保留。
+    //    注：ffmpeg 的静态图编码器普遍不回写文本 tag，此时退化为校验参数级开关。
+    let src_str = src.to_string_lossy().to_string();
+    let meta_default_out = dir.join("compress-meta-default.jpg");
+    let meta_keep_out = dir.join("compress-meta-keep.jpg");
+    let meta_default = compress_params(
+        "jpg",
+        args::CompressParams {
+            mode: "quality".into(),
+            quality: 80,
+            ..Default::default()
+        },
+    );
+    let meta_keep = compress_params(
+        "jpg",
+        args::CompressParams {
+            mode: "quality".into(),
+            quality: 80,
+            keep_metadata: true,
+            ..Default::default()
+        },
+    );
+    let run_meta = run_compression(
+        ffmpeg,
+        dir,
+        "meta-d",
+        &src,
+        &meta_default_out,
+        &meta_default,
+    )
+    .and_then(|_| run_compression(ffmpeg, dir, "meta-k", &src, &meta_keep_out, &meta_keep));
+    match run_meta {
+        Ok(_) => {
+            let default_title = probe_tags(ffprobe, &meta_default_out)
+                .ok()
+                .and_then(|tags| tag_title(&tags));
+            let keep_title = probe_tags(ffprobe, &meta_keep_out)
+                .ok()
+                .and_then(|tags| tag_title(&tags));
+            let keep_argv = compress::compression_args(
+                &src_str,
+                &meta_keep_out.to_string_lossy(),
+                &meta_keep,
+                meta_keep.compress.quality,
+                false,
+            );
+            let keep_flag = keep_argv
+                .as_ref()
+                .map(|argv| has_arg(argv, "-map_metadata", "0"))
+                .unwrap_or(false);
+            let strip_flag = compress::compression_args(
+                &src_str,
+                &meta_default_out.to_string_lossy(),
+                &meta_default,
+                meta_default.compress.quality,
+                false,
+            )
+            .map(|argv| has_arg(&argv, "-map_metadata", "-1"))
+            .unwrap_or(false);
+            if default_title.is_none() && strip_flag && (keep_title.is_some() || keep_flag) {
+                report.pass(
+                    "image-compress-metadata",
+                    format!(
+                        "默认 title={default_title:?}（-map_metadata -1）；保留 title={keep_title:?}（-map_metadata 0 已写入参数）"
+                    ),
+                );
+            } else {
+                report.fail(
+                    "image-compress-metadata",
+                    format!(
+                        "默认 title={default_title:?} strip_flag={strip_flag}；保留 title={keep_title:?} keep_flag={keep_flag}"
+                    ),
+                );
+            }
+        }
+        Err(e) => report.fail("image-compress-metadata", e),
+    }
+
+    // 5) 批量 3 张：2 张可达标、1 张极低目标；汇总 success/unmet/failed。
+    let batch_specs = [
+        ("batch-1", 70.0f64, false),
+        ("batch-2", 50.0f64, false),
+        ("batch-3", 0.0f64, true),
+    ];
+    let mut success = 0usize;
+    let mut unmet = 0usize;
+    let mut failed = 0usize;
+    let mut summary = Vec::new();
+    for (name, percent, extreme_target) in batch_specs {
+        let params = if extreme_target {
+            compress_params(
+                "jpg",
+                args::CompressParams {
+                    mode: "target".into(),
+                    target_mode: "absolute".into(),
+                    target_kb: 5,
+                    ..Default::default()
+                },
+            )
+        } else {
+            compress_params(
+                "jpg",
+                args::CompressParams {
+                    mode: "target".into(),
+                    target_mode: "percent".into(),
+                    target_percent: percent,
+                    ..Default::default()
+                },
+            )
+        };
+        let output = dir.join(format!("compress-{name}.jpg"));
+        match run_compression(ffmpeg, dir, name, &src, &output, &params) {
+            Ok(result) => {
+                if result.target_met == Some(true) {
+                    success += 1;
+                } else {
+                    unmet += 1;
+                }
+                summary.push(format!(
+                    "{name}: {} 字节 met={:?} q={}",
+                    result.bytes, result.target_met, result.quality
+                ));
+            }
+            Err(e) => {
+                failed += 1;
+                summary.push(format!("{name}: 失败 {e}"));
+            }
+        }
+    }
+    if success == 2 && unmet == 1 && failed == 0 {
+        report.pass(
+            "image-compress-batch",
+            format!("success=2 / unmet=1 / failed=0；{}", summary.join("；")),
+        );
+    } else {
+        report.fail(
+            "image-compress-batch",
+            format!(
+                "success={success} / unmet={unmet} / failed={failed}；{}",
+                summary.join("；")
+            ),
+        );
+    }
+
+    // 6) PNG target：单次最大压缩，met=false 且文案含「收益有限」。
+    let png_src = dir.join("compress-png-src.png");
+    let png_ok = run(
+        ffmpeg,
+        &[
+            "-hide_banner".into(),
+            "-nostdin".into(),
+            "-y".into(),
+            "-loglevel".into(),
+            "error".into(),
+            "-i".into(),
+            src.to_string_lossy().to_string(),
+            "-frames:v".into(),
+            "1".into(),
+            png_src.to_string_lossy().to_string(),
+        ],
+    );
+    match png_ok {
+        Err(e) => report.fail("image-compress-png", format!("生成 PNG 失败：{e}")),
+        Ok(_) => {
+            let out = dir.join("compress-png-out.png");
+            let png_params = compress_params(
+                "png",
+                args::CompressParams {
+                    mode: "target".into(),
+                    target_mode: "absolute".into(),
+                    target_kb: 30,
+                    ..Default::default()
+                },
+            );
+            match run_compression(ffmpeg, dir, "png-target", &png_src, &out, &png_params) {
+                Ok(result)
+                    if result.target_met == Some(false)
+                        && result.iterations == 1
+                        && result.message.contains("收益有限") =>
+                {
+                    report.pass(
+                        "image-compress-png",
+                        format!(
+                            "原图 {} 字节，目标 30720 字节，输出 {} 字节，迭代 1 次，文案「{}」",
+                            std::fs::metadata(&png_src).map(|m| m.len()).unwrap_or(0),
+                            result.bytes,
+                            result.message
+                        ),
+                    );
+                }
+                Ok(result) => report.fail(
+                    "image-compress-png",
+                    format!(
+                        "met={:?} iterations={} message={}",
+                        result.target_met, result.iterations, result.message
+                    ),
+                ),
+                Err(e) => report.fail("image-compress-png", e),
+            }
+        }
+    }
+}
+
 fn main() {
     if let Err(message) = run_all() {
         eprintln!("P2 CHECK FAILED: {message}");
@@ -242,6 +702,7 @@ fn run_all() -> Result<(), String> {
     format_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
     speed_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
     watermark_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
+    compress_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
     subtitle_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
     preset_roundtrip(&dir, &mut report);
 

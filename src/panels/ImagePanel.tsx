@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { formatBytes, formatDuration } from "@formatforge/design-tokens";
-import { api, type ImageParams, type Job, type WatermarkParams } from "../lib/api";
+import { api, type CompressParams, type ImageParams, type Job, type WatermarkParams } from "../lib/api";
 import { DropZone, Field, FileTable, Group, OutputNaming, Segmented, SwitchRow, useMediaFiles, type NamingPrefs } from "./shared";
 import { loadPanelPrefs, savePanelPrefs } from "../lib/panelPrefs";
 import { WATERMARK_DEFAULTS, normalizeWatermark, pickWatermarkImage } from "../lib/watermark";
@@ -19,7 +19,24 @@ const DEFAULT_PARAMS: ImageParams = {
   cropW: 0,
   cropH: 0,
   watermark: { ...WATERMARK_DEFAULTS },
+  compress: {
+    mode: "target",
+    targetMode: "absolute",
+    targetKb: 500,
+    targetPercent: 60,
+    quality: 80,
+    keepMetadata: false,
+    pngPalette: true,
+  },
 };
+
+/** 数字输入兜底：非数字回退到旧值，其余按范围取整（百分比允许小数时单独处理）。 */
+function clampNumber(raw: string, min: number, max: number, fallback: number, integer = true): number {
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return fallback;
+  const clamped = Math.min(max, Math.max(min, value));
+  return integer ? Math.round(clamped) : clamped;
+}
 
 /** 水印位置九宫格：每行一组，配合「自定义坐标」一起构成 3×3 + 自定义。 */
 const WATERMARK_ROWS: { value: string; label: string }[][] = [
@@ -74,7 +91,11 @@ export function ImagePanel({
   // 参数持久化：EXIF 自动校正、手动旋转、质量、尺寸等重启后恢复。
   const [params, setParams] = useState<ImageParams>(() => {
     const loaded = loadPanelPrefs(`image:${methodId}`, defaults);
-    return { ...loaded, watermark: normalizeWatermark(loaded.watermark) };
+    return {
+      ...loaded,
+      watermark: normalizeWatermark(loaded.watermark),
+      compress: { ...DEFAULT_PARAMS.compress, ...loaded.compress },
+    };
   });
   const [naming, setNaming] = useState<NamingPrefs>(() => loadPanelPrefs(`naming:${methodId}`, { template: "", conflict: "suffix" }));
   const [starting, setStarting] = useState(false);
@@ -86,8 +107,13 @@ export function ImagePanel({
     setParams((prev) => ({ ...prev, [key]: value }));
   const setWatermark = <K extends keyof WatermarkParams>(key: K, value: WatermarkParams[K]) =>
     setParams((prev) => ({ ...prev, watermark: { ...prev.watermark, [key]: value } }));
+  const setCompress = <K extends keyof CompressParams>(key: K, value: CompressParams[K]) =>
+    setParams((prev) => ({ ...prev, compress: { ...prev.compress, [key]: value } }));
 
   const isWatermark = methodId === "image-watermark";
+  const isCompress = methodId === "image-compress";
+  // BMP/TIFF 后端直接拒绝；PNG 允许但目标大小模式收益有限（仅提示不阻止）。
+  const compressUnsupported = isCompress && (params.format === "bmp" || params.format === "tiff");
 
   const totals = useMemo(
     () => ({
@@ -113,17 +139,25 @@ export function ImagePanel({
       toast("水印已开启，请先选择水印图片（png / jpg / jpeg / webp）", "error");
       return;
     }
+    if (compressUnsupported) {
+      toast("BMP / TIFF 不支持压缩，请改选 JPG / PNG / WebP", "error");
+      return;
+    }
     setStarting(true);
     try {
-      // 水印关闭时不携带 watermark 字段，保持与原逻辑完全一致。
-      const { watermark, ...paramsWithoutWatermark } = params;
+      // 水印关闭时不携带 watermark；非压缩方法不携带 compress，保持原逻辑完全一致。
+      const { watermark, compress, ...paramsWithoutOptional } = params;
       const specs = files
         .filter((file) => !file.error)
         .map((file) => ({
-          kind: "image" as const,
+          kind: isCompress ? ("image-compress" as const) : ("image" as const),
           input: file.path,
           outputDir,
-          params: watermark.enabled ? { ...params, watermark } : { ...paramsWithoutWatermark },
+          params: {
+            ...paramsWithoutOptional,
+            ...(watermark.enabled ? { watermark } : {}),
+            ...(isCompress ? { compress } : {}),
+          },
           nameTemplate: naming.template.trim() || undefined,
           conflict: naming.conflict,
         }));
@@ -150,7 +184,7 @@ export function ImagePanel({
             ← 方法列表
           </button>
           <div>
-            <h1>{methodId === "image-watermark" ? "图片加水印" : methodId === "image-resize" ? "图片批量缩放" : methodId === "image-crop" ? "图片批量裁剪" : "图片批量转换"}</h1>
+            <h1>{methodId === "image-watermark" ? "图片加水印" : methodId === "image-resize" ? "图片批量缩放" : methodId === "image-crop" ? "图片批量裁剪" : methodId === "image-compress" ? "图片压缩" : "图片批量转换"}</h1>
             <p>等比缩放不拉伸 · 永不覆盖原图 · 输出目录与源目录相同时自动加序号</p>
           </div>
           <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
@@ -203,6 +237,132 @@ export function ImagePanel({
               <div className="note">{params.format.toUpperCase()} 为无损 / 无损压缩格式，质量滑块不生效。</div>
             )}
           </Group>
+
+          {isCompress ? (
+            <Group title="压缩" icon="compress">
+              <Field label="模式" tag={params.compress.mode === "target" ? "二分逼近目标" : "固定质量重编码"}>
+                <Segmented
+                  value={params.compress.mode}
+                  onChange={(value) => setCompress("mode", value)}
+                  options={[
+                    { value: "target", label: "目标大小" },
+                    { value: "quality", label: "固定质量" },
+                  ]}
+                />
+              </Field>
+              {params.compress.mode === "target" ? (
+                <>
+                  <Field label="目标口径">
+                    <Segmented
+                      value={params.compress.targetMode}
+                      onChange={(value) => setCompress("targetMode", value)}
+                      options={[
+                        { value: "absolute", label: "KB" },
+                        { value: "percent", label: "原图百分比" },
+                      ]}
+                    />
+                  </Field>
+                  {params.compress.targetMode === "absolute" ? (
+                    <Field label="目标大小（KB）" tag="1–5000">
+                      <input
+                        className="input"
+                        type="number"
+                        min={1}
+                        max={5000}
+                        step={1}
+                        value={params.compress.targetKb}
+                        onChange={(event) =>
+                          setCompress("targetKb", clampNumber(event.target.value, 1, 5000, params.compress.targetKb))
+                        }
+                      />
+                    </Field>
+                  ) : (
+                    <Field label={`目标为原图的 ${params.compress.targetPercent}%`} tag="1–99">
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <input
+                          className="slider"
+                          type="range"
+                          min={1}
+                          max={99}
+                          step={1}
+                          style={{ flex: 1 }}
+                          value={params.compress.targetPercent}
+                          onChange={(event) =>
+                            setCompress(
+                              "targetPercent",
+                              clampNumber(event.target.value, 1, 99, params.compress.targetPercent),
+                            )
+                          }
+                        />
+                        <input
+                          className="input"
+                          type="number"
+                          min={1}
+                          max={99}
+                          step={1}
+                          style={{ width: 64 }}
+                          value={params.compress.targetPercent}
+                          onChange={(event) =>
+                            setCompress(
+                              "targetPercent",
+                              clampNumber(event.target.value, 1, 99, params.compress.targetPercent),
+                            )
+                          }
+                        />
+                      </div>
+                    </Field>
+                  )}
+                  <div className="note">
+                    target 模式用二分逼近目标大小（最多 8 次）；JPEG 质量下限 40、WebP 35，压到下限仍超目标时任务仍为完成但会标记「未达标」。
+                  </div>
+                </>
+              ) : (
+                <Field label={`质量 ${params.compress.quality}`} tag="1–100">
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input
+                      className="slider"
+                      type="range"
+                      min={1}
+                      max={100}
+                      step={1}
+                      style={{ flex: 1 }}
+                      value={params.compress.quality}
+                      onChange={(event) =>
+                        setCompress("quality", clampNumber(event.target.value, 1, 100, params.compress.quality))
+                      }
+                    />
+                    <input
+                      className="input"
+                      type="number"
+                      min={1}
+                      max={100}
+                      step={1}
+                      style={{ width: 64 }}
+                      value={params.compress.quality}
+                      onChange={(event) =>
+                        setCompress("quality", clampNumber(event.target.value, 1, 100, params.compress.quality))
+                      }
+                    />
+                  </div>
+                </Field>
+              )}
+              <SwitchRow
+                label="保留元数据（EXIF/ICC）"
+                hint="默认关闭：剥离 EXIF/ICC，进一步减小体积"
+                on={params.compress.keepMetadata}
+                onChange={(value) => setCompress("keepMetadata", value)}
+              />
+              {params.format === "png" ? (
+                <div className="note warn">
+                  PNG 重编码几乎不减小体积，目标大小模式只做最大压缩/调色板量化，可能仍达不到目标
+                </div>
+              ) : null}
+              {compressUnsupported ? (
+                <div className="note warn">BMP / TIFF 不支持压缩，请改选 JPG / PNG / WebP 后再开始</div>
+              ) : null}
+              <div className="note">压缩不改变尺寸；若同时裁剪 / 缩放 / 水印，先做那些再编码。</div>
+            </Group>
+          ) : null}
 
           <Group title="裁剪" icon="crop">
             <Field label="模式" tag="裁剪在旋转与缩放之前">
@@ -511,9 +671,14 @@ export function ImagePanel({
             "添加图片后显示统计"
           )}
         </div>
-        <button className="btn primary" onClick={start} disabled={starting || !files.length}>
+        <button
+          className="btn primary"
+          onClick={start}
+          disabled={starting || !files.length || compressUnsupported}
+          title={compressUnsupported ? "BMP / TIFF 不支持压缩" : undefined}
+        >
           <Icon name="play" size={14} />
-          {starting ? "正在入队…" : "开始转换"}
+          {starting ? "正在入队…" : isCompress ? "开始压缩" : "开始转换"}
         </button>
       </div>
     </div>

@@ -257,10 +257,88 @@ check(
     : "subtitle.ts 定义 SUBTITLE_DEFAULTS 与 SUBTITLE_EXTENSIONS（srt/ass/ssa/vtt），并提供归一化与文件选择",
 );
 
+// 图片压缩：卡片启用、面板控件、前端参数类型、PNG/BMP 提示与队列未达标展示。
+const imageCompressLine = catalog.split("\n").find((line) => line.includes('"image-compress"')) ?? "";
 check(
-  "静态断言数量 ≥ 21",
-  results.length + 1 >= 21,
-  `当前 ${results.length + 1} 条断言（保留原有 17 条并新增字幕断言）`,
+  "图片压缩卡已启用",
+  imageCompressLine.includes('"图片压缩"') &&
+    imageCompressLine.includes('"compress"') &&
+    imageCompressLine.includes('"image"') &&
+    !imageCompressLine.includes(", false"),
+  `image-compress=${imageCompressLine.trim() || "缺失"}`,
+);
+
+const compressUiTokens = [
+  'title="压缩"',
+  '"目标大小"',
+  '"固定质量"',
+  '"absolute"',
+  '"percent"',
+  "targetKb",
+  "targetPercent",
+  "keepMetadata",
+  "保留元数据（EXIF/ICC）",
+  "压缩不改变尺寸",
+];
+const missingCompressUi = compressUiTokens.filter((token) => !imagePanel.includes(token));
+check(
+  "图片压缩面板含目标 / 质量 / 元数据开关",
+  missingCompressUi.length === 0,
+  missingCompressUi.length
+    ? `缺少 ${missingCompressUi.join(", ")}`
+    : "目标大小/固定质量、absolute/percent、targetKb/targetPercent、keepMetadata 与尺寸说明均在 ImagePanel 中",
+);
+
+const compressParamsBlock = apiSource.slice(
+  apiSource.indexOf("export interface CompressParams"),
+  apiSource.indexOf("export interface ImageParams"),
+);
+const compressFields = ["mode", "targetMode", "targetKb", "targetPercent", "quality", "keepMetadata", "pngPalette"];
+const missingCompressFields = compressFields.filter((field) => !compressParamsBlock.includes(field));
+const compressJobFields = ["targetMet", "targetBytes", "attemptsUsed", "qualityUsed"];
+const missingCompressJobFields = compressJobFields.filter((field) => !apiSource.includes(`${field}?:`));
+check(
+  "前端定义 CompressParams 与压缩任务字段",
+  apiSource.includes("export interface CompressParams") &&
+    missingCompressFields.length === 0 &&
+    imageParamsBlock.includes("compress: CompressParams") &&
+    apiSource.includes('"image-compress"') &&
+    missingCompressJobFields.length === 0,
+  missingCompressFields.length || missingCompressJobFields.length
+    ? `缺少 ${[...missingCompressFields, ...missingCompressJobFields].join(", ")}`
+    : "api.ts 定义 CompressParams（7 个 camelCase 字段）、ImageParams.compress、JobKind 含 image-compress，Job 含 targetMet/targetBytes/attemptsUsed/qualityUsed",
+);
+
+const compressBlockTokens = [
+  "PNG 重编码几乎不减小体积",
+  "BMP / TIFF 不支持压缩",
+  "compressUnsupported",
+  "disabled={starting || !files.length || compressUnsupported}",
+  'kind: isCompress ? ("image-compress" as const)',
+];
+const missingCompressBlock = compressBlockTokens.filter((token) => !imagePanel.includes(token));
+check(
+  "PNG 提示与 BMP/TIFF 阻止逻辑",
+  missingCompressBlock.length === 0,
+  missingCompressBlock.length
+    ? `缺少 ${missingCompressBlock.join(", ")}`
+    : "PNG 重编码提示、BMP/TIFF 不支持提示、开始按钮禁用与 image-compress 入队 kind 均在 ImagePanel 中",
+);
+
+const taskCenterSource = readFileSync(join(root, "src/components/TaskCenter.tsx"), "utf8");
+check(
+  "队列显示未达标徽标与压缩汇总",
+  taskCenterSource.includes("image-compress") &&
+    taskCenterSource.includes("targetMet === false") &&
+    taskCenterSource.includes("未达标") &&
+    taskCenterSource.includes("成功 {compressSummary.ok} / 未达标 {compressSummary.unmet} / 失败 {compressSummary.failed}"),
+  "TaskCenter 按 targetMet === false 显示「未达标」徽标，并汇总「成功 / 未达标 / 失败」",
+);
+
+check(
+  "静态断言数量 ≥ 26",
+  results.length + 1 >= 26,
+  `当前 ${results.length + 1} 条断言（保留原有 22 条并新增图片压缩断言）`,
 );
 
 let failed = 0;

@@ -74,6 +74,7 @@ export const sections: SectionDef[] = [
     hint: "格式转换、缩放、批处理",
     methods: [
       m("image", "image-convert", "图片批量转换", "JPG / PNG / WebP / BMP / TIFF", "image", true, "image"),
+      m("image", "image-compress", "图片压缩", "目标大小或固定质量，批量独立处理", "compress", true, "image"),
       m("image", "image-resize", "图片批量缩放", "按最长边等比缩放，禁止覆盖原文件", "resize", true, "image"),
       m("image", "image-crop", "图片裁剪", "比例或自定义矩形，可与缩放叠加", "crop", true, "image"),
       m("image", "image-watermark", "图片加水印", "批量位置 / 透明度", "watermark", true, "image"),

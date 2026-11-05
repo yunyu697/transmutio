@@ -40,6 +40,14 @@ export function TaskCenter({
   onClose: () => void;
 }) {
   const ordered = tasks.slice().sort((a, b) => b.createdAt - a.createdAt);
+  // 图片压缩批次汇总：仅统计 image-compress 任务；成功 = done 且未标记未达标。
+  const compressSummary = tasks.some((task) => task.kind === "image-compress")
+    ? {
+        ok: tasks.filter((task) => task.kind === "image-compress" && task.status === "done" && task.targetMet !== false).length,
+        unmet: tasks.filter((task) => task.kind === "image-compress" && task.status === "done" && task.targetMet === false).length,
+        failed: tasks.filter((task) => task.kind === "image-compress" && task.status === "failed").length,
+      }
+    : null;
 
   return (
     <aside className="taskcenter">
@@ -98,6 +106,12 @@ export function TaskCenter({
         </div>
       </div>
 
+      {compressSummary ? (
+        <div className="note" style={{ margin: "0 12px 8px" }}>
+          图片压缩：成功 {compressSummary.ok} / 未达标 {compressSummary.unmet} / 失败 {compressSummary.failed}
+        </div>
+      ) : null}
+
       {paused ? (
         <div className="note" style={{ margin: "0 12px 8px" }}>
           队列已暂停：不会启动新任务，正在运行的任务会继续跑完。点「继续队列」恢复调度。
@@ -116,6 +130,22 @@ export function TaskCenter({
                     {task.inputName}
                   </span>
                   <span className="st">{STATUS_LABEL[task.status]}</span>
+                  {task.kind === "image-compress" && task.status === "done" && task.targetMet === false ? (
+                    <span
+                      title={`质量 ${task.qualityUsed ?? "—"} · 尝试 ${task.attemptsUsed ?? "—"} 次`}
+                      style={{
+                        fontSize: 9.5,
+                        padding: "2px 7px",
+                        borderRadius: 999,
+                        color: "var(--ff-warn)",
+                        background: "rgba(240, 196, 84, 0.12)",
+                        border: "1px solid rgba(240, 196, 84, 0.3)",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      未达标
+                    </span>
+                  ) : null}
                 </div>
                 <div className="progress">
                   <i style={{ width: `${task.status === "done" ? 100 : percent}%` }} />
@@ -133,6 +163,13 @@ export function TaskCenter({
                 {task.encoderUsed ? (
                   <div className="task-meta" style={{ marginTop: 4 }}>
                     <span>编码器 {task.encoderUsed}</span>
+                  </div>
+                ) : null}
+                {task.kind === "image-compress" && (task.qualityUsed != null || task.attemptsUsed != null || task.targetBytes != null) ? (
+                  <div className="task-meta" style={{ marginTop: 4 }}>
+                    {task.qualityUsed != null ? <span>质量 {task.qualityUsed}</span> : null}
+                    {task.attemptsUsed != null ? <span>尝试 {task.attemptsUsed} 次</span> : null}
+                    {task.targetBytes != null ? <span>目标 {formatBytes(task.targetBytes)}</span> : null}
                   </div>
                 ) : null}
                 {task.fallbackNote ? <div className="task-msg fallback">回退：{task.fallbackNote}</div> : null}

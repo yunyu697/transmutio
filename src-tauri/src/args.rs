@@ -113,6 +113,44 @@ fn default_true() -> bool {
     true
 }
 
+/// 图片「压缩到目标大小」参数。`mode=target` 时按 `targetMode` 给出目标字节数，
+/// `mode=quality` 时按固定质量重编码；两种模式互斥。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CompressParams {
+    /// target | quality；空字符串等价 target
+    pub mode: String,
+    /// absolute | percent，默认 absolute
+    pub target_mode: String,
+    /// 目标绝对大小 KB（target + absolute 用）
+    pub target_kb: u32,
+    /// 相对原图百分比 1–99（target + percent 用）
+    pub target_percent: f64,
+    /// 固定质量 1–100（quality 模式用），默认 80
+    pub quality: u32,
+    /// 默认 false：剥离 EXIF/ICC；true 时保留原始元数据
+    pub keep_metadata: bool,
+    /// PNG 调色板量化（8-bit），默认 true
+    pub png_palette: bool,
+    /// WebP 无损模式；仅固定质量模式可用，target 模式直接拒绝
+    pub lossless: bool,
+}
+
+impl Default for CompressParams {
+    fn default() -> Self {
+        Self {
+            mode: "target".into(),
+            target_mode: "absolute".into(),
+            target_kb: 500,
+            target_percent: 60.0,
+            quality: 80,
+            keep_metadata: false,
+            png_palette: true,
+            lossless: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ImageParams {
@@ -138,6 +176,9 @@ pub struct ImageParams {
     /// 水印叠加（默认关闭）
     #[serde(default)]
     pub watermark: WatermarkParams,
+    /// 压缩参数（仅 image-compress 任务读取；普通图片任务忽略）
+    #[serde(default)]
+    pub compress: CompressParams,
 }
 
 /// 水印参数。`baseWidth/baseHeight/wmWidth/wmHeight` 由后端探测后回填，
@@ -483,6 +524,58 @@ pub fn validate_image_crop(p: &ImageParams) -> Result<(), String> {
             "不支持的裁剪模式「{other}」，可选 none / ratio / custom"
         )),
     }
+}
+
+/// 图片压缩参数校验。BMP/TIFF 没有可调的压缩编码参数，直接拒绝而不是
+/// 「跑一遍再发现文件没变小」。`lossless` 与 target 二分互斥（无损无法靠质量档位收字节）。
+pub fn validate_compress(p: &ImageParams) -> Result<(), String> {
+    let format = crate::compress::format_key(&p.format);
+    if format == "bmp" || format == "tiff" {
+        return Err(format!(
+            "{} 压缩不适用：BMP/TIFF 没有可调的有损压缩参数，请改用 JPEG / WebP / PNG",
+            format.to_ascii_uppercase()
+        ));
+    }
+    let c = &p.compress;
+    let mode = if c.mode.trim().is_empty() {
+        "target"
+    } else {
+        c.mode.as_str()
+    };
+    if !matches!(mode, "target" | "quality") {
+        return Err(format!(
+            "不支持的压缩模式「{}」，可选 target / quality",
+            c.mode
+        ));
+    }
+    if mode == "target" {
+        let target_mode = if c.target_mode.trim().is_empty() {
+            "absolute"
+        } else {
+            c.target_mode.as_str()
+        };
+        if !matches!(target_mode, "absolute" | "percent") {
+            return Err(format!(
+                "不支持的目标大小模式「{}」，可选 absolute / percent",
+                c.target_mode
+            ));
+        }
+        if target_mode == "absolute" && c.target_kb == 0 {
+            return Err("目标大小必须大于 0 KB".into());
+        }
+        if target_mode == "percent" && !(1.0..=99.0).contains(&c.target_percent) {
+            return Err(format!(
+                "目标百分比必须在 1–99 之间，当前 {}",
+                c.target_percent
+            ));
+        }
+        if c.lossless {
+            return Err("无损 WebP 无法按目标大小二分压缩：请改用固定质量模式，或关闭无损".into());
+        }
+    } else if !(1..=100).contains(&c.quality) {
+        return Err(format!("固定质量必须在 1–100 之间，当前 {}", c.quality));
+    }
+    Ok(())
 }
 
 /// 自定义矩形是否落在源图范围内。越界直接拒绝，避免 ffmpeg 输出黑边或报错。

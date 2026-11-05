@@ -96,6 +96,7 @@ export type JobKind =
   | "audio-mp3"
   | "audio-aac"
   | "image"
+  | "image-compress"
   | "image-seq-video"
   | "video-frames"
   | "image-collage"
@@ -127,6 +128,14 @@ export interface Job {
   logPath: string | null;
   durationSec: number | null;
   outputSize: number | null;
+  /** 压缩任务的目标字节数（quality 模式为空）。 */
+  targetBytes?: number;
+  /** 压缩任务是否达到目标大小；quality 模式为空。 */
+  targetMet?: boolean;
+  /** 压缩实际尝试次数（1–8）。 */
+  attemptsUsed?: number;
+  /** 压缩最终采用的质量（1–100）。 */
+  qualityUsed?: number;
   createdAt: number;
   startedAt: number | null;
   finishedAt: number | null;
@@ -232,6 +241,24 @@ export interface AudioParams {
   keepPitch: boolean;
 }
 
+/** 图片压缩参数（仅 image-compress 任务读取；默认值对应后端默认）。 */
+export interface CompressParams {
+  /** target = 逼近目标大小；quality = 固定质量 */
+  mode: "target" | "quality";
+  /** absolute = 目标 KB；percent = 相对原图百分比 */
+  targetMode: "absolute" | "percent";
+  /** 目标绝对大小 KB，1–5000 */
+  targetKb: number;
+  /** 相对原图百分比，1–99 */
+  targetPercent: number;
+  /** 固定质量 1–100 */
+  quality: number;
+  /** 保留 EXIF/ICC（默认 false：剥离以减小体积） */
+  keepMetadata: boolean;
+  /** PNG 调色板量化（默认 true） */
+  pngPalette: boolean;
+}
+
 export interface ImageParams {
   format: "jpg" | "png" | "webp" | "bmp" | "tiff";
   quality: number;
@@ -251,6 +278,8 @@ export interface ImageParams {
   cropH: number;
   /** 图片水印；enabled=false 时入队不携带该字段 */
   watermark: WatermarkParams;
+  /** 压缩参数；仅 image-compress 入队时携带 */
+  compress: CompressParams;
 }
 
 export interface SeqParams {

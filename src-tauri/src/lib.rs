@@ -1,5 +1,6 @@
 pub mod after;
 pub mod args;
+pub mod compress;
 pub mod containers;
 pub mod flavor;
 pub mod flavor_check;

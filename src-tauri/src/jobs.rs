@@ -59,6 +59,14 @@ pub struct Job {
     pub log_path: Option<String>,
     pub duration_sec: Option<f64>,
     pub output_size: Option<u64>,
+    /// 压缩任务的目标字节数（quality 模式为空）。
+    pub target_bytes: Option<u64>,
+    /// 压缩任务是否达到目标大小；quality 模式为空。
+    pub target_met: Option<bool>,
+    /// 压缩实际尝试次数（1–8）。
+    pub attempts_used: Option<u32>,
+    /// 压缩最终采用的质量（1–100）。
+    pub quality_used: Option<u32>,
     pub created_at: i64,
     pub started_at: Option<i64>,
     pub finished_at: Option<i64>,
@@ -276,7 +284,7 @@ fn kind_ext(kind: &str, params: &Value) -> String {
                 _ => "png".into(),
             }
         }
-        "image" => {
+        "image" | "image-compress" => {
             let p: args::ImageParams = serde_json::from_value(params.clone()).unwrap_or_default();
             args::image_ext(if p.format.is_empty() {
                 "jpg"
@@ -490,6 +498,13 @@ fn precheck_spec(
             args::validate_image_crop(&p)?;
             args::validate_watermark(&p.watermark)
         }
+        "image-compress" => {
+            let p: args::ImageParams = serde_json::from_value(params.clone())
+                .map_err(|e| format!("压缩参数格式错误：{e}"))?;
+            args::validate_image_crop(&p)?;
+            args::validate_watermark(&p.watermark)?;
+            args::validate_compress(&p)
+        }
         "image-seq-video" => {
             let p: args::SeqParams = serde_json::from_value(params.clone())
                 .map_err(|e| format!("序列参数格式错误：{e}"))?;
@@ -573,7 +588,7 @@ fn precheck_spec(
             Ok(())
         }
         other => Err(format!(
-            "未知任务类型「{other}」；支持 video-mp4 / video-merge / video-mux / video-gif / audio-mp3 / audio-aac / image / image-seq-video / video-frames / image-collage / pdf-merge / pdf-split / pdf-image"
+            "未知任务类型「{other}」；支持 video-mp4 / video-merge / video-mux / video-gif / audio-mp3 / audio-aac / image / image-compress / image-seq-video / video-frames / image-collage / pdf-merge / pdf-split / pdf-image"
         )),
     }
 }
@@ -631,7 +646,7 @@ pub async fn enqueue(ctx: &Ctx, specs: Vec<JobSpec>) -> Result<Vec<Job>, String>
         let mut total_duration = info.duration_sec;
 
         // 图片自定义裁剪需要在入队阶段对照源图尺寸校验，避免任务跑起来才失败。
-        if spec.kind == "image" {
+        if spec.kind == "image" || spec.kind == "image-compress" {
             let p: args::ImageParams =
                 serde_json::from_value(spec.params.clone()).unwrap_or_default();
             if p.crop_mode == "custom" {
@@ -748,6 +763,10 @@ pub async fn enqueue(ctx: &Ctx, specs: Vec<JobSpec>) -> Result<Vec<Job>, String>
             log_path: None,
             duration_sec: total_duration,
             output_size: None,
+            target_bytes: None,
+            target_met: None,
+            attempts_used: None,
+            quality_used: None,
             created_at: now_ms(),
             started_at: None,
             finished_at: None,
@@ -2357,7 +2376,7 @@ async fn watermark_dims_for_job(
                 .map_err(|e| format!("视频参数格式错误：{e}"))?
                 .watermark
         }
-        "image" => {
+        "image" | "image-compress" => {
             serde_json::from_value::<args::ImageParams>(job.params.clone())
                 .map_err(|e| format!("图片参数格式错误：{e}"))?
                 .watermark
@@ -2421,6 +2440,222 @@ async fn subtitle_base_height_for_job(
         (Some(w), Some(h)) if w > 0 && h > 0 => Ok(Some(args::video_base_dims(&p, w, h).1)),
         _ => Err(format!("无法读取输入画面尺寸：{}", job.input)),
     }
+}
+
+/// 把每轮「质量 → 字节」追加到 per-job 诊断日志；无日志目录时静默跳过。
+async fn append_compress_log(ctx: &Ctx, id: &str, log: &[(u32, u64)]) {
+    let Some(job) = get_job(ctx, id).await else {
+        return;
+    };
+    let Some(path) = job.log_path else {
+        return;
+    };
+    use std::io::Write;
+    if let Ok(mut file) = std::fs::OpenOptions::new().append(true).open(&path) {
+        let mut text = String::from("\n--- 压缩迭代（质量, 字节）---\n");
+        for (quality, bytes) in log {
+            text.push_str(&format!("q={quality} bytes={bytes}\n"));
+        }
+        let _ = file.write_all(text.as_bytes());
+    }
+}
+
+/// 图片压缩任务：同步跑完最多 8 轮重编码（每轮独立临时文件），
+/// 成功发布后把目标/达标/尝试次数/最终质量写回 Job。
+async fn run_compress(ctx: Ctx, id: String, job: Job, ffmpeg: String, dir: PathBuf, temp: PathBuf) {
+    let mut p: args::ImageParams = serde_json::from_value(job.params.clone()).unwrap_or_default();
+    let probe_bin = {
+        let tools = ctx.state.tools.lock().await;
+        tools
+            .as_ref()
+            .and_then(|t| t.ffprobe.as_ref())
+            .map(|t| t.path.clone())
+    };
+    match watermark_dims_for_job(probe_bin.as_deref(), &job).await {
+        Ok(dims) => {
+            if let Some(dims) = dims {
+                p.watermark.base_width = dims.base_width;
+                p.watermark.base_height = dims.base_height;
+                p.watermark.wm_width = dims.wm_width;
+                p.watermark.wm_height = dims.wm_height;
+            }
+        }
+        Err(message) => {
+            remove_temp_file(&temp).await;
+            set_job(&ctx, &id, |job| {
+                job.status = "failed".into();
+                job.error_kind = Some("invalid-params".into());
+                job.message = Some(message.clone());
+                job.finished_at = Some(now_ms());
+            })
+            .await;
+            write_job_log(&ctx, &id, "failed", &[], &message).await;
+            finish_slot(&ctx, &id).await;
+            return;
+        }
+    }
+
+    let original_bytes = match std::fs::metadata(&job.input) {
+        Ok(meta) => meta.len(),
+        Err(err) => {
+            let message = format!("无法读取源文件大小：{err}");
+            set_job(&ctx, &id, |job| {
+                job.status = "failed".into();
+                job.error_kind = Some("input".into());
+                job.message = Some(message.clone());
+                job.finished_at = Some(now_ms());
+            })
+            .await;
+            write_job_log(&ctx, &id, "failed", &[], &message).await;
+            finish_slot(&ctx, &id).await;
+            return;
+        }
+    };
+
+    let _ = set_job(&ctx, &id, |job| {
+        job.message = Some("正在压缩图片…".into());
+    })
+    .await;
+
+    let ffmpeg_bin = ffmpeg.clone();
+    let input_path = job.input.clone();
+    let output_path = temp.to_string_lossy().to_string();
+    let work_dir = dir.clone();
+    let job_key = id.clone();
+    let params = p.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let request = crate::compress::CompressRequest {
+            ffmpeg: &ffmpeg_bin,
+            input: &input_path,
+            output: &output_path,
+            work_dir: &work_dir,
+            job_id: &job_key,
+            params: &params,
+            original_bytes,
+        };
+        crate::compress::compress_image(&request)
+    })
+    .await;
+
+    let report = match result {
+        Ok(Ok(report)) => report,
+        Ok(Err(message)) => {
+            let (kind, message) = classify(&message);
+            remove_temp_file(&temp).await;
+            set_job(&ctx, &id, |job| {
+                job.status = "failed".into();
+                job.error_kind = Some(kind.clone());
+                job.message = Some(message.clone());
+                job.finished_at = Some(now_ms());
+                job.progress = 0.0;
+            })
+            .await;
+            write_job_log(&ctx, &id, "failed", &[], &message).await;
+            finish_slot(&ctx, &id).await;
+            return;
+        }
+        Err(err) => {
+            let message = format!("压缩任务异常：{err}");
+            remove_temp_file(&temp).await;
+            set_job(&ctx, &id, |job| {
+                job.status = "failed".into();
+                job.error_kind = Some("unknown".into());
+                job.message = Some(message.clone());
+                job.finished_at = Some(now_ms());
+                job.progress = 0.0;
+            })
+            .await;
+            write_job_log(&ctx, &id, "failed", &[], &message).await;
+            finish_slot(&ctx, &id).await;
+            return;
+        }
+    };
+
+    let ext = Path::new(&job.output)
+        .extension()
+        .map(|e| e.to_string_lossy().to_string())
+        .unwrap_or_else(|| "jpg".into());
+    let size = match if job.conflict == "overwrite" {
+        rename_overwrite(&temp, Path::new(&job.output))
+    } else {
+        rename_atomic(&temp, Path::new(&job.output))
+    } {
+        Ok(size) => size,
+        Err(err) if job.conflict == "overwrite" => {
+            remove_temp_file(&temp).await;
+            let message = format!("覆盖已有文件失败：{err}");
+            set_job(&ctx, &id, |job| {
+                job.status = "failed".into();
+                job.error_kind = Some("output".into());
+                job.message = Some(message.clone());
+                job.finished_at = Some(now_ms());
+                job.progress = 0.0;
+            })
+            .await;
+            write_job_log(&ctx, &id, "failed", &[], &message).await;
+            finish_slot(&ctx, &id).await;
+            return;
+        }
+        Err(_) => {
+            let used: Vec<PathBuf> = {
+                let inner = ctx.state.inner.lock().await;
+                inner
+                    .jobs
+                    .iter()
+                    .filter(|other| other.id != id)
+                    .map(|other| PathBuf::from(&other.output))
+                    .collect()
+            };
+            let target = unique_output(&dir, file_stem(&job.output).as_str(), &ext, &used);
+            match rename_atomic(&temp, &target) {
+                Ok(size) => {
+                    let _ = set_job(&ctx, &id, |job| {
+                        job.output = target.to_string_lossy().to_string();
+                    })
+                    .await;
+                    size
+                }
+                Err(err) => {
+                    remove_temp_file(&temp).await;
+                    let message = format!("写出最终文件失败：{err}");
+                    set_job(&ctx, &id, |job| {
+                        job.status = "failed".into();
+                        job.error_kind = Some("output".into());
+                        job.message = Some(message.clone());
+                        job.finished_at = Some(now_ms());
+                    })
+                    .await;
+                    write_job_log(&ctx, &id, "failed", &[], &message).await;
+                    finish_slot(&ctx, &id).await;
+                    return;
+                }
+            }
+        }
+    };
+
+    let _ = set_job(&ctx, &id, |job| {
+        job.status = "done".into();
+        job.progress = 1.0;
+        job.output_size = Some(size);
+        job.target_bytes = report.target_bytes;
+        job.target_met = report.target_met;
+        job.attempts_used = Some(report.iterations);
+        job.quality_used = Some(report.quality);
+        job.encoder_used = Some("image-compress".into());
+        job.finished_at = Some(now_ms());
+        job.message = Some(report.message.clone());
+    })
+    .await;
+    write_job_log(
+        &ctx,
+        &id,
+        "done",
+        &[format!("压缩尝试 {} 次", report.iterations)],
+        "",
+    )
+    .await;
+    append_compress_log(&ctx, &id, &report.log).await;
+    finish_slot(&ctx, &id).await;
 }
 
 async fn run_job(ctx: Ctx, id: String) {
@@ -2509,6 +2744,20 @@ async fn run_job(ctx: Ctx, id: String) {
             job.clone(),
             ffmpeg.clone(),
             dir.clone(),
+        )
+        .await;
+        return;
+    }
+
+    // 图片压缩需要多轮重编码 + 逐轮量字节，走独立的二分执行器。
+    if job.kind == "image-compress" {
+        run_compress(
+            ctx.clone(),
+            id.clone(),
+            job.clone(),
+            ffmpeg.clone(),
+            dir.clone(),
+            temp.clone(),
         )
         .await;
         return;

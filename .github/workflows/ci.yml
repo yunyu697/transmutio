@@ -47,7 +47,7 @@ jobs:
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
       - name: Clippy（仅暴露警告，不阻断）
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --features dev-tools
-      - name: 单元测试（95 条：容器矩阵 / 命名 / 变速 / 水印 / 字幕等）
+      - name: 单元测试（107 条：容器矩阵 / 变速 / 水印 / 字幕 / 图片压缩等）
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
   # 无头 UI：面板持久化 + localStorage 前缀迁移（需要浏览器，不需要 FFmpeg）
