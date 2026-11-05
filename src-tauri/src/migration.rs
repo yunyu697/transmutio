@@ -131,11 +131,14 @@ fn rel_key(path: &Path, root: &Path) -> String {
 }
 
 fn hash_file(path: &Path) -> Result<String, String> {
-    let mut file = fs::File::open(path).map_err(|e| format!("打开 {} 失败：{e}", path.display()))?;
+    let mut file =
+        fs::File::open(path).map_err(|e| format!("打开 {} 失败：{e}", path.display()))?;
     let mut hasher = Sha256::new();
     let mut buf = vec![0u8; 1024 * 1024];
     loop {
-        let n = file.read(&mut buf).map_err(|e| format!("读取 {} 失败：{e}", path.display()))?;
+        let n = file
+            .read(&mut buf)
+            .map_err(|e| format!("读取 {} 失败：{e}", path.display()))?;
         if n == 0 {
             break;
         }
@@ -159,7 +162,10 @@ fn walk(dir: &Path, root: &Path, snap: &mut Snapshot) -> Result<(), String> {
             .file_type()
             .map_err(|e| format!("读取类型 {} 失败：{e}", path.display()))?;
         if file_type.is_symlink() {
-            return Err(format!("检测到符号链接/重解析点，拒绝迁移：{}", path.display()));
+            return Err(format!(
+                "检测到符号链接/重解析点，拒绝迁移：{}",
+                path.display()
+            ));
         }
         let key = rel_key(&path, root);
         if file_type.is_dir() {
@@ -181,7 +187,14 @@ fn walk(dir: &Path, root: &Path, snap: &mut Snapshot) -> Result<(), String> {
             let sha256 = hash_file(&path)?;
             snap.files += 1;
             snap.bytes += size;
-            snap.entries.insert(key, EntryMeta { dir: false, size, sha256 });
+            snap.entries.insert(
+                key,
+                EntryMeta {
+                    dir: false,
+                    size,
+                    sha256,
+                },
+            );
         } else {
             return Err(format!("不是常规文件或目录，拒绝迁移：{}", path.display()));
         }
@@ -209,7 +222,10 @@ fn copy_recursive(
             .file_type()
             .map_err(|e| format!("读取类型 {} 失败：{e}", path.display()))?;
         if file_type.is_symlink() {
-            return Err(format!("检测到符号链接/重解析点，拒绝迁移：{}", path.display()));
+            return Err(format!(
+                "检测到符号链接/重解析点，拒绝迁移：{}",
+                path.display()
+            ));
         }
         let target = dst.join(entry.file_name());
         if file_type.is_dir() {
@@ -220,9 +236,8 @@ fn copy_recursive(
                     return Err("注入的复制失败（测试用）".into());
                 }
             }
-            fs::copy(&path, &target).map_err(|e| {
-                format!("复制 {} → {} 失败：{e}", path.display(), target.display())
-            })?;
+            fs::copy(&path, &target)
+                .map_err(|e| format!("复制 {} → {} 失败：{e}", path.display(), target.display()))?;
             *copied += 1;
         } else {
             return Err(format!("不是常规文件或目录，拒绝迁移：{}", path.display()));
@@ -233,13 +248,22 @@ fn copy_recursive(
 
 fn verify(source: &Snapshot, copy: &Snapshot) -> Result<(), String> {
     if source.files != copy.files {
-        return Err(format!("文件数不一致：源 {} / 副本 {}", source.files, copy.files));
+        return Err(format!(
+            "文件数不一致：源 {} / 副本 {}",
+            source.files, copy.files
+        ));
     }
     if source.dirs != copy.dirs {
-        return Err(format!("目录数不一致：源 {} / 副本 {}", source.dirs, copy.dirs));
+        return Err(format!(
+            "目录数不一致：源 {} / 副本 {}",
+            source.dirs, copy.dirs
+        ));
     }
     if source.bytes != copy.bytes {
-        return Err(format!("字节数不一致：源 {} / 副本 {}", source.bytes, copy.bytes));
+        return Err(format!(
+            "字节数不一致：源 {} / 副本 {}",
+            source.bytes, copy.bytes
+        ));
     }
     if source.entries.len() != copy.entries.len() {
         return Err("目录结构条目数不一致".into());
@@ -254,7 +278,10 @@ fn verify(source: &Snapshot, copy: &Snapshot) -> Result<(), String> {
         }
         if !expected.dir {
             if expected.size != actual.size {
-                return Err(format!("文件大小不一致：{key}（{} / {}）", expected.size, actual.size));
+                return Err(format!(
+                    "文件大小不一致：{key}（{} / {}）",
+                    expected.size, actual.size
+                ));
             }
             if expected.sha256 != actual.sha256 {
                 return Err(format!("文件哈希不一致：{key}"));
@@ -323,7 +350,12 @@ fn migrate_dir_with(old: &Path, new: &Path, options: MigrateOptions) -> DirOutco
     }
     if new.exists() {
         if !is_empty_dir(new) {
-            return outcome(old, new, "target-present", "新目录已存在（非空），按已迁移处理，不覆盖".into());
+            return outcome(
+                old,
+                new,
+                "target-present",
+                "新目录已存在（非空），按已迁移处理，不覆盖".into(),
+            );
         }
         // 空目录可以是上一次失败留下的；删掉后用原子 rename 落位。
         if let Err(e) = fs::remove_dir_all(new) {
@@ -334,7 +366,12 @@ fn migrate_dir_with(old: &Path, new: &Path, options: MigrateOptions) -> DirOutco
         return outcome(old, new, "failed", "无法定位新目录的父目录".into());
     };
     if let Err(e) = fs::create_dir_all(parent) {
-        return outcome(old, new, "failed", format!("创建父目录 {} 失败：{e}", parent.display()));
+        return outcome(
+            old,
+            new,
+            "failed",
+            format!("创建父目录 {} 失败：{e}", parent.display()),
+        );
     }
     let temp = parent.join(format!(".transmutio-migrate-{}", now_stamp()));
 
@@ -396,8 +433,12 @@ fn append_log(new_app: &Path, record: &MigrationRecord) {
         let _ = writeln!(
             file,
             "[{}] appData={} ({}) webview={} ({}) {}",
-            record.at, record.app_data.status, record.app_data.files, record.webview.status,
-            record.webview.files, record.detail
+            record.at,
+            record.app_data.status,
+            record.app_data.files,
+            record.webview.status,
+            record.webview.files,
+            record.detail
         );
         let _ = file.sync_all();
     }
@@ -428,7 +469,12 @@ pub fn run_prelaunch(paths: &VariantPaths) -> Option<MigrationRecord> {
             detail: format!("旧版数据迁移失败：{}", app_data.detail),
             sources: vec![app_data.source.clone()],
             app_data,
-            webview: outcome(&paths.old_local, &paths.new_local, "skipped", "应用数据迁移失败，未迁移 WebView2".into()),
+            webview: outcome(
+                &paths.old_local,
+                &paths.new_local,
+                "skipped",
+                "应用数据迁移失败，未迁移 WebView2".into(),
+            ),
         });
     }
 
@@ -512,8 +558,18 @@ fn apply_pending_import(paths: &VariantPaths) -> Option<String> {
             migrated: true,
             detail: "已应用手动导入的旧版 WebView2 数据（设置与面板参数）".into(),
             sources: vec![paths.old_local.to_string_lossy().to_string()],
-            app_data: outcome(&paths.old_app, &paths.new_app, "imported", "手动导入已落位".into()),
-            webview: outcome(&paths.old_local, &paths.new_local, "imported", "手动导入已落位".into()),
+            app_data: outcome(
+                &paths.old_app,
+                &paths.new_app,
+                "imported",
+                "手动导入已落位".into(),
+            ),
+            webview: outcome(
+                &paths.old_local,
+                &paths.new_local,
+                "imported",
+                "手动导入已落位".into(),
+            ),
         },
     );
     Some("已应用旧版 WebView2 数据".into())
@@ -565,7 +621,9 @@ pub fn import_legacy_data(flavor: Flavor, paths: &VariantPaths) -> Result<Import
         copy_tree(&source_root, &staging, None)?;
         let current = paths.new_local.join("EBWebView");
         if current.exists() {
-            let backup = paths.new_local.join(format!("EBWebView.import-bak-{stamp}"));
+            let backup = paths
+                .new_local
+                .join(format!("EBWebView.import-bak-{stamp}"));
             copy_tree(&current, &backup, None)?;
             backup_webview = Some(backup.to_string_lossy().to_string());
         }
@@ -600,8 +658,18 @@ pub fn import_legacy_data(flavor: Flavor, paths: &VariantPaths) -> Result<Import
                 summary.files, summary.bytes, summary.backup_app, backup_bytes
             ),
             sources: vec![paths.old_app.to_string_lossy().to_string()],
-            app_data: outcome(&paths.old_app, &paths.new_app, "imported", "手动导入合并完成".into()),
-            webview: outcome(&paths.old_local, &paths.new_local, "imported", "旧 WebView2 数据已暂存".into()),
+            app_data: outcome(
+                &paths.old_app,
+                &paths.new_app,
+                "imported",
+                "手动导入合并完成".into(),
+            ),
+            webview: outcome(
+                &paths.old_local,
+                &paths.new_local,
+                "imported",
+                "旧 WebView2 数据已暂存".into(),
+            ),
         },
     );
     Ok(summary)
@@ -612,7 +680,8 @@ mod tests {
     use super::*;
 
     fn temp_root(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("transmutio-migration-test-{tag}-{}", now_stamp()));
+        let dir =
+            std::env::temp_dir().join(format!("transmutio-migration-test-{tag}-{}", now_stamp()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
@@ -630,8 +699,14 @@ mod tests {
         let root = temp_root("ok");
         let old = root.join("old");
         let new = root.join("new");
-        write(&old.join("settings.json"), r#"{"theme":"dark","concurrency":4}"#);
-        write(&old.join("tools/ffmpeg/bin/ffmpeg.txt"), "fake-binary-content");
+        write(
+            &old.join("settings.json"),
+            r#"{"theme":"dark","concurrency":4}"#,
+        );
+        write(
+            &old.join("tools/ffmpeg/bin/ffmpeg.txt"),
+            "fake-binary-content",
+        );
         fs::create_dir_all(old.join("logs/empty")).unwrap();
         let before = snapshot(&old).unwrap();
 
@@ -683,12 +758,20 @@ mod tests {
         );
         assert_eq!(result.status, "failed");
         assert!(!new.exists(), "失败时不能留下正式新目录");
-        assert_eq!(snapshot(&old).unwrap().bytes, before.bytes, "旧目录字节数不变");
+        assert_eq!(
+            snapshot(&old).unwrap().bytes,
+            before.bytes,
+            "旧目录字节数不变"
+        );
         assert_eq!(fs::read_to_string(old.join("three.txt")).unwrap(), "3");
         let leftovers: Vec<_> = fs::read_dir(&root)
             .unwrap()
             .flatten()
-            .filter(|e| e.file_name().to_string_lossy().starts_with(".transmutio-migrate-"))
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with(".transmutio-migrate-")
+            })
             .collect();
         assert!(leftovers.is_empty(), "临时目录必须清理");
     }
@@ -709,16 +792,25 @@ mod tests {
         );
         assert_eq!(result.status, "failed");
         assert!(
-            result.detail.contains("哈希") || result.detail.contains("大小") || result.detail.contains("字节"),
+            result.detail.contains("哈希")
+                || result.detail.contains("大小")
+                || result.detail.contains("字节"),
             "{}",
             result.detail
         );
         assert!(!new.exists(), "校验失败时不能留下正式新目录");
-        assert_eq!(fs::read_to_string(old.join("cfg.json")).unwrap(), "{\"x\":1}");
+        assert_eq!(
+            fs::read_to_string(old.join("cfg.json")).unwrap(),
+            "{\"x\":1}"
+        );
         let leftovers: Vec<_> = fs::read_dir(&root)
             .unwrap()
             .flatten()
-            .filter(|e| e.file_name().to_string_lossy().starts_with(".transmutio-migrate-"))
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with(".transmutio-migrate-")
+            })
             .collect();
         assert!(leftovers.is_empty(), "临时目录必须清理");
     }
@@ -743,39 +835,67 @@ mod tests {
         let appdata = root.join("Roaming");
         let local = root.join("Local");
         let paths = VariantPaths::for_variant(Flavor::Lgpl, &appdata, &local);
-        write(&paths.old_app.join("settings.json"), "{\"theme\":\"light\"}");
+        write(
+            &paths.old_app.join("settings.json"),
+            "{\"theme\":\"light\"}",
+        );
         write(&paths.old_app.join("tools/ffmpeg.txt"), "old-tools");
         write(&paths.new_app.join("settings.json"), "{\"theme\":\"dark\"}");
         write(
-            &paths.old_local.join("EBWebView/Default/Local Storage/leveldb/settings.ldb"),
+            &paths
+                .old_local
+                .join("EBWebView/Default/Local Storage/leveldb/settings.ldb"),
             "legacy-localstorage",
         );
-        write(&paths.new_local.join("EBWebView/Default/Local Storage/leveldb/settings.ldb"), "current");
+        write(
+            &paths
+                .new_local
+                .join("EBWebView/Default/Local Storage/leveldb/settings.ldb"),
+            "current",
+        );
 
         let summary = import_legacy_data(Flavor::Lgpl, &paths).expect("导入应成功");
-        assert!(Path::new(&summary.backup_app).exists(), "必须备份当前应用数据");
-        assert!(summary.backup_webview.as_deref().map(|p| Path::new(p).exists()).unwrap_or(false));
+        assert!(
+            Path::new(&summary.backup_app).exists(),
+            "必须备份当前应用数据"
+        );
+        assert!(summary
+            .backup_webview
+            .as_deref()
+            .map(|p| Path::new(p).exists())
+            .unwrap_or(false));
         assert_eq!(
             fs::read_to_string(paths.new_app.join("settings.json")).unwrap(),
             "{\"theme\":\"light\"}"
         );
         assert!(paths.new_app.join("tools/ffmpeg.txt").exists());
         let staged = paths.new_local.join(LEGACY_WEBVIEW_STAGING);
-        assert!(staged.join("Default/Local Storage/leveldb/settings.ldb").exists());
+        assert!(staged
+            .join("Default/Local Storage/leveldb/settings.ldb")
+            .exists());
         assert!(paths.new_app.join(IMPORT_PENDING_MARKER).is_file());
 
         // 下次启动早期：暂存目录原子换入，旧活动目录留作备份。
         let applied = apply_pending_import(&paths);
         assert!(applied.is_some());
         assert_eq!(
-            fs::read_to_string(paths.new_local.join("EBWebView/Default/Local Storage/leveldb/settings.ldb")).unwrap(),
+            fs::read_to_string(
+                paths
+                    .new_local
+                    .join("EBWebView/Default/Local Storage/leveldb/settings.ldb")
+            )
+            .unwrap(),
             "legacy-localstorage"
         );
         assert!(!paths.new_app.join(IMPORT_PENDING_MARKER).exists());
         let backups: Vec<_> = fs::read_dir(&paths.new_local)
             .unwrap()
             .flatten()
-            .filter(|e| e.file_name().to_string_lossy().starts_with("EBWebView.bak-"))
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with("EBWebView.bak-")
+            })
             .collect();
         assert_eq!(backups.len(), 1, "被替换的 WebView2 目录必须留下备份");
     }

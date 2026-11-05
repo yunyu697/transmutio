@@ -60,7 +60,9 @@ fn encoder_list(ffmpeg: &str) -> String {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
     match cmd.output() {
-        Ok(o) => String::from_utf8_lossy(&o.stdout).to_string() + &String::from_utf8_lossy(&o.stderr),
+        Ok(o) => {
+            String::from_utf8_lossy(&o.stdout).to_string() + &String::from_utf8_lossy(&o.stderr)
+        }
         Err(_) => String::new(),
     }
 }
@@ -98,16 +100,22 @@ fn inspect_blocking(path: &str) -> FfToolInspection {
     });
 
     if version.is_empty() {
-        result.notes.push("无法读取 ffmpeg 版本（可能不是 ffmpeg 可执行文件）".into());
+        result
+            .notes
+            .push("无法读取 ffmpeg 版本（可能不是 ffmpeg 可执行文件）".into());
     }
     if result.nonfree {
-        result.notes.push("包含 nonfree 组件：任何变体都不接受".into());
+        result
+            .notes
+            .push("包含 nonfree 组件：任何变体都不接受".into());
     } else if result.gpl {
-        result.notes.push(if flavor::Flavor::current().require_gpl_build() {
-            "GPL 构建：符合 GPL 版（Transmutio GPL）的许可要求".into()
-        } else {
-            "GPL 构建：LGPL 版不接受；如需 x264/x265 软件编码请改用 GPL 版".into()
-        });
+        result
+            .notes
+            .push(if flavor::Flavor::current().require_gpl_build() {
+                "GPL 构建：符合 GPL 版（Transmutio GPL）的许可要求".into()
+            } else {
+                "GPL 构建：LGPL 版不接受；如需 x264/x265 软件编码请改用 GPL 版".into()
+            });
     } else if flavor::Flavor::current().require_gpl_build() {
         result
             .notes
@@ -135,7 +143,9 @@ fn copy_atomic(src: &Path, dest: &Path) -> std::io::Result<()> {
     let tmp = dest.with_file_name(format!(
         ".tmp-{}-{}",
         std::process::id(),
-        dest.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
+        dest.file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default()
     ));
     std::fs::copy(src, &tmp)?;
     std::fs::rename(&tmp, dest)?;
@@ -148,7 +158,9 @@ fn unique_dir(base: &Path) -> PathBuf {
     while candidate.exists() {
         candidate = base.with_file_name(format!(
             "{}-{index}",
-            base.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
+            base.file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default()
         ));
         index += 1;
     }
@@ -194,18 +206,25 @@ pub fn install_blocking(
 
     let safe_version = {
         let v = ff.version.replace(['/', '\\', ':', ' '], "_");
-        if v.is_empty() { "unknown".to_string() } else { v }
+        if v.is_empty() {
+            "unknown".to_string()
+        } else {
+            v
+        }
     };
     let dest_root = app_data_dir.join("tools");
-    std::fs::create_dir_all(&dest_root)
-        .map_err(|e| format!("创建工具目录失败：{e}"))?;
+    std::fs::create_dir_all(&dest_root).map_err(|e| format!("创建工具目录失败：{e}"))?;
     let dest_dir = unique_dir(&dest_root.join(format!("ffmpeg-{safe_version}")));
     std::fs::create_dir_all(&dest_dir).map_err(|e| format!("创建落位目录失败：{e}"))?;
 
     let dest_ffmpeg = dest_dir.join(exe_name("ffmpeg"));
     copy_atomic(Path::new(&ffmpeg_path), &dest_ffmpeg)
         .map_err(|e| format!("复制 ffmpeg 失败：{e}"))?;
-    let dest_ffprobe = if let Some(probe_path) = ffprobe_path.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    let dest_ffprobe = if let Some(probe_path) = ffprobe_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         let target = dest_dir.join(exe_name("ffprobe"));
         copy_atomic(Path::new(probe_path), &target)
             .map_err(|e| format!("复制 ffprobe 失败：{e}"))?;
@@ -233,7 +252,10 @@ pub fn install_blocking(
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        for p in [Some(&dest_ffmpeg), dest_ffprobe.as_ref()].into_iter().flatten() {
+        for p in [Some(&dest_ffmpeg), dest_ffprobe.as_ref()]
+            .into_iter()
+            .flatten()
+        {
             if let Ok(meta) = std::fs::metadata(p) {
                 let mut perms = meta.permissions();
                 perms.set_mode(0o755);

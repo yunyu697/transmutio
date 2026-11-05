@@ -151,9 +151,19 @@ fn video_codec_args(ffmpeg: &str) -> Vec<String> {
         .map(|(_, c)| c.contains("--enable-libx264"))
         .unwrap_or(false)
     {
-        vec!["-c:v".to_string(), "libx264".into(), "-preset".into(), "ultrafast".into()]
+        vec![
+            "-c:v".to_string(),
+            "libx264".into(),
+            "-preset".into(),
+            "ultrafast".into(),
+        ]
     } else {
-        vec!["-c:v".to_string(), "mpeg4".into(), "-q:v".into(), "4".into()]
+        vec![
+            "-c:v".to_string(),
+            "mpeg4".into(),
+            "-q:v".into(),
+            "4".into(),
+        ]
     }
 }
 
@@ -179,7 +189,11 @@ fn make_source_sized(
         format!("testsrc2=size={width}x{height}:rate=30:duration={seconds}"),
     ];
     args.extend(video_codec_args(ffmpeg));
-    args.extend(["-pix_fmt".into(), "yuv420p".into(), path.to_string_lossy().to_string()]);
+    args.extend([
+        "-pix_fmt".into(),
+        "yuv420p".into(),
+        path.to_string_lossy().to_string(),
+    ]);
     run_ffmpeg(ffmpeg, &args)
 }
 
@@ -389,7 +403,11 @@ pub async fn run_checks(report_path: &str) -> i32 {
                 generated_at: now_ms(),
                 level: LEVEL.into(),
                 environment: json!({ "error": "PATH 中没有 ffmpeg" }),
-                summary: Summary { passed: 0, failed: 1, total: 1 },
+                summary: Summary {
+                    passed: 0,
+                    failed: 1,
+                    total: 1,
+                },
                 results: vec![Check {
                     name: "定位 ffmpeg".into(),
                     status: "fail".into(),
@@ -433,7 +451,11 @@ pub async fn run_checks(report_path: &str) -> i32 {
     let src = workspace.join("src-60s.mp4");
     let src_short = workspace.join("src-8s.mp4");
     match make_source(&ffmpeg_path, &src, 60) {
-        Ok(()) => pass(&mut results, "生成真实素材（60s/720p）", src.display().to_string()),
+        Ok(()) => pass(
+            &mut results,
+            "生成真实素材（60s/720p）",
+            src.display().to_string(),
+        ),
         Err(e) => {
             fail(&mut results, "生成真实素材（60s/720p）", e);
             return finish(report_path, info, results).await;
@@ -442,7 +464,11 @@ pub async fn run_checks(report_path: &str) -> i32 {
     if let Err(e) = make_source(&ffmpeg_path, &src_short, 8) {
         fail(&mut results, "生成真实素材（8s）", e);
     } else {
-        pass(&mut results, "生成真实素材（8s）", "用于失败/重试用例".into());
+        pass(
+            &mut results,
+            "生成真实素材（8s）",
+            "用于失败/重试用例".into(),
+        );
     }
     let corrupt = workspace.join("corrupt.mp4");
     let _ = std::fs::write(&corrupt, b"NOT A VIDEO \x00\x01\x02");
@@ -492,9 +518,12 @@ pub async fn run_checks(report_path: &str) -> i32 {
                         .filter(|j| j.input == src_short.to_string_lossy())
                         .collect();
                     let all_done = ours.iter().all(|j| j.status == "done");
-                    let files_ok = ours
-                        .iter()
-                        .all(|j| Path::new(&j.output).metadata().map(|m| m.len() > 1000).unwrap_or(false));
+                    let files_ok = ours.iter().all(|j| {
+                        Path::new(&j.output)
+                            .metadata()
+                            .map(|m| m.len() > 1000)
+                            .unwrap_or(false)
+                    });
                     let temps = temp_files(&out_a);
                     if distinct && all_done && files_ok && temps.is_empty() {
                         pass(
@@ -556,15 +585,21 @@ pub async fn run_checks(report_path: &str) -> i32 {
             let all = jobs::list(&ctx).await;
             let ours: Vec<&Job> = all.iter().filter(|j| ids.contains(&j.id)).collect();
             let done = ours.iter().filter(|j| j.status == "done").count();
-            let files_ok = ours
-                .iter()
-                .all(|j| Path::new(&j.output).metadata().map(|m| m.len() > 1000).unwrap_or(false));
+            let files_ok = ours.iter().all(|j| {
+                Path::new(&j.output)
+                    .metadata()
+                    .map(|m| m.len() > 1000)
+                    .unwrap_or(false)
+            });
             let temps = temp_files(&out_b);
             if finished && done == 4 && max_running >= 2 && files_ok && temps.is_empty() {
                 pass(
                     &mut results,
                     "4 槽并发：同时运行且全部成功",
-                    format!("running 峰值={max_running}，完成={done}/4，临时残留={}", temps.len()),
+                    format!(
+                        "running 峰值={max_running}，完成={done}/4，临时残留={}",
+                        temps.len()
+                    ),
                 );
             } else {
                 fail(
@@ -609,7 +644,10 @@ pub async fn run_checks(report_path: &str) -> i32 {
                         let waited = wait_until(
                             &ctx,
                             Duration::from_secs(30),
-                            |all| all.iter().any(|j| j.id == job.id && j.status == "cancelled"),
+                            |all| {
+                                all.iter()
+                                    .any(|j| j.id == job.id && j.status == "cancelled")
+                            },
                             "任务状态变为 cancelled",
                         )
                         .await;
@@ -621,7 +659,10 @@ pub async fn run_checks(report_path: &str) -> i32 {
                             Ok(_) if temps.is_empty() && !output_exists => pass(
                                 &mut results,
                                 "取消：杀进程 + 无输出 + 无临时文件",
-                                format!("status=cancelled，temp={}，output存在={output_exists}", temps.len()),
+                                format!(
+                                    "status=cancelled，temp={}，output存在={output_exists}",
+                                    temps.len()
+                                ),
                             ),
                             Ok(_) => fail(
                                 &mut results,
@@ -655,7 +696,10 @@ pub async fn run_checks(report_path: &str) -> i32 {
             let waited = wait_until(
                 &ctx,
                 Duration::from_secs(30),
-                |all| all.iter().any(|j| j.id == job.id && (j.status == "failed" || j.status == "done")),
+                |all| {
+                    all.iter()
+                        .any(|j| j.id == job.id && (j.status == "failed" || j.status == "done"))
+                },
                 "损坏输入任务结束",
             )
             .await;
@@ -664,7 +708,9 @@ pub async fn run_checks(report_path: &str) -> i32 {
                 Ok(all) => {
                     let current = all.iter().find(|j| j.id == job.id).cloned();
                     match current {
-                        Some(j) if j.status == "failed" && j.error_kind.as_deref() == Some("input") => {
+                        Some(j)
+                            if j.status == "failed" && j.error_kind.as_deref() == Some("input") =>
+                        {
                             pass(
                                 &mut results,
                                 "失败分类：损坏输入 → input",
@@ -674,7 +720,10 @@ pub async fn run_checks(report_path: &str) -> i32 {
                         Some(j) => fail(
                             &mut results,
                             "失败分类：损坏输入 → input",
-                            format!("status={} errorKind={:?} message={:?}", j.status, j.error_kind, j.message),
+                            format!(
+                                "status={} errorKind={:?} message={:?}",
+                                j.status, j.error_kind, j.message
+                            ),
                         ),
                         None => fail(&mut results, "失败分类", "任务消失".into()),
                     }
@@ -688,10 +737,7 @@ pub async fn run_checks(report_path: &str) -> i32 {
                 let waited = wait_until(
                     &ctx,
                     Duration::from_secs(30),
-                    |all| {
-                        all.iter()
-                            .any(|j| j.id == job.id && !j.queue_like())
-                    },
+                    |all| all.iter().any(|j| j.id == job.id && !j.queue_like()),
                     "重试任务结束",
                 )
                 .await;
@@ -703,7 +749,10 @@ pub async fn run_checks(report_path: &str) -> i32 {
                         pass(
                             &mut results,
                             "重试：原参数与输出保留，attempts 递增",
-                            format!("attempts={}，params相同={params_same}，output相同={output_same}", j.attempts),
+                            format!(
+                                "attempts={}，params相同={params_same}，output相同={output_same}",
+                                j.attempts
+                            ),
                         );
                     } else {
                         fail(
@@ -762,7 +811,11 @@ pub async fn run_checks(report_path: &str) -> i32 {
                     ),
                 }
             }
-            None => fail(&mut results, "旋转 90°", "缺少 ffprobe，无法做产物断言".into()),
+            None => fail(
+                &mut results,
+                "旋转 90°",
+                "缺少 ffprobe，无法做产物断言".into(),
+            ),
         },
         Ok(j) => fail(
             &mut results,
@@ -810,7 +863,11 @@ pub async fn run_checks(report_path: &str) -> i32 {
                     fail(&mut results, "居中裁剪 9:16：等比裁剪不拉伸", detail);
                 }
             }
-            None => fail(&mut results, "居中裁剪 9:16", "缺少 ffprobe，无法做产物断言".into()),
+            None => fail(
+                &mut results,
+                "居中裁剪 9:16",
+                "缺少 ffprobe，无法做产物断言".into(),
+            ),
         },
         Ok(j) => fail(
             &mut results,
@@ -837,7 +894,11 @@ pub async fn run_checks(report_path: &str) -> i32 {
         quiet.to_string_lossy().to_string(),
     ];
     if let Err(e) = run_ffmpeg(&ffmpeg_path, &quiet_args) {
-        fail(&mut results, "音量归一化", format!("生成低音量素材失败：{e}"));
+        fail(
+            &mut results,
+            "音量归一化",
+            format!("生成低音量素材失败：{e}"),
+        );
     } else {
         match mean_volume_db(&ffmpeg_path, &quiet) {
             Err(e) => fail(&mut results, "音量归一化", format!("读取源音量失败：{e}")),
@@ -874,7 +935,9 @@ pub async fn run_checks(report_path: &str) -> i32 {
                                 "音量归一化：低音量素材被提升 ≥5 dB",
                                 format!("提升不足：{before:.1} dB → {after:.1} dB"),
                             ),
-                            Err(e) => fail(&mut results, "音量归一化", format!("读取输出音量失败：{e}")),
+                            Err(e) => {
+                                fail(&mut results, "音量归一化", format!("读取输出音量失败：{e}"))
+                            }
                         }
                     }
                     Ok(j) => fail(
@@ -929,7 +992,11 @@ pub async fn run_checks(report_path: &str) -> i32 {
 
     // ---------------- 本轮新增能力：真实产物断言 ----------------
     if ffprobe.is_none() {
-        fail(&mut results, "新增能力检查", "缺少 ffprobe，无法断言产物".into());
+        fail(
+            &mut results,
+            "新增能力检查",
+            "缺少 ffprobe，无法断言产物".into(),
+        );
     } else {
         let probe_bin = ffprobe.clone().unwrap_or_default();
         let merge_a = workspace.join("merge-a-4s.mp4");
@@ -943,7 +1010,9 @@ pub async fn run_checks(report_path: &str) -> i32 {
         let out_exif = workspace.join("out-exif");
         let out_name = workspace.join("out-name");
         let out_after = workspace.join("out-after");
-        for dir in [&out_merge, &out_mux, &out_gif, &out_exif, &out_name, &out_after] {
+        for dir in [
+            &out_merge, &out_mux, &out_gif, &out_exif, &out_name, &out_after,
+        ] {
             let _ = std::fs::create_dir_all(dir);
         }
         let _ = make_source(&ffmpeg_path, &merge_a, 4);
@@ -974,7 +1043,10 @@ pub async fn run_checks(report_path: &str) -> i32 {
             pass(
                 &mut results,
                 "EXIF 合成样本",
-                format!("{}（1280x720 JPEG，注入 Orientation=6；合成样本，非相机原图）", exif_jpg.display()),
+                format!(
+                    "{}（1280x720 JPEG，注入 Orientation=6；合成样本，非相机原图）",
+                    exif_jpg.display()
+                ),
             );
         }
 
@@ -1011,7 +1083,8 @@ pub async fn run_checks(report_path: &str) -> i32 {
                         "合并：同参 concat copy",
                         format!(
                             "duration={duration:.3}s video={} audio={} size={}x{} encoder={:?}",
-                            counts.0, counts.1,
+                            counts.0,
+                            counts.1,
                             info_out.width.unwrap_or(0),
                             info_out.height.unwrap_or(0),
                             job.encoder_used
@@ -1136,13 +1209,19 @@ pub async fn run_checks(report_path: &str) -> i32 {
                     pass(
                         &mut results,
                         "混流：替换音轨（AAC）",
-                        format!("duration={duration:.3}s video={} audio={}", counts.0, counts.1),
+                        format!(
+                            "duration={duration:.3}s video={} audio={}",
+                            counts.0, counts.1
+                        ),
                     );
                 } else {
                     fail(
                         &mut results,
                         "混流：替换音轨（AAC）",
-                        format!("status={} duration={duration:.3} streams={:?}", job.status, counts),
+                        format!(
+                            "status={} duration={duration:.3} streams={:?}",
+                            job.status, counts
+                        ),
                     );
                 }
             }
@@ -1190,19 +1269,27 @@ pub async fn run_checks(report_path: &str) -> i32 {
                     Ok(job) => {
                         let path = PathBuf::from(&job.output);
                         let counts = stream_counts(&probe_bin, &path).unwrap_or((0, 0));
-                        let info_out = crate::probe::probe_media(&probe_bin, &path.to_string_lossy()).await;
+                        let info_out =
+                            crate::probe::probe_media(&probe_bin, &path.to_string_lossy()).await;
                         let duration = info_out.duration_sec.unwrap_or(0.0);
-                        if job.status == "done" && counts == (1, 2) && (duration - 8.0).abs() < 0.4 {
+                        if job.status == "done" && counts == (1, 2) && (duration - 8.0).abs() < 0.4
+                        {
                             pass(
                                 &mut results,
                                 "混流：新增第二条音轨",
-                                format!("duration={duration:.3}s video={} audio={}", counts.0, counts.1),
+                                format!(
+                                    "duration={duration:.3}s video={} audio={}",
+                                    counts.0, counts.1
+                                ),
                             );
                         } else {
                             fail(
                                 &mut results,
                                 "混流：新增第二条音轨",
-                                format!("status={} duration={duration:.3} streams={:?}", job.status, counts),
+                                format!(
+                                    "status={} duration={duration:.3} streams={:?}",
+                                    job.status, counts
+                                ),
                             );
                         }
                     }
@@ -1262,7 +1349,10 @@ pub async fn run_checks(report_path: &str) -> i32 {
                     pass(
                         &mut results,
                         "GIF：调色板优化",
-                        format!("frames={frames} width={width} size={}", job.output_size.unwrap_or(0)),
+                        format!(
+                            "frames={frames} width={width} size={}",
+                            job.output_size.unwrap_or(0)
+                        ),
                     );
                 } else {
                     fail(
@@ -1298,7 +1388,10 @@ pub async fn run_checks(report_path: &str) -> i32 {
                     pass(
                         &mut results,
                         "GIF：直接转换（无调色板优化）",
-                        format!("frames={frames} width={width} size={}", job.output_size.unwrap_or(0)),
+                        format!(
+                            "frames={frames} width={width} size={}",
+                            job.output_size.unwrap_or(0)
+                        ),
                     );
                 } else {
                     fail(
@@ -1325,21 +1418,36 @@ pub async fn run_checks(report_path: &str) -> i32 {
         match run_one(&ctx, exif_on, 60).await {
             Ok(job) => {
                 let info_out = crate::probe::probe_media(&probe_bin, &job.output).await;
-                if job.status == "done" && info_out.width == Some(720) && info_out.height == Some(1280) {
+                if job.status == "done"
+                    && info_out.width == Some(720)
+                    && info_out.height == Some(1280)
+                {
                     pass(
                         &mut results,
                         "图片 EXIF：自动校正为 720x1280（恰好一次 90°）",
-                        format!("size={}x{}", info_out.width.unwrap_or(0), info_out.height.unwrap_or(0)),
+                        format!(
+                            "size={}x{}",
+                            info_out.width.unwrap_or(0),
+                            info_out.height.unwrap_or(0)
+                        ),
                     );
                 } else {
                     fail(
                         &mut results,
                         "图片 EXIF：自动校正为 720x1280（恰好一次 90°）",
-                        format!("status={} size={:?}", job.status, (info_out.width, info_out.height)),
+                        format!(
+                            "status={} size={:?}",
+                            job.status,
+                            (info_out.width, info_out.height)
+                        ),
                     );
                 }
             }
-            Err(e) => fail(&mut results, "图片 EXIF：自动校正为 720x1280（恰好一次 90°）", e),
+            Err(e) => fail(
+                &mut results,
+                "图片 EXIF：自动校正为 720x1280（恰好一次 90°）",
+                e,
+            ),
         }
         let exif_off = JobSpec {
             kind: "image".into(),
@@ -1354,17 +1462,28 @@ pub async fn run_checks(report_path: &str) -> i32 {
         match run_one(&ctx, exif_off, 60).await {
             Ok(job) => {
                 let info_out = crate::probe::probe_media(&probe_bin, &job.output).await;
-                if job.status == "done" && info_out.width == Some(1280) && info_out.height == Some(720) {
+                if job.status == "done"
+                    && info_out.width == Some(1280)
+                    && info_out.height == Some(720)
+                {
                     pass(
                         &mut results,
                         "图片 EXIF：关闭自动校正时保留原始像素方向",
-                        format!("size={}x{}", info_out.width.unwrap_or(0), info_out.height.unwrap_or(0)),
+                        format!(
+                            "size={}x{}",
+                            info_out.width.unwrap_or(0),
+                            info_out.height.unwrap_or(0)
+                        ),
                     );
                 } else {
                     fail(
                         &mut results,
                         "图片 EXIF：关闭自动校正时保留原始像素方向",
-                        format!("status={} size={:?}", job.status, (info_out.width, info_out.height)),
+                        format!(
+                            "status={} size={:?}",
+                            job.status,
+                            (info_out.width, info_out.height)
+                        ),
                     );
                 }
             }
@@ -1386,17 +1505,28 @@ pub async fn run_checks(report_path: &str) -> i32 {
         match run_one(&ctx, exif_both, 60).await {
             Ok(job) => {
                 let info_out = crate::probe::probe_media(&probe_bin, &job.output).await;
-                if job.status == "done" && info_out.width == Some(1280) && info_out.height == Some(720) {
+                if job.status == "done"
+                    && info_out.width == Some(1280)
+                    && info_out.height == Some(720)
+                {
                     pass(
                         &mut results,
                         "图片 EXIF：自动校正 + 手动旋转只叠加一次",
-                        format!("size={}x{}（EXIF 90° + 手动 90° = 180°，未发生二次旋转）", info_out.width.unwrap_or(0), info_out.height.unwrap_or(0)),
+                        format!(
+                            "size={}x{}（EXIF 90° + 手动 90° = 180°，未发生二次旋转）",
+                            info_out.width.unwrap_or(0),
+                            info_out.height.unwrap_or(0)
+                        ),
                     );
                 } else {
                     fail(
                         &mut results,
                         "图片 EXIF：自动校正 + 手动旋转只叠加一次",
-                        format!("status={} size={:?}（720x1280 说明被转了三次）", job.status, (info_out.width, info_out.height)),
+                        format!(
+                            "status={} size={:?}（720x1280 说明被转了三次）",
+                            job.status,
+                            (info_out.width, info_out.height)
+                        ),
                     );
                 }
             }
@@ -1413,7 +1543,7 @@ pub async fn run_checks(report_path: &str) -> i32 {
                     inputs: Vec::new(),
                     output_dir: out_name.to_string_lossy().to_string(),
                     output_stem: Some("模板".into()),
-                            name_template: Some("{name}-{index}.{ext}".into()),
+                    name_template: Some("{name}-{index}.{ext}".into()),
                     conflict: None,
                     params: video_params(false),
                 },
@@ -1423,7 +1553,7 @@ pub async fn run_checks(report_path: &str) -> i32 {
                     inputs: Vec::new(),
                     output_dir: out_name.to_string_lossy().to_string(),
                     output_stem: Some("模板".into()),
-                            name_template: Some("{name}-{index}.{ext}".into()),
+                    name_template: Some("{name}-{index}.{ext}".into()),
                     conflict: None,
                     params: video_params(false),
                 },
@@ -1434,12 +1564,25 @@ pub async fn run_checks(report_path: &str) -> i32 {
             Ok(created) => {
                 let names: Vec<String> = created
                     .iter()
-                    .map(|j| Path::new(&j.output).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default())
+                    .map(|j| {
+                        Path::new(&j.output)
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_default()
+                    })
                     .collect();
                 if names == vec!["模板-1.mp4".to_string(), "模板-2.mp4".to_string()] {
-                    pass(&mut results, "命名模板：{name}-{index}.{ext}", names.join(" / "));
+                    pass(
+                        &mut results,
+                        "命名模板：{name}-{index}.{ext}",
+                        names.join(" / "),
+                    );
                 } else {
-                    fail(&mut results, "命名模板：{name}-{index}.{ext}", names.join(" / "));
+                    fail(
+                        &mut results,
+                        "命名模板：{name}-{index}.{ext}",
+                        names.join(" / "),
+                    );
                 }
             }
             Err(e) => fail(&mut results, "命名模板：{name}-{index}.{ext}", e),
@@ -1455,7 +1598,7 @@ pub async fn run_checks(report_path: &str) -> i32 {
                 input: src_short.to_string_lossy().to_string(),
                 inputs: Vec::new(),
                 output_dir: out_name.to_string_lossy().to_string(),
-                    output_stem: Some("同名".into()),
+                output_stem: Some("同名".into()),
                 name_template: None,
                 conflict: None,
                 params: video_params(false),
@@ -1464,7 +1607,9 @@ pub async fn run_checks(report_path: &str) -> i32 {
         .await
         {
             let out = created[0].output.clone();
-            let preserved = std::fs::read(&suffix_target).map(|b| b == b"sentinel-original").unwrap_or(false);
+            let preserved = std::fs::read(&suffix_target)
+                .map(|b| b == b"sentinel-original")
+                .unwrap_or(false);
             if out != suffix_target.to_string_lossy() && preserved {
                 pass(
                     &mut results,
@@ -1490,7 +1635,7 @@ pub async fn run_checks(report_path: &str) -> i32 {
                 input: src_short.to_string_lossy().to_string(),
                 inputs: Vec::new(),
                 output_dir: out_name.to_string_lossy().to_string(),
-                    output_stem: Some("跳过".into()),
+                output_stem: Some("跳过".into()),
                 name_template: None,
                 conflict: Some("skip".into()),
                 params: video_params(false),
@@ -1500,7 +1645,9 @@ pub async fn run_checks(report_path: &str) -> i32 {
         {
             Ok(created) => {
                 let job = &created[0];
-                let preserved = std::fs::read(&skip_target).map(|b| b == b"sentinel-skip").unwrap_or(false);
+                let preserved = std::fs::read(&skip_target)
+                    .map(|b| b == b"sentinel-skip")
+                    .unwrap_or(false);
                 if job.status == "skipped" && preserved {
                     pass(
                         &mut results,
@@ -1528,7 +1675,7 @@ pub async fn run_checks(report_path: &str) -> i32 {
                 input: src_short.to_string_lossy().to_string(),
                 inputs: Vec::new(),
                 output_dir: out_name.to_string_lossy().to_string(),
-                    output_stem: Some("替换".into()),
+                output_stem: Some("替换".into()),
                 name_template: None,
                 conflict: Some("overwrite".into()),
                 params: video_params(false),
@@ -1542,7 +1689,10 @@ pub async fn run_checks(report_path: &str) -> i32 {
                     .map(|b| b != b"sentinel-overwrite")
                     .unwrap_or(false);
                 let leftover = std::fs::read_dir(&out_name)
-                    .map(|rd| rd.filter_map(|e| e.ok()).any(|e| e.file_name().to_string_lossy().contains("ffbak")))
+                    .map(|rd| {
+                        rd.filter_map(|e| e.ok())
+                            .any(|e| e.file_name().to_string_lossy().contains("ffbak"))
+                    })
                     .unwrap_or(true);
                 if job.status == "done" && replaced && !leftover {
                     pass(
@@ -1624,7 +1774,9 @@ pub async fn run_checks(report_path: &str) -> i32 {
                 fail(
                     &mut results,
                     "暂停：暂停后不再调度新任务且运行中任务继续",
-                    format!("shortQueued={short_queued} longRunning={long_running} paused={paused_ok}"),
+                    format!(
+                        "shortQueued={short_queued} longRunning={long_running} paused={paused_ok}"
+                    ),
                 );
             }
             // 取消长任务以缩短检查时长；暂停状态下短任务不应被启动。
@@ -1683,7 +1835,7 @@ pub async fn run_checks(report_path: &str) -> i32 {
                 input: src_short.to_string_lossy().to_string(),
                 inputs: Vec::new(),
                 output_dir: out_after.to_string_lossy().to_string(),
-                    output_stem: Some("完成后动作".into()),
+                output_stem: Some("完成后动作".into()),
                 name_template: None,
                 conflict: None,
                 params: video_params(false),
@@ -1696,24 +1848,26 @@ pub async fn run_checks(report_path: &str) -> i32 {
                 let mut calls = after_calls.lock().map(|g| g.clone()).unwrap_or_default();
                 // 批次结束回调发生在 finish_slot 里，可能晚于 status=done 观测到；最多等 2s。
                 for _ in 0..100 {
-                    if calls
-                        .iter()
-                        .any(|(action, dir)| action == "open-folder" && dir == &out_after.to_string_lossy().to_string())
-                    {
+                    if calls.iter().any(|(action, dir)| {
+                        action == "open-folder" && dir == &out_after.to_string_lossy().to_string()
+                    }) {
                         break;
                     }
                     tokio::time::sleep(std::time::Duration::from_millis(20)).await;
                     calls = after_calls.lock().map(|g| g.clone()).unwrap_or_default();
                 }
-                let hit = calls
-                    .iter()
-                    .rev()
-                    .find(|(action, dir)| action == "open-folder" && dir == &out_after.to_string_lossy().to_string());
+                let hit = calls.iter().rev().find(|(action, dir)| {
+                    action == "open-folder" && dir == &out_after.to_string_lossy().to_string()
+                });
                 if job.status == "done" && hit.is_some() {
                     pass(
                         &mut results,
                         "完成后动作：open-folder 回调（注入记录器）",
-                        format!("action={:?} dir={:?}", hit.map(|h| h.0.clone()), hit.map(|h| h.1.clone())),
+                        format!(
+                            "action={:?} dir={:?}",
+                            hit.map(|h| h.0.clone()),
+                            hit.map(|h| h.1.clone())
+                        ),
                     );
                 } else {
                     fail(
@@ -1723,7 +1877,11 @@ pub async fn run_checks(report_path: &str) -> i32 {
                     );
                 }
             }
-            Err(e) => fail(&mut results, "完成后动作：open-folder 回调（注入记录器）", e),
+            Err(e) => fail(
+                &mut results,
+                "完成后动作：open-folder 回调（注入记录器）",
+                e,
+            ),
         }
         jobs::set_after_action(&ctx, "none").await;
 
@@ -1736,13 +1894,21 @@ pub async fn run_checks(report_path: &str) -> i32 {
             pass(
                 &mut results,
                 "完成后动作：关机仅构造命令（未执行）",
-                format!("{} {:?}；环境变量未开启，绝不执行", shutdown.program, shutdown.args),
+                format!(
+                    "{} {:?}；环境变量未开启，绝不执行",
+                    shutdown.program, shutdown.args
+                ),
             );
         } else {
             fail(
                 &mut results,
                 "完成后动作：关机仅构造命令（未执行）",
-                format!("program={} args={:?} enabled={}", shutdown.program, shutdown.args, crate::after::shutdown_enabled()),
+                format!(
+                    "program={} args={:?} enabled={}",
+                    shutdown.program,
+                    shutdown.args,
+                    crate::after::shutdown_enabled()
+                ),
             );
         }
     }
@@ -1775,7 +1941,11 @@ async fn finish(report_path: &str, info: tools::ToolsInfo, results: Vec<Check>) 
             "nonfree": info.build.nonfree,
             "note": "headless 检查使用系统 ffmpeg（开发机为 GPL 构建）；能力表为手工注入，真实探测由 verify-mvp 覆盖"
         }),
-        summary: Summary { passed, failed, total: results.len() },
+        summary: Summary {
+            passed,
+            failed,
+            total: results.len(),
+        },
         results,
     };
     if let Err(e) = write_report(report_path, &report) {
@@ -1786,7 +1956,11 @@ async fn finish(report_path: &str, info: tools::ToolsInfo, results: Vec<Check>) 
         "headless 检查完成：{} PASS / {} FAIL（报告：{report_path}）",
         passed, failed
     );
-    if failed > 0 { 1 } else { 0 }
+    if failed > 0 {
+        1
+    } else {
+        0
+    }
 }
 
 fn write_report(path: &str, report: &Report) -> std::io::Result<()> {

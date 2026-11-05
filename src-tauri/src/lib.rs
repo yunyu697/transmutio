@@ -1,6 +1,6 @@
+pub mod after;
 pub mod args;
 pub mod containers;
-pub mod after;
 pub mod flavor;
 pub mod flavor_check;
 pub mod headless;
@@ -88,10 +88,15 @@ async fn probe_capabilities(
 }
 
 #[tauri::command]
-async fn probe_files(state: State<'_, Arc<AppState>>, paths: Vec<String>) -> Result<Vec<probe::MediaInfo>, String> {
+async fn probe_files(
+    state: State<'_, Arc<AppState>>,
+    paths: Vec<String>,
+) -> Result<Vec<probe::MediaInfo>, String> {
     let ffprobe = {
         let tools = state.tools.lock().await;
-        tools.as_ref().and_then(|t| t.ffprobe.as_ref().map(|p| p.path.clone()))
+        tools
+            .as_ref()
+            .and_then(|t| t.ffprobe.as_ref().map(|p| p.path.clone()))
     };
     let ffprobe = ffprobe.ok_or_else(|| "未找到 ffprobe，无法读取媒体信息".to_string())?;
     let mut result = Vec::with_capacity(paths.len());
@@ -207,7 +212,9 @@ async fn open_job_log(app: AppHandle, id: String) -> Result<(), String> {
         .into_iter()
         .find(|j| j.id == id)
         .ok_or_else(|| "任务不存在".to_string())?;
-    let path = job.log_path.ok_or_else(|| "该任务还没有生成日志（日志在任务结束时写入）".to_string())?;
+    let path = job
+        .log_path
+        .ok_or_else(|| "该任务还没有生成日志（日志在任务结束时写入）".to_string())?;
     app.opener()
         .open_path(path, None::<&str>)
         .map_err(|e| format!("打开日志失败：{e}"))
@@ -276,7 +283,8 @@ fn legacy_import_info() -> serde_json::Value {
 #[tauri::command]
 async fn import_legacy_data() -> Result<migration::ImportSummary, String> {
     let current = flavor::Flavor::current();
-    let paths = migration::current_paths(current).ok_or_else(|| "当前平台不支持目录迁移".to_string())?;
+    let paths =
+        migration::current_paths(current).ok_or_else(|| "当前平台不支持目录迁移".to_string())?;
     tokio::task::spawn_blocking(move || migration::import_legacy_data(current, &paths))
         .await
         .map_err(|e| format!("导入失败：{e}"))?

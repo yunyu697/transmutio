@@ -85,7 +85,9 @@ fn probe_dir(dir: &Path, base: &str, triple: &str) -> Option<PathBuf> {
     if looks_like_tool(&in_binaries) {
         return Some(in_binaries);
     }
-    let in_bin_suffixed = dir.join("binaries").join(exe_name(&format!("{base}-{triple}")));
+    let in_bin_suffixed = dir
+        .join("binaries")
+        .join(exe_name(&format!("{base}-{triple}")));
     if looks_like_tool(&in_bin_suffixed) {
         return Some(in_bin_suffixed);
     }
@@ -145,7 +147,11 @@ pub fn resolve(app: &tauri::AppHandle, custom_ffmpeg: Option<String>) -> ToolsIn
     let mut hints: Vec<String> = Vec::new();
 
     // 1) 用户设置（设置页可填 ffmpeg 可执行文件路径）
-    if let Some(custom) = custom_ffmpeg.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    if let Some(custom) = custom_ffmpeg
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         let p = PathBuf::from(custom);
         if p.is_file() {
             ffmpeg = Some(ToolLocation {
@@ -251,7 +257,8 @@ pub fn resolve(app: &tauri::AppHandle, custom_ffmpeg: Option<String>) -> ToolsIn
         .as_ref()
         .and_then(|t| version_of(&t.path).map(|v| v.0));
     let gpl = configuration.contains("--enable-gpl");
-    let nonfree = configuration.contains("--enable-nonfree") || configuration.contains("--enable-libfdk-aac");
+    let nonfree =
+        configuration.contains("--enable-nonfree") || configuration.contains("--enable-libfdk-aac");
     let lgpl_ok = !gpl && !nonfree;
     if gpl || nonfree {
         warnings.push(
@@ -313,11 +320,13 @@ pub fn describe_from_paths(ffmpeg: &Path, ffprobe: Option<&Path>, source: &str) 
         .as_ref()
         .and_then(|t| version_of(&t.path).map(|v| v.0));
     let gpl = configuration.contains("--enable-gpl");
-    let nonfree = configuration.contains("--enable-nonfree") || configuration.contains("--enable-libfdk-aac");
+    let nonfree =
+        configuration.contains("--enable-nonfree") || configuration.contains("--enable-libfdk-aac");
     let mut warnings = Vec::new();
     if gpl || nonfree {
         warnings.push(
-            "当前 FFmpeg 为 GPL/nonfree 构建：仅可用于本地开发验证，不得随默认安装包分发。".to_string(),
+            "当前 FFmpeg 为 GPL/nonfree 构建：仅可用于本地开发验证，不得随默认安装包分发。"
+                .to_string(),
         );
     }
     if ffmpeg_loc.is_none() {
@@ -424,11 +433,7 @@ fn read_version(path: &str) -> Option<(String, String)> {
     let first = text.lines().next().unwrap_or("").to_string();
     let version = first
         .strip_prefix("ffmpeg version ")
-        .or_else(|| {
-            text.lines()
-                .next()
-                .and_then(|l| l.split("version ").nth(1))
-        })
+        .or_else(|| text.lines().next().and_then(|l| l.split("version ").nth(1)))
         .unwrap_or("")
         .split_whitespace()
         .next()
@@ -437,7 +442,12 @@ fn read_version(path: &str) -> Option<(String, String)> {
     let configuration = text
         .lines()
         .find(|l| l.trim_start().starts_with("configuration:"))
-        .map(|l| l.trim_start().trim_start_matches("configuration:").trim().to_string())
+        .map(|l| {
+            l.trim_start()
+                .trim_start_matches("configuration:")
+                .trim()
+                .to_string()
+        })
         .unwrap_or_default();
     Some((version, configuration))
 }

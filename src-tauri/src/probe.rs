@@ -65,41 +65,265 @@ struct Candidate {
 }
 
 const VIDEO_CANDIDATES: &[Candidate] = &[
-    Candidate { id: "h264_videotoolbox", codec: "h264", label: "Apple VideoToolbox · H.264", vendor: "videotoolbox", hardware: true, license: LICENSE_LGPL },
-    Candidate { id: "hevc_videotoolbox", codec: "hevc", label: "Apple VideoToolbox · HEVC", vendor: "videotoolbox", hardware: true, license: LICENSE_LGPL },
-    Candidate { id: "h264_nvenc", codec: "h264", label: "NVIDIA NVENC · H.264", vendor: "nvenc", hardware: true, license: LICENSE_LGPL },
-    Candidate { id: "hevc_nvenc", codec: "hevc", label: "NVIDIA NVENC · HEVC", vendor: "nvenc", hardware: true, license: LICENSE_LGPL },
-    Candidate { id: "av1_nvenc", codec: "av1", label: "NVIDIA NVENC · AV1", vendor: "nvenc", hardware: true, license: LICENSE_LGPL },
-    Candidate { id: "h264_amf", codec: "h264", label: "AMD AMF · H.264", vendor: "amf", hardware: true, license: LICENSE_LGPL },
-    Candidate { id: "hevc_amf", codec: "hevc", label: "AMD AMF · HEVC", vendor: "amf", hardware: true, license: LICENSE_LGPL },
-    Candidate { id: "av1_amf", codec: "av1", label: "AMD AMF · AV1", vendor: "amf", hardware: true, license: LICENSE_LGPL },
-    Candidate { id: "h264_qsv", codec: "h264", label: "Intel Quick Sync · H.264", vendor: "qsv", hardware: true, license: LICENSE_LGPL },
-    Candidate { id: "hevc_qsv", codec: "hevc", label: "Intel Quick Sync · HEVC", vendor: "qsv", hardware: true, license: LICENSE_LGPL },
-    Candidate { id: "av1_qsv", codec: "av1", label: "Intel Quick Sync · AV1", vendor: "qsv", hardware: true, license: LICENSE_LGPL },
-    Candidate { id: "h264_vaapi", codec: "h264", label: "VAAPI · H.264", vendor: "vaapi", hardware: true, license: LICENSE_LGPL },
-    Candidate { id: "hevc_vaapi", codec: "hevc", label: "VAAPI · HEVC", vendor: "vaapi", hardware: true, license: LICENSE_LGPL },
-    Candidate { id: "av1_vaapi", codec: "av1", label: "VAAPI · AV1", vendor: "vaapi", hardware: true, license: LICENSE_LGPL },
-    Candidate { id: "h264_d3d12va", codec: "h264", label: "D3D12 Video · H.264", vendor: "d3d12", hardware: true, license: LICENSE_LGPL },
-    Candidate { id: "hevc_d3d12va", codec: "hevc", label: "D3D12 Video · HEVC", vendor: "d3d12", hardware: true, license: LICENSE_LGPL },
-    Candidate { id: "libopenh264", codec: "h264", label: "Cisco OpenH264 · 软件", vendor: "openh264", hardware: false, license: LICENSE_LGPL },
-    Candidate { id: "libvpx-vp9", codec: "vp9", label: "libvpx · VP9", vendor: "vpx", hardware: false, license: LICENSE_LGPL },
-    Candidate { id: "libvpx", codec: "vp8", label: "libvpx · VP8", vendor: "vpx", hardware: false, license: LICENSE_LGPL },
-    Candidate { id: "libsvtav1", codec: "av1", label: "SVT-AV1", vendor: "svtav1", hardware: false, license: LICENSE_LGPL },
-    Candidate { id: "libaom-av1", codec: "av1", label: "AOMedia AV1", vendor: "aom", hardware: false, license: LICENSE_LGPL },
-    Candidate { id: "mpeg4", codec: "mpeg4", label: "MPEG-4 Part 2 · 软件", vendor: "native", hardware: false, license: LICENSE_LGPL },
-    Candidate { id: "libx264", codec: "h264", label: "x264 · 软件（GPL）", vendor: "x264", hardware: false, license: LICENSE_GPL },
-    Candidate { id: "libx265", codec: "hevc", label: "x265 · 软件（GPL）", vendor: "x265", hardware: false, license: LICENSE_GPL },
+    Candidate {
+        id: "h264_videotoolbox",
+        codec: "h264",
+        label: "Apple VideoToolbox · H.264",
+        vendor: "videotoolbox",
+        hardware: true,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "hevc_videotoolbox",
+        codec: "hevc",
+        label: "Apple VideoToolbox · HEVC",
+        vendor: "videotoolbox",
+        hardware: true,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "h264_nvenc",
+        codec: "h264",
+        label: "NVIDIA NVENC · H.264",
+        vendor: "nvenc",
+        hardware: true,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "hevc_nvenc",
+        codec: "hevc",
+        label: "NVIDIA NVENC · HEVC",
+        vendor: "nvenc",
+        hardware: true,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "av1_nvenc",
+        codec: "av1",
+        label: "NVIDIA NVENC · AV1",
+        vendor: "nvenc",
+        hardware: true,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "h264_amf",
+        codec: "h264",
+        label: "AMD AMF · H.264",
+        vendor: "amf",
+        hardware: true,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "hevc_amf",
+        codec: "hevc",
+        label: "AMD AMF · HEVC",
+        vendor: "amf",
+        hardware: true,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "av1_amf",
+        codec: "av1",
+        label: "AMD AMF · AV1",
+        vendor: "amf",
+        hardware: true,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "h264_qsv",
+        codec: "h264",
+        label: "Intel Quick Sync · H.264",
+        vendor: "qsv",
+        hardware: true,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "hevc_qsv",
+        codec: "hevc",
+        label: "Intel Quick Sync · HEVC",
+        vendor: "qsv",
+        hardware: true,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "av1_qsv",
+        codec: "av1",
+        label: "Intel Quick Sync · AV1",
+        vendor: "qsv",
+        hardware: true,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "h264_vaapi",
+        codec: "h264",
+        label: "VAAPI · H.264",
+        vendor: "vaapi",
+        hardware: true,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "hevc_vaapi",
+        codec: "hevc",
+        label: "VAAPI · HEVC",
+        vendor: "vaapi",
+        hardware: true,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "av1_vaapi",
+        codec: "av1",
+        label: "VAAPI · AV1",
+        vendor: "vaapi",
+        hardware: true,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "h264_d3d12va",
+        codec: "h264",
+        label: "D3D12 Video · H.264",
+        vendor: "d3d12",
+        hardware: true,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "hevc_d3d12va",
+        codec: "hevc",
+        label: "D3D12 Video · HEVC",
+        vendor: "d3d12",
+        hardware: true,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "libopenh264",
+        codec: "h264",
+        label: "Cisco OpenH264 · 软件",
+        vendor: "openh264",
+        hardware: false,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "libvpx-vp9",
+        codec: "vp9",
+        label: "libvpx · VP9",
+        vendor: "vpx",
+        hardware: false,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "libvpx",
+        codec: "vp8",
+        label: "libvpx · VP8",
+        vendor: "vpx",
+        hardware: false,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "libsvtav1",
+        codec: "av1",
+        label: "SVT-AV1",
+        vendor: "svtav1",
+        hardware: false,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "libaom-av1",
+        codec: "av1",
+        label: "AOMedia AV1",
+        vendor: "aom",
+        hardware: false,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "mpeg4",
+        codec: "mpeg4",
+        label: "MPEG-4 Part 2 · 软件",
+        vendor: "native",
+        hardware: false,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "libx264",
+        codec: "h264",
+        label: "x264 · 软件（GPL）",
+        vendor: "x264",
+        hardware: false,
+        license: LICENSE_GPL,
+    },
+    Candidate {
+        id: "libx265",
+        codec: "hevc",
+        label: "x265 · 软件（GPL）",
+        vendor: "x265",
+        hardware: false,
+        license: LICENSE_GPL,
+    },
 ];
 
 const AUDIO_CANDIDATES: &[Candidate] = &[
-    Candidate { id: "aac", codec: "aac", label: "FFmpeg 内置 AAC", vendor: "native", hardware: false, license: LICENSE_LGPL },
-    Candidate { id: "libmp3lame", codec: "mp3", label: "LAME · MP3", vendor: "lame", hardware: false, license: LICENSE_LGPL },
-    Candidate { id: "libshine", codec: "mp3", label: "Shine · MP3", vendor: "shine", hardware: false, license: LICENSE_LGPL },
-    Candidate { id: "libfdk_aac", codec: "aac", label: "Fraunhofer FDK AAC（nonfree）", vendor: "fdk", hardware: false, license: LICENSE_NONFREE },
-    Candidate { id: "flac", codec: "flac", label: "FLAC · 无损", vendor: "native", hardware: false, license: LICENSE_LGPL },
-    Candidate { id: "pcm_s16le", codec: "pcm_s16le", label: "PCM 16-bit · 无损", vendor: "native", hardware: false, license: LICENSE_LGPL },
-    Candidate { id: "libvorbis", codec: "vorbis", label: "libvorbis · OGG", vendor: "vorbis", hardware: false, license: LICENSE_LGPL },
-    Candidate { id: "libopus", codec: "opus", label: "libopus · Opus", vendor: "opus", hardware: false, license: LICENSE_LGPL },
+    Candidate {
+        id: "aac",
+        codec: "aac",
+        label: "FFmpeg 内置 AAC",
+        vendor: "native",
+        hardware: false,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "libmp3lame",
+        codec: "mp3",
+        label: "LAME · MP3",
+        vendor: "lame",
+        hardware: false,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "libshine",
+        codec: "mp3",
+        label: "Shine · MP3",
+        vendor: "shine",
+        hardware: false,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "libfdk_aac",
+        codec: "aac",
+        label: "Fraunhofer FDK AAC（nonfree）",
+        vendor: "fdk",
+        hardware: false,
+        license: LICENSE_NONFREE,
+    },
+    Candidate {
+        id: "flac",
+        codec: "flac",
+        label: "FLAC · 无损",
+        vendor: "native",
+        hardware: false,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "pcm_s16le",
+        codec: "pcm_s16le",
+        label: "PCM 16-bit · 无损",
+        vendor: "native",
+        hardware: false,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "libvorbis",
+        codec: "vorbis",
+        label: "libvorbis · OGG",
+        vendor: "vorbis",
+        hardware: false,
+        license: LICENSE_LGPL,
+    },
+    Candidate {
+        id: "libopus",
+        codec: "opus",
+        label: "libopus · Opus",
+        vendor: "opus",
+        hardware: false,
+        license: LICENSE_LGPL,
+    },
 ];
 
 fn decode_candidates() -> Vec<(&'static str, &'static str)> {
@@ -112,10 +336,7 @@ fn decode_candidates() -> Vec<(&'static str, &'static str)> {
             ("cuda", "CUDA / NVDEC 硬解"),
         ]
     } else {
-        vec![
-            ("vaapi", "VAAPI 硬解"),
-            ("cuda", "CUDA / NVDEC 硬解"),
-        ]
+        vec![("vaapi", "VAAPI 硬解"), ("cuda", "CUDA / NVDEC 硬解")]
     }
 }
 
@@ -287,7 +508,13 @@ async fn trial_video(ffmpeg: &str, id: &str) -> (bool, String) {
         args.push("-vf".into());
         args.push("format=nv12,hwupload".into());
     }
-    args.extend(["-c:v".into(), id.to_string(), "-f".into(), "null".into(), "-".into()]);
+    args.extend([
+        "-c:v".into(),
+        id.to_string(),
+        "-f".into(),
+        "null".into(),
+        "-".into(),
+    ]);
     exec_with_timeout(ffmpeg, args, Duration::from_secs(25)).await
 }
 
@@ -341,7 +568,12 @@ async fn make_decode_sample(ffmpeg: &str, encoder: &str, dir: &PathBuf) -> Optio
 }
 
 async fn trial_decode(ffmpeg: &str, accel: &str, sample: &PathBuf) -> (bool, String) {
-    let mut args = vec!["-hide_banner".into(), "-loglevel".into(), "error".into(), "-nostdin".into()];
+    let mut args = vec![
+        "-hide_banner".into(),
+        "-loglevel".into(),
+        "error".into(),
+        "-nostdin".into(),
+    ];
     args.push("-hwaccel".into());
     args.push(accel.to_string());
     if accel == "vaapi" || accel == "qsv" {
@@ -396,7 +628,11 @@ pub async fn detect(
         Duration::from_secs(15),
     )
     .await;
-    let hw_listed = if hw_ok { parse_hwaccels(&hw_text) } else { HashSet::new() };
+    let hw_listed = if hw_ok {
+        parse_hwaccels(&hw_text)
+    } else {
+        HashSet::new()
+    };
 
     let mut notes: Vec<String> = Vec::new();
     let mut video_encoders = Vec::new();
@@ -415,7 +651,11 @@ pub async fn detect(
         } else if !allowed {
             reason = Some(format!(
                 "许可策略已禁用（{}）：默认安装包不包含该组件",
-                if cand.license == LICENSE_GPL { "GPL" } else { "nonfree" }
+                if cand.license == LICENSE_GPL {
+                    "GPL"
+                } else {
+                    "nonfree"
+                }
             ));
         } else {
             let (ok, err) = trial_video(&ffmpeg, cand.id).await;
@@ -475,7 +715,11 @@ pub async fn detect(
     let decode_enc = video_encoders
         .iter()
         .find(|e| e.available && e.hardware && e.codec == "h264")
-        .or_else(|| video_encoders.iter().find(|e| e.available && e.codec == "h264"))
+        .or_else(|| {
+            video_encoders
+                .iter()
+                .find(|e| e.available && e.codec == "h264")
+        })
         .or_else(|| video_encoders.iter().find(|e| e.available))
         .map(|e| e.id.clone());
     let mut decode_accels = Vec::new();
@@ -505,7 +749,11 @@ pub async fn detect(
                             id: id.to_string(),
                             label: label.to_string(),
                             available: ok,
-                            reason: if ok { None } else { Some(format!("试解失败：{}", compact_error(&err))) },
+                            reason: if ok {
+                                None
+                            } else {
+                                Some(format!("试解失败：{}", compact_error(&err)))
+                            },
                         });
                     }
                     None => decode_accels.push(DecodeCap {
@@ -614,7 +862,11 @@ pub async fn probe_media(ffprobe: &str, path: &str) -> MediaInfo {
         name,
         ext: ext.clone(),
         size_bytes,
-        kind: if is_image_ext(&ext) { "image".into() } else { "other".into() },
+        kind: if is_image_ext(&ext) {
+            "image".into()
+        } else {
+            "other".into()
+        },
         ..Default::default()
     };
 
@@ -657,22 +909,46 @@ pub async fn probe_media(ffprobe: &str, path: &str) -> MediaInfo {
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse::<u64>().ok());
 
-    let streams = json.get("streams").and_then(|s| s.as_array()).cloned().unwrap_or_default();
+    let streams = json
+        .get("streams")
+        .and_then(|s| s.as_array())
+        .cloned()
+        .unwrap_or_default();
     let mut has_video = false;
     let mut has_audio = false;
     for stream in streams {
-        let codec_type = stream.get("codec_type").and_then(|v| v.as_str()).unwrap_or("");
+        let codec_type = stream
+            .get("codec_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         match codec_type {
             "video" => {
-                if stream.get("disposition").and_then(|d| d.get("attached_pic")).and_then(|v| v.as_i64()) == Some(1) {
+                if stream
+                    .get("disposition")
+                    .and_then(|d| d.get("attached_pic"))
+                    .and_then(|v| v.as_i64())
+                    == Some(1)
+                {
                     continue;
                 }
                 has_video = true;
                 if info.video_codec.is_none() {
-                    info.video_codec = stream.get("codec_name").and_then(|v| v.as_str()).map(str::to_string);
-                    info.width = stream.get("width").and_then(|v| v.as_i64()).map(|v| v as u32);
-                    info.height = stream.get("height").and_then(|v| v.as_i64()).map(|v| v as u32);
-                    info.pix_fmt = stream.get("pix_fmt").and_then(|v| v.as_str()).map(str::to_string);
+                    info.video_codec = stream
+                        .get("codec_name")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string);
+                    info.width = stream
+                        .get("width")
+                        .and_then(|v| v.as_i64())
+                        .map(|v| v as u32);
+                    info.height = stream
+                        .get("height")
+                        .and_then(|v| v.as_i64())
+                        .map(|v| v as u32);
+                    info.pix_fmt = stream
+                        .get("pix_fmt")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string);
                     info.fps = stream
                         .get("avg_frame_rate")
                         .and_then(|v| v.as_str())
@@ -694,26 +970,30 @@ pub async fn probe_media(ffprobe: &str, path: &str) -> MediaInfo {
             "audio" => {
                 has_audio = true;
                 if info.audio_codec.is_none() {
-                    info.audio_codec = stream.get("codec_name").and_then(|v| v.as_str()).map(str::to_string);
+                    info.audio_codec = stream
+                        .get("codec_name")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string);
                     info.sample_rate = stream
                         .get("sample_rate")
                         .and_then(|v| v.as_str())
                         .and_then(|s| s.parse::<u32>().ok());
-                    info.channels = stream.get("channels").and_then(|v| v.as_i64()).map(|v| v as u32);
+                    info.channels = stream
+                        .get("channels")
+                        .and_then(|v| v.as_i64())
+                        .map(|v| v as u32);
                 }
             }
             _ => {}
         }
     }
 
-    info.duration_sec = info
-        .duration_sec
-        .or_else(|| {
-            json.get("format")
-                .and_then(|f| f.get("duration"))
-                .and_then(|v| v.as_str())
-                .and_then(|s| s.parse::<f64>().ok())
-        });
+    info.duration_sec = info.duration_sec.or_else(|| {
+        json.get("format")
+            .and_then(|f| f.get("duration"))
+            .and_then(|v| v.as_str())
+            .and_then(|s| s.parse::<f64>().ok())
+    });
 
     info.kind = if has_video {
         if is_image_ext(&ext) || format_name.contains("_pipe") || format_name.contains("image2") {
@@ -730,7 +1010,8 @@ pub async fn probe_media(ffprobe: &str, path: &str) -> MediaInfo {
         info.duration_sec = None;
     }
     if !has_video && !has_audio {
-        info.error.get_or_insert_with(|| "没有可用的音视频流".into());
+        info.error
+            .get_or_insert_with(|| "没有可用的音视频流".into());
     }
     info
 }

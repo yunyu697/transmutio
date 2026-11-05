@@ -132,7 +132,12 @@ fn probe(ffprobe: &Path, path: &Path) -> Result<Probe, String> {
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
-    Ok(Probe { width, height, duration, frames })
+    Ok(Probe {
+        width,
+        height,
+        duration,
+        frames,
+    })
 }
 
 fn ffmpeg_color(ffmpeg: &Path, output: &Path, size: &str, color: &str) -> Result<(), String> {
@@ -220,7 +225,12 @@ fn run_all() -> Result<(), String> {
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("../samples/p2-check").join(format!("run-{stamp}")));
     std::fs::create_dir_all(&dir).map_err(|e| format!("无法创建输出目录：{e}"))?;
-    let mut report = Report { passed: 0, failed: 0, lines: Vec::new(), dir: dir.clone() };
+    let mut report = Report {
+        passed: 0,
+        failed: 0,
+        lines: Vec::new(),
+        dir: dir.clone(),
+    };
     println!("输出目录：{}", dir.display());
 
     image_sequence_to_video(&ffmpeg, &ffprobe, &dir, &mut report);
@@ -234,7 +244,11 @@ fn run_all() -> Result<(), String> {
 
     report.write();
     if report.failed > 0 {
-        return Err(format!("{} 项失败，详见 {}", report.failed, report.dir.display()));
+        return Err(format!(
+            "{} 项失败，详见 {}",
+            report.failed,
+            report.dir.display()
+        ));
     }
     println!("P2 checks: {}/{} passed", report.passed, report.passed);
     Ok(())
@@ -259,7 +273,10 @@ fn image_sequence_to_video(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &m
         Err(e) => return report.fail(name, format!("序列校验失败：{e}")),
     };
     if start != 1 || count != 10 {
-        return report.fail(name, format!("起始编号/帧数异常：start={start}, count={count}"));
+        return report.fail(
+            name,
+            format!("起始编号/帧数异常：start={start}, count={count}"),
+        );
     }
     let params = args::SeqParams {
         fps: 10,
@@ -276,14 +293,23 @@ fn image_sequence_to_video(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &m
         Err(e) => return report.fail(name, e),
     };
     let out = dir.join("seq-out.mp4");
-    let argv = args::build_seq_video(&pattern, out.to_string_lossy().as_ref(), &params, target, count);
+    let argv = args::build_seq_video(
+        &pattern,
+        out.to_string_lossy().as_ref(),
+        &params,
+        target,
+        count,
+    );
     if let Err(e) = run(ffmpeg, &argv) {
         return report.fail(name, format!("ffmpeg 失败：{e}"));
     }
     match probe(ffprobe, &out) {
         Ok(p) => {
             let bytes = std::fs::metadata(&out).map(|m| m.len()).unwrap_or(0);
-            let ok = p.width == 320 && p.height == 240 && (p.duration - 1.0).abs() < 0.15 && p.frames == 10;
+            let ok = p.width == 320
+                && p.height == 240
+                && (p.duration - 1.0).abs() < 0.15
+                && p.frames == 10;
             if ok {
                 report.pass(
                     name,
@@ -335,8 +361,17 @@ fn video_to_frames(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Repor
     let _ = std::fs::remove_dir_all(&framesdir);
     std::fs::create_dir_all(&framesdir).ok();
     let pattern = framesdir.join("frame-%04d.png");
-    let params = args::FramesParams { fps: 10, width: 160, format: "png".into(), quality: 90 };
-    let argv = args::build_video_frames(&input.to_string_lossy(), pattern.to_string_lossy().as_ref(), &params);
+    let params = args::FramesParams {
+        fps: 10,
+        width: 160,
+        format: "png".into(),
+        quality: 90,
+    };
+    let argv = args::build_video_frames(
+        &input.to_string_lossy(),
+        pattern.to_string_lossy().as_ref(),
+        &params,
+    );
     if let Err(e) = run(ffmpeg, &argv) {
         return report.fail(name, format!("ffmpeg 失败：{e}"));
     }
@@ -356,7 +391,11 @@ fn video_to_frames(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Repor
         ),
         _ => report.fail(
             name,
-            format!("帧数 {}，首帧 {:?}，期望 20 帧 / 160x120", files.len(), dims),
+            format!(
+                "帧数 {}，首帧 {:?}，期望 20 帧 / 160x120",
+                files.len(),
+                dims
+            ),
         ),
     }
 }
@@ -392,7 +431,11 @@ fn image_crop(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report) {
         ..Default::default()
     };
     let ratio_out = dir.join("crop-ratio.png");
-    let argv = args::build_image(&src.to_string_lossy(), ratio_out.to_string_lossy().as_ref(), &ratio_params);
+    let argv = args::build_image(
+        &src.to_string_lossy(),
+        ratio_out.to_string_lossy().as_ref(),
+        &ratio_params,
+    );
     if let Err(e) = run(ffmpeg, &argv) {
         return report.fail(name, format!("比例裁剪失败：{e}"));
     }
@@ -413,13 +456,20 @@ fn image_crop(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report) {
         return report.fail(name, format!("合法裁剪被拒绝：{e}"));
     }
     let custom_out = dir.join("crop-custom.png");
-    let argv = args::build_image(&src.to_string_lossy(), custom_out.to_string_lossy().as_ref(), &custom_params);
+    let argv = args::build_image(
+        &src.to_string_lossy(),
+        custom_out.to_string_lossy().as_ref(),
+        &custom_params,
+    );
     if let Err(e) = run(ffmpeg, &argv) {
         return report.fail(name, format!("自定义裁剪失败：{e}"));
     }
-    let custom_dims = probe(ffprobe, &custom_out).map(|p| (p.width, p.height)).ok();
+    let custom_dims = probe(ffprobe, &custom_out)
+        .map(|p| (p.width, p.height))
+        .ok();
     let reject = args::validate_custom_crop(10, 0, 640, 480, 640, 480).unwrap_err();
-    if ratio_dims == Some((480, 480)) && custom_dims == Some((150, 100)) && reject.contains("越界") {
+    if ratio_dims == Some((480, 480)) && custom_dims == Some((150, 100)) && reject.contains("越界")
+    {
         report.pass(
             name,
             format!(
@@ -472,16 +522,29 @@ fn image_collage(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report)
     let invalid = args::build_collage(
         &inputs,
         "x.png",
-        &args::CollageParams { cols: 1, rows: 1, ..params.clone() },
+        &args::CollageParams {
+            cols: 1,
+            rows: 1,
+            ..params.clone()
+        },
     )
     .unwrap_err();
     if dims == Some(expected) && invalid.contains("放不进") {
         report.pass(
             name,
-            format!("{}x{}（期望 {}x{}）；容量越界被拒绝", dims.unwrap().0, dims.unwrap().1, expected.0, expected.1),
+            format!(
+                "{}x{}（期望 {}x{}）；容量越界被拒绝",
+                dims.unwrap().0,
+                dims.unwrap().1,
+                expected.0,
+                expected.1
+            ),
         );
     } else {
-        report.fail(name, format!("dims={dims:?} expected={expected:?} invalid={invalid}"));
+        report.fail(
+            name,
+            format!("dims={dims:?} expected={expected:?} invalid={invalid}"),
+        );
     }
 }
 
@@ -492,7 +555,10 @@ fn pdf_merge_and_split(dir: &Path, report: &mut Report) {
     std::fs::write(&a, minimal_pdf(2)).ok();
     std::fs::write(&b, minimal_pdf(3)).ok();
     let merged = dir.join("pdf-merged.pdf");
-    let inputs = vec![a.to_string_lossy().to_string(), b.to_string_lossy().to_string()];
+    let inputs = vec![
+        a.to_string_lossy().to_string(),
+        b.to_string_lossy().to_string(),
+    ];
     let total = match pdf::merge(&inputs, &merged) {
         Ok(v) => v,
         Err(e) => return report.fail(name, format!("合并失败：{e}")),
@@ -532,7 +598,12 @@ fn pdf_merge_and_split(dir: &Path, report: &mut Report) {
             } else {
                 report.fail(
                     name,
-                    format!("merged={merged_pages} per={} {:?} range={} {range_pages}", per_files.len(), per_pages, range_files.len()),
+                    format!(
+                        "merged={merged_pages} per={} {:?} range={} {range_pages}",
+                        per_files.len(),
+                        per_pages,
+                        range_files.len()
+                    ),
                 );
             }
         }
@@ -614,15 +685,23 @@ fn pdf_to_image(dir: &Path, ffprobe: &Path, report: &mut Report) {
     let first = produced.first().cloned();
     let dims = first
         .as_ref()
-        .and_then(|p| run(
-            ffprobe,
-            &[
-                "-v".into(), "error".into(), "-select_streams".into(), "v:0".into(),
-                "-show_entries".into(), "stream=width,height".into(), "-of".into(), "json".into(),
-                p.to_string_lossy().to_string(),
-            ],
-        )
-        .ok())
+        .and_then(|p| {
+            run(
+                ffprobe,
+                &[
+                    "-v".into(),
+                    "error".into(),
+                    "-select_streams".into(),
+                    "v:0".into(),
+                    "-show_entries".into(),
+                    "stream=width,height".into(),
+                    "-of".into(),
+                    "json".into(),
+                    p.to_string_lossy().to_string(),
+                ],
+            )
+            .ok()
+        })
         .and_then(|json| {
             let value: serde_json::Value = serde_json::from_str(&json).ok()?;
             let stream = value.get("streams")?.get(0)?;
@@ -648,7 +727,10 @@ fn pdf_to_image(dir: &Path, ffprobe: &Path, report: &mut Report) {
     } else {
         report.fail(
             name,
-            format!("produced={} dims={dims:?} missing_ok={missing_ok}", produced.len()),
+            format!(
+                "produced={} dims={dims:?} missing_ok={missing_ok}",
+                produced.len()
+            ),
         );
     }
 }
@@ -722,7 +804,12 @@ fn format_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report)
     // 数量与拒绝路径（静态断言，不依赖 UI）。
     let reject = containers::validate_video("mp4", "vp9").err();
     let counts_ok = containers::VIDEO_CONTAINERS.len() >= 4 && containers::AUDIO_FORMATS.len() >= 5;
-    if counts_ok && reject.as_deref().map(|e| e.contains("VP9") || e.contains("vp9")).unwrap_or(false) {
+    if counts_ok
+        && reject
+            .as_deref()
+            .map(|e| e.contains("VP9") || e.contains("vp9"))
+            .unwrap_or(false)
+    {
         report.pass(
             &format!("{name}-counts"),
             format!(
@@ -733,7 +820,10 @@ fn format_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report)
             ),
         );
     } else {
-        report.fail(name, format!("容器/格式数量或拒绝路径不满足：reject={reject:?}"));
+        report.fail(
+            name,
+            format!("容器/格式数量或拒绝路径不满足：reject={reject:?}"),
+        );
     }
 
     // 真实视频容器转码。
@@ -752,10 +842,17 @@ fn format_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report)
         let out = dir.join(format!("fmt-{container}.{ext}"));
         let audio = containers::pick_container_audio_encoder(container, "", &[]);
         let mut argv: Vec<String> = vec![
-            "-hide_banner".into(), "-nostdin".into(), "-y".into(), "-loglevel".into(), "error".into(),
-            "-i".into(), base.to_string_lossy().to_string(),
-            "-t".into(), "1".into(),
-            "-c:v".into(), encoder.into(),
+            "-hide_banner".into(),
+            "-nostdin".into(),
+            "-y".into(),
+            "-loglevel".into(),
+            "error".into(),
+            "-i".into(),
+            base.to_string_lossy().to_string(),
+            "-t".into(),
+            "1".into(),
+            "-c:v".into(),
+            encoder.into(),
         ];
         if encoder == "libvpx-vp9" {
             argv.extend(["-b:v".into(), "0".into(), "-crf".into(), "32".into()]);
@@ -764,14 +861,22 @@ fn format_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report)
             argv.extend(["-q:v".into(), "4".into()]);
         }
         argv.extend(["-c:a".into(), audio.into(), "-b:a".into(), "96k".into()]);
-        argv.extend(["-f".into(), containers::find_container(container).map(|c| c.muxer).unwrap_or("mp4").into()]);
+        argv.extend([
+            "-f".into(),
+            containers::find_container(container)
+                .map(|c| c.muxer)
+                .unwrap_or("mp4")
+                .into(),
+        ]);
         argv.push(out.to_string_lossy().to_string());
         match run(ffmpeg, &argv).and_then(|_| probe_meta(ffprobe, &out)) {
             Ok((codec, format)) if codec == expect_codec && format.contains(expect_format) => {
                 let bytes = std::fs::metadata(&out).map(|m| m.len()).unwrap_or(0);
                 evidence.push(format!("{container}({codec},{format},{bytes}B)"));
             }
-            Ok((codec, format)) => failures.push(format!("{container}: codec={codec} format={format}")),
+            Ok((codec, format)) => {
+                failures.push(format!("{container}: codec={codec} format={format}"))
+            }
             Err(e) => failures.push(format!("{container}: {e}")),
         }
     }
@@ -796,12 +901,23 @@ fn format_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report)
         let ext = containers::audio_ext(format).unwrap_or(format);
         let out = dir.join(format!("fmt-audio.{ext}"));
         let mut argv: Vec<String> = vec![
-            "-hide_banner".into(), "-nostdin".into(), "-y".into(), "-loglevel".into(), "error".into(),
-            "-i".into(), base.to_string_lossy().to_string(),
-            "-t".into(), "1".into(),
-            "-vn".into(), "-c:a".into(), encoder.into(),
+            "-hide_banner".into(),
+            "-nostdin".into(),
+            "-y".into(),
+            "-loglevel".into(),
+            "error".into(),
+            "-i".into(),
+            base.to_string_lossy().to_string(),
+            "-t".into(),
+            "1".into(),
+            "-vn".into(),
+            "-c:a".into(),
+            encoder.into(),
         ];
-        if containers::find_audio(format).map(|f| f.lossy).unwrap_or(true) {
+        if containers::find_audio(format)
+            .map(|f| f.lossy)
+            .unwrap_or(true)
+        {
             argv.extend(["-b:a".into(), "96k".into()]);
         }
         argv.push(out.to_string_lossy().to_string());
@@ -843,8 +959,13 @@ fn preset_roundtrip(dir: &Path, report: &mut Report) {
         Ok(v) => v,
         Err(e) => return report.fail(name, format!("导入失败：{e}")),
     };
-    let bad_version = preset::parse(r#"{"version":9,"kind":"transmutio-preset","panels":{},"output":{}}"#).unwrap_err();
-    let unknown = preset::parse(r#"{"version":1,"kind":"transmutio-preset","panels":{"video":{"foo":1}},"output":{}}"#).unwrap_err();
+    let bad_version =
+        preset::parse(r#"{"version":9,"kind":"transmutio-preset","panels":{},"output":{}}"#)
+            .unwrap_err();
+    let unknown = preset::parse(
+        r#"{"version":1,"kind":"transmutio-preset","panels":{"video":{"foo":1}},"output":{}}"#,
+    )
+    .unwrap_err();
     let path_template = preset::parse(r#"{"version":1,"kind":"transmutio-preset","panels":{},"output":{"nameTemplate":"C:\\x\\{name}"}}"#).unwrap_err();
     let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
     let ok = loaded.version == 1

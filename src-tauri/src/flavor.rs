@@ -116,9 +116,11 @@ impl Flavor {
             }
             Self::Lgpl => {
                 if gpl && !self.allow_gpl(dev_override) {
-                    Err("当前是 LGPL 版：不接受 GPL 构建的 FFmpeg。如需 x264/x265 软件编码，\
+                    Err(
+                        "当前是 LGPL 版：不接受 GPL 构建的 FFmpeg。如需 x264/x265 软件编码，\
                          请改用 GPL 版（Transmutio GPL）。"
-                        .into())
+                            .into(),
+                    )
                 } else {
                     Ok(())
                 }
@@ -195,14 +197,23 @@ mod tests {
     fn variants_have_distinct_identity() {
         assert_eq!(Flavor::Lgpl.app_identifier(), "app.transmutio.desktop");
         assert_eq!(Flavor::Gpl.app_identifier(), "app.transmutio.desktop.gpl");
-        assert_eq!(Flavor::Lgpl.legacy_app_identifier(), "app.formatforge.desktop");
-        assert_eq!(Flavor::Gpl.legacy_app_identifier(), "app.formatforge.desktop.gpl");
+        assert_eq!(
+            Flavor::Lgpl.legacy_app_identifier(),
+            "app.formatforge.desktop"
+        );
+        assert_eq!(
+            Flavor::Gpl.legacy_app_identifier(),
+            "app.formatforge.desktop.gpl"
+        );
         assert_eq!(Flavor::Lgpl.update_channel(), "transmutio-lgpl-stable");
         assert_eq!(Flavor::Gpl.update_channel(), "transmutio-gpl-stable");
         assert_ne!(Flavor::Lgpl.app_identifier(), Flavor::Gpl.app_identifier());
         assert_ne!(Flavor::Lgpl.product_name(), Flavor::Gpl.product_name());
         assert_ne!(Flavor::Lgpl.update_channel(), Flavor::Gpl.update_channel());
-        assert_ne!(Flavor::Lgpl.default_source_url(), Flavor::Gpl.default_source_url());
+        assert_ne!(
+            Flavor::Lgpl.default_source_url(),
+            Flavor::Gpl.default_source_url()
+        );
     }
 
     /// 设置项/环境变量都翻转不了 LGPL 版：allowGpl 由编译期固定。
@@ -216,7 +227,10 @@ mod tests {
         assert!(!Flavor::Lgpl.allow_gpl(false));
         if !cfg!(debug_assertions) {
             // release 构建没有开发开关：设置项打开也不能放行。
-            assert!(!Flavor::Lgpl.allow_gpl(true), "release 构建不允许设置项放行 GPL");
+            assert!(
+                !Flavor::Lgpl.allow_gpl(true),
+                "release 构建不允许设置项放行 GPL"
+            );
             assert!(Flavor::Lgpl.accepts_build(true, false, true).is_err());
         }
         std::env::remove_var("FORMATFORGE_ALLOW_GPL");
@@ -236,7 +250,10 @@ mod tests {
 
     #[test]
     fn lgpl_dev_override_only_in_debug() {
-        assert_eq!(Flavor::Lgpl.dev_override_available(), cfg!(debug_assertions));
+        assert_eq!(
+            Flavor::Lgpl.dev_override_available(),
+            cfg!(debug_assertions)
+        );
         if cfg!(debug_assertions) {
             assert!(Flavor::Lgpl.accepts_build(true, false, true).is_ok());
         } else {

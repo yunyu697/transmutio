@@ -18,7 +18,12 @@ struct Report {
 
 impl Report {
     fn new() -> Self {
-        Self { results: Vec::new(), passed: 0, failed: 0, skipped: 0 }
+        Self {
+            results: Vec::new(),
+            passed: 0,
+            failed: 0,
+            skipped: 0,
+        }
     }
 
     fn check(&mut self, name: &str, ok: bool, detail: impl Into<String>, evidence: Value) {
@@ -71,20 +76,28 @@ fn find_lgpl_ffmpeg(root: &Path) -> Option<PathBuf> {
         if depth > 5 {
             return;
         }
-        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
                 walk(&path, depth + 1, out);
-            } else if path.file_name().map(|n| n == "ffmpeg.exe" || n == "ffmpeg").unwrap_or(false)
+            } else if path
+                .file_name()
+                .map(|n| n == "ffmpeg.exe" || n == "ffmpeg")
+                .unwrap_or(false)
                 && path
                     .parent()
                     .and_then(|p| p.file_name())
                     .map(|n| n == "bin")
                     .unwrap_or(false)
-                && path
-                    .components()
-                    .any(|c| c.as_os_str().to_string_lossy().to_lowercase().contains("lgpl"))
+                && path.components().any(|c| {
+                    c.as_os_str()
+                        .to_string_lossy()
+                        .to_lowercase()
+                        .contains("lgpl")
+                })
             {
                 out.push(path);
             }
@@ -96,8 +109,15 @@ fn find_lgpl_ffmpeg(root: &Path) -> Option<PathBuf> {
 }
 
 fn probe_sibling(ffmpeg: &Path) -> Option<PathBuf> {
-    let name = if cfg!(windows) { "ffprobe.exe" } else { "ffprobe" };
-    ffmpeg.parent().map(|d| d.join(name)).filter(|p| p.is_file())
+    let name = if cfg!(windows) {
+        "ffprobe.exe"
+    } else {
+        "ffprobe"
+    };
+    ffmpeg
+        .parent()
+        .map(|d| d.join(name))
+        .filter(|p| p.is_file())
 }
 
 fn list_dirs(dir: &Path) -> Vec<String> {
@@ -116,14 +136,19 @@ fn list_dirs(dir: &Path) -> Vec<String> {
 
 fn count_tmp(dir: &Path) -> usize {
     let mut count = 0usize;
-    let Ok(entries) = std::fs::read_dir(dir) else { return 0 };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
             count += count_tmp(&path);
         } else if path
             .file_name()
-            .map(|n| n.to_string_lossy().starts_with(".tmp-") || n.to_string_lossy().starts_with(".ff-tmp-"))
+            .map(|n| {
+                n.to_string_lossy().starts_with(".tmp-")
+                    || n.to_string_lossy().starts_with(".ff-tmp-")
+            })
             .unwrap_or(false)
         {
             count += 1;
@@ -169,7 +194,8 @@ fn run_capture(program: &Path, args: &[&str]) -> (bool, String) {
     match output {
         Ok(o) => (
             o.status.success(),
-            String::from_utf8_lossy(&o.stderr).to_string() + &String::from_utf8_lossy(&o.stdout).to_string(),
+            String::from_utf8_lossy(&o.stderr).to_string()
+                + &String::from_utf8_lossy(&o.stdout).to_string(),
         ),
         Err(err) => (false, format!("无法启动 {}：{err}", program.display())),
     }
@@ -234,9 +260,16 @@ pub async fn run_checks(report_path: &str) -> i32 {
     let tools_root = appdata.join("tools");
     match &installed {
         Ok(info) => {
-            let dest = info.ffmpeg.as_ref().map(|t| t.path.clone()).unwrap_or_default();
+            let dest = info
+                .ffmpeg
+                .as_ref()
+                .map(|t| t.path.clone())
+                .unwrap_or_default();
             let dest_path = PathBuf::from(&dest);
-            let dest_dir = dest_path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+            let dest_dir = dest_path
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_default();
             let copied_hash = setup::hash_file(&dest_path).unwrap_or_default();
             report.check(
                 "落位：路径、哈希复核、无临时文件",
@@ -260,7 +293,12 @@ pub async fn run_checks(report_path: &str) -> i32 {
                 }),
             );
         }
-        Err(err) => report.check("落位：路径、哈希复核、无临时文件", false, err.clone(), json!({})),
+        Err(err) => report.check(
+            "落位：路径、哈希复核、无临时文件",
+            false,
+            err.clone(),
+            json!({}),
+        ),
     }
 
     // 3) 同一版本再次落位不覆盖已有目录
@@ -287,7 +325,10 @@ pub async fn run_checks(report_path: &str) -> i32 {
         &appdata,
         flavor::Flavor::Lgpl,
         &lgpl.to_string_lossy(),
-        ffprobe.as_deref().map(|p| p.to_string_lossy().to_string()).as_deref(),
+        ffprobe
+            .as_deref()
+            .map(|p| p.to_string_lossy().to_string())
+            .as_deref(),
         Some(bad_hash),
         false,
     );
@@ -295,7 +336,11 @@ pub async fn run_checks(report_path: &str) -> i32 {
     report.check(
         "错误哈希：拒绝并保持目录不变",
         wrong.is_err()
-            && wrong.as_ref().err().map(|e| e.contains("哈希不匹配")).unwrap_or(false)
+            && wrong
+                .as_ref()
+                .err()
+                .map(|e| e.contains("哈希不匹配"))
+                .unwrap_or(false)
             && after == before
             && count_tmp(&appdata) == 0,
         format!(
@@ -309,7 +354,11 @@ pub async fn run_checks(report_path: &str) -> i32 {
     );
 
     // 5) nonfree 变体：拒绝
-    let nonfree_bin = work.join("fixtures").join(if cfg!(windows) { "ffmpeg-nonfree.exe" } else { "ffmpeg-nonfree" });
+    let nonfree_bin = work.join("fixtures").join(if cfg!(windows) {
+        "ffmpeg-nonfree.exe"
+    } else {
+        "ffmpeg-nonfree"
+    });
     let patched = patch_nonfree(&lgpl, &nonfree_bin);
     let patched_ok = patched.as_ref().map(|ok| *ok).unwrap_or(false);
     let patched_info = patched_ok.then(|| setup::inspect_file(&nonfree_bin.to_string_lossy()));
@@ -347,7 +396,11 @@ pub async fn run_checks(report_path: &str) -> i32 {
             }),
         );
     } else {
-        report.skip("nonfree 构建：即使 allowGpl 也拒绝", "无法生成 nonfree 变体（未找到可替换的构建配置字符串）", json!({}));
+        report.skip(
+            "nonfree 构建：即使 allowGpl 也拒绝",
+            "无法生成 nonfree 变体（未找到可替换的构建配置字符串）",
+            json!({}),
+        );
     }
 
     // 6) 不存在的文件
@@ -362,7 +415,10 @@ pub async fn run_checks(report_path: &str) -> i32 {
     );
     report.check(
         "不存在的文件：拒绝",
-        err.as_ref().err().map(|e| e.contains("不存在")).unwrap_or(false),
+        err.as_ref()
+            .err()
+            .map(|e| e.contains("不存在"))
+            .unwrap_or(false),
         format!("err={:?}", err.err()),
         json!({ "path": missing.to_string_lossy() }),
     );
@@ -383,8 +439,17 @@ pub async fn run_checks(report_path: &str) -> i32 {
         "无版本信息的文件：拒绝",
         junk_info.exists
             && junk_info.version.is_empty()
-            && err.as_ref().err().map(|e| e.contains("无法读取版本")).unwrap_or(false),
-        format!("exists={} · version={:?} · err={:?}", junk_info.exists, junk_info.version, err.err()),
+            && err
+                .as_ref()
+                .err()
+                .map(|e| e.contains("无法读取版本"))
+                .unwrap_or(false),
+        format!(
+            "exists={} · version={:?} · err={:?}",
+            junk_info.exists,
+            junk_info.version,
+            err.err()
+        ),
         json!({ "path": junk.to_string_lossy() }),
     );
 
@@ -424,7 +489,11 @@ pub async fn run_checks(report_path: &str) -> i32 {
             );
         }
     } else {
-        report.skip("LGPL 版：拒绝 GPL 构建，并提示改用 GPL 版", "系统未找到 ffmpeg", json!({}));
+        report.skip(
+            "LGPL 版：拒绝 GPL 构建，并提示改用 GPL 版",
+            "系统未找到 ffmpeg",
+            json!({}),
+        );
     }
 
     // 8b) GPL 版接受 GPL 构建，并落在独立的 appdata（与 LGPL 版互不覆盖）
@@ -441,7 +510,10 @@ pub async fn run_checks(report_path: &str) -> i32 {
                 false,
             );
             let gpl_tools = gpl_appdata.join("tools");
-            let dest = accepted.as_ref().ok().and_then(|i| i.ffmpeg.as_ref().map(|t| t.path.clone()));
+            let dest = accepted
+                .as_ref()
+                .ok()
+                .and_then(|i| i.ffmpeg.as_ref().map(|t| t.path.clone()));
             report.check(
                 "GPL 版：接受 GPL 构建，且与 LGPL 版数据目录隔离",
                 accepted.is_ok()
@@ -475,7 +547,10 @@ pub async fn run_checks(report_path: &str) -> i32 {
             );
             report.check(
                 "GPL 版：拒绝 LGPL 构建（需要 libx264/libx265）",
-                err.as_ref().err().map(|e| e.contains("需要 GPL 构建")).unwrap_or(false),
+                err.as_ref()
+                    .err()
+                    .map(|e| e.contains("需要 GPL 构建"))
+                    .unwrap_or(false),
                 format!("err={:?}", err.err()),
                 json!({ "flavor": "gpl", "ffmpeg": lgpl.to_string_lossy() }),
             );
@@ -486,16 +561,30 @@ pub async fn run_checks(report_path: &str) -> i32 {
                 "缺少真实 GPL 构建",
                 json!({}),
             );
-            report.skip("GPL 版：拒绝 LGPL 构建（需要 libx264/libx265）", "已由 accept 用例覆盖", json!({}));
+            report.skip(
+                "GPL 版：拒绝 LGPL 构建（需要 libx264/libx265）",
+                "已由 accept 用例覆盖",
+                json!({}),
+            );
         }
     }
 
     // 9) 闭环：用落位后的 ffmpeg 真实转码
     let Ok(info) = installed else {
-        report.check("闭环：落位后的 ffmpeg 真实转码", false, "落位失败，无法继续", json!({}));
+        report.check(
+            "闭环：落位后的 ffmpeg 真实转码",
+            false,
+            "落位失败，无法继续",
+            json!({}),
+        );
         return finish(report, report_path, &appdata);
     };
-    let installed_ffmpeg = PathBuf::from(info.ffmpeg.as_ref().map(|t| t.path.clone()).unwrap_or_default());
+    let installed_ffmpeg = PathBuf::from(
+        info.ffmpeg
+            .as_ref()
+            .map(|t| t.path.clone())
+            .unwrap_or_default(),
+    );
     std::fs::create_dir_all(&out_dir).ok();
     let source = work.join("source.mp4");
     let generated = run_capture(
@@ -524,7 +613,11 @@ pub async fn run_checks(report_path: &str) -> i32 {
     report.check(
         "闭环：生成测试素材",
         generated.0 && source.is_file(),
-        format!("ffmpeg={} · stderr尾部={}", installed_ffmpeg.display(), tail(&generated.1, 200)),
+        format!(
+            "ffmpeg={} · stderr尾部={}",
+            installed_ffmpeg.display(),
+            tail(&generated.1, 200)
+        ),
         json!({ "source": source.to_string_lossy() }),
     );
 
@@ -547,8 +640,18 @@ pub async fn run_checks(report_path: &str) -> i32 {
 }
 
 fn tail(text: &str, limit: usize) -> String {
-    let filtered: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
-    let joined = filtered.iter().rev().take(2).cloned().collect::<Vec<_>>().join(" · ");
+    let filtered: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
+    let joined = filtered
+        .iter()
+        .rev()
+        .take(2)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(" · ");
     if joined.chars().count() > limit {
         joined.chars().take(limit).collect::<String>() + "…"
     } else {
@@ -604,10 +707,7 @@ async fn run_conversion(info: tools::ToolsInfo, source: &Path, out_dir: &Path) -
 
     let deadline = Instant::now() + Duration::from_secs(60);
     loop {
-        let current = jobs::list(&ctx)
-            .await
-            .into_iter()
-            .find(|j| j.id == job.id);
+        let current = jobs::list(&ctx).await.into_iter().find(|j| j.id == job.id);
         if let Some(job) = current {
             if job.status == "done" {
                 let output = PathBuf::from(&job.output);
@@ -625,7 +725,10 @@ async fn run_conversion(info: tools::ToolsInfo, source: &Path, out_dir: &Path) -
             if job.status == "failed" || job.status == "cancelled" {
                 return (
                     false,
-                    format!("status={} · kind={:?} · message={:?}", job.status, job.error_kind, job.message),
+                    format!(
+                        "status={} · kind={:?} · message={:?}",
+                        job.status, job.error_kind, job.message
+                    ),
                 );
             }
         }
@@ -638,7 +741,9 @@ async fn run_conversion(info: tools::ToolsInfo, source: &Path, out_dir: &Path) -
 
 fn list_temps(dir: &Path) -> usize {
     let mut count = 0usize;
-    let Ok(entries) = std::fs::read_dir(dir) else { return 0 };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
@@ -679,9 +784,10 @@ fn finish(report: Report, report_path: &str, appdata: &Path) -> i32 {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    match serde_json::to_string_pretty(&payload).map_err(|e| e.to_string()).and_then(|text| {
-        std::fs::write(path, text).map_err(|e| e.to_string())
-    }) {
+    match serde_json::to_string_pretty(&payload)
+        .map_err(|e| e.to_string())
+        .and_then(|text| std::fs::write(path, text).map_err(|e| e.to_string()))
+    {
         Ok(()) => println!(
             "setup 落位检查完成：{} PASS / {} FAIL / {} SKIP（报告：{}）",
             report.passed, report.failed, report.skipped, report_path

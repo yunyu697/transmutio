@@ -114,7 +114,6 @@ pub struct CollageParams {
     pub quality: u32,
 }
 
-
 /// 视频合并：`auto` = 同参走 stream copy，不同参先统一转码再拼接；
 /// `copy` = 强制 stream copy（不同参直接拒绝）；`transcode` = 一律先统一转码。
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -188,7 +187,11 @@ fn vt_quality(q: u32) -> u32 {
 /// 不同编码器的码控参数差异很大，必须按厂商分别映射，不能统一塞 -crf。
 fn rate_args(encoder: &str, p: &VideoParams) -> Vec<String> {
     let quality = p.quality.clamp(14, 40);
-    let kbps = if p.bitrate_kbps > 0 { p.bitrate_kbps } else { 4200 };
+    let kbps = if p.bitrate_kbps > 0 {
+        p.bitrate_kbps
+    } else {
+        4200
+    };
     let bitrate_mode = p.rate_mode == "bitrate";
     let target_h = p.resolution.parse::<u32>().unwrap_or(1080);
     let hint = quality_bitrate_hint(target_h);
@@ -249,19 +252,34 @@ fn rate_args(encoder: &str, p: &VideoParams) -> Vec<String> {
         return if bitrate_mode {
             vec!["-b:v".into(), format!("{kbps}k")]
         } else {
-            vec!["-global_quality".into(), quality.to_string(), "-preset".into(), "medium".into()]
+            vec![
+                "-global_quality".into(),
+                quality.to_string(),
+                "-preset".into(),
+                "medium".into(),
+            ]
         };
     }
     if encoder.ends_with("_vaapi") {
         return if bitrate_mode {
             vec!["-b:v".into(), format!("{kbps}k")]
         } else {
-            vec!["-rc_mode".into(), "CQP".into(), "-qp".into(), quality.to_string()]
+            vec![
+                "-rc_mode".into(),
+                "CQP".into(),
+                "-qp".into(),
+                quality.to_string(),
+            ]
         };
     }
     if encoder.ends_with("_videotoolbox") {
         return if bitrate_mode {
-            vec!["-b:v".into(), format!("{kbps}k"), "-allow_sw".into(), "0".into()]
+            vec![
+                "-b:v".into(),
+                format!("{kbps}k"),
+                "-allow_sw".into(),
+                "0".into(),
+            ]
         } else {
             vec![
                 "-q:v".into(),
@@ -273,9 +291,19 @@ fn rate_args(encoder: &str, p: &VideoParams) -> Vec<String> {
     }
     if encoder == "libx264" || encoder == "libx264rgb" || encoder == "libx265" {
         return if bitrate_mode {
-            vec!["-b:v".into(), format!("{kbps}k"), "-preset".into(), "medium".into()]
+            vec![
+                "-b:v".into(),
+                format!("{kbps}k"),
+                "-preset".into(),
+                "medium".into(),
+            ]
         } else {
-            vec!["-crf".into(), quality.to_string(), "-preset".into(), "medium".into()]
+            vec![
+                "-crf".into(),
+                quality.to_string(),
+                "-preset".into(),
+                "medium".into(),
+            ]
         };
     }
     if encoder == "libopenh264" {
@@ -297,19 +325,10 @@ fn rate_args(encoder: &str, p: &VideoParams) -> Vec<String> {
 /// 取偶数是 yuv420p 的硬要求（奇数宽高会让编码器报错）。
 fn crop_filter(mode: &str) -> Option<String> {
     let (w, h) = match mode {
-        "16:9" => (
-            "trunc(min(iw,ih*16/9)/2)*2",
-            "trunc(min(ih,iw*9/16)/2)*2",
-        ),
+        "16:9" => ("trunc(min(iw,ih*16/9)/2)*2", "trunc(min(ih,iw*9/16)/2)*2"),
         "1:1" => ("trunc(min(iw,ih)/2)*2", "trunc(min(iw,ih)/2)*2"),
-        "9:16" => (
-            "trunc(min(iw,ih*9/16)/2)*2",
-            "trunc(min(ih,iw*16/9)/2)*2",
-        ),
-        "4:3" => (
-            "trunc(min(iw,ih*4/3)/2)*2",
-            "trunc(min(ih,iw*3/4)/2)*2",
-        ),
+        "9:16" => ("trunc(min(iw,ih*9/16)/2)*2", "trunc(min(ih,iw*16/9)/2)*2"),
+        "4:3" => ("trunc(min(iw,ih*4/3)/2)*2", "trunc(min(ih,iw*3/4)/2)*2"),
         _ => return None,
     };
     Some(format!("crop=w='{w}':h='{h}'"))
@@ -321,7 +340,9 @@ pub fn validate_image_crop(p: &ImageParams) -> Result<(), String> {
         "" | "none" => Ok(()),
         "ratio" => match p.crop_ratio.as_str() {
             "1:1" | "16:9" | "9:16" | "4:3" => Ok(()),
-            other => Err(format!("不支持的裁剪比例「{other}」，可选 1:1 / 16:9 / 9:16 / 4:3")),
+            other => Err(format!(
+                "不支持的裁剪比例「{other}」，可选 1:1 / 16:9 / 9:16 / 4:3"
+            )),
         },
         "custom" => {
             if p.crop_w == 0 || p.crop_h == 0 {
@@ -332,7 +353,9 @@ pub fn validate_image_crop(p: &ImageParams) -> Result<(), String> {
             }
             Ok(())
         }
-        other => Err(format!("不支持的裁剪模式「{other}」，可选 none / ratio / custom")),
+        other => Err(format!(
+            "不支持的裁剪模式「{other}」，可选 none / ratio / custom"
+        )),
     }
 }
 
@@ -367,7 +390,10 @@ fn image_crop_filter(p: &ImageParams) -> Option<String> {
         "ratio" => crop_filter(&p.crop_ratio),
         "custom" => Some(format!(
             "crop={}:{}:{}:{}",
-            p.crop_w, p.crop_h, p.crop_x.max(0), p.crop_y.max(0)
+            p.crop_w,
+            p.crop_h,
+            p.crop_x.max(0),
+            p.crop_y.max(0)
         )),
         _ => None,
     }
@@ -427,9 +453,7 @@ pub fn validate_sequence(inputs: &[String]) -> Result<(String, u32, u32), String
             return Err(format!("{input} 与序列前缀「{prefix}」不匹配"));
         }
         let tail = &file_stem[prefix.len()..];
-        let number: u32 = tail
-            .parse()
-            .map_err(|_| format!("无法解析编号：{input}"))?;
+        let number: u32 = tail.parse().map_err(|_| format!("无法解析编号：{input}"))?;
         numbers.push(number);
     }
     numbers.sort_unstable();
@@ -463,10 +487,7 @@ pub fn validate_sequence(inputs: &[String]) -> Result<(String, u32, u32), String
 }
 
 /// 序列的统一尺寸策略。`dims` 是每张图的 (宽, 高)。
-pub fn seq_target_size(
-    p: &SeqParams,
-    dims: &[(u32, u32)],
-) -> Result<Option<(u32, u32)>, String> {
+pub fn seq_target_size(p: &SeqParams, dims: &[(u32, u32)]) -> Result<Option<(u32, u32)>, String> {
     if dims.is_empty() {
         return Err("没有可用的图片尺寸".into());
     }
@@ -552,10 +573,16 @@ pub fn build_seq_video(
     let mut rate = rate_args(
         encoder,
         &VideoParams {
-            rate_mode: if p.bitrate_kbps > 0 { "bitrate".into() } else { "quality".into() },
+            rate_mode: if p.bitrate_kbps > 0 {
+                "bitrate".into()
+            } else {
+                "quality".into()
+            },
             quality: if p.quality > 0 { p.quality } else { 23 },
             bitrate_kbps: p.bitrate_kbps,
-            resolution: target.map(|(_, h)| h.to_string()).unwrap_or_else(|| "1080".into()),
+            resolution: target
+                .map(|(_, h)| h.to_string())
+                .unwrap_or_else(|| "1080".into()),
             ..Default::default()
         },
     );
@@ -619,7 +646,11 @@ fn normalize_color(value: &str) -> Result<String, String> {
 }
 
 /// 拼图：先让每张图按 contain/cover 适配单元格，再按网格 xstack 拼接。
-pub fn build_collage(inputs: &[String], output: &str, p: &CollageParams) -> Result<Vec<String>, String> {
+pub fn build_collage(
+    inputs: &[String],
+    output: &str,
+    p: &CollageParams,
+) -> Result<Vec<String>, String> {
     if inputs.is_empty() {
         return Err("拼图至少需要 1 张图片".into());
     }
@@ -641,7 +672,11 @@ pub fn build_collage(inputs: &[String], output: &str, p: &CollageParams) -> Resu
     if p.cell_width == 0 || p.cell_height == 0 {
         return Err("拼图单元格的宽高必须大于 0".into());
     }
-    let bg = normalize_color(if p.background.trim().is_empty() { "#FFFFFF" } else { &p.background })?;
+    let bg = normalize_color(if p.background.trim().is_empty() {
+        "#FFFFFF"
+    } else {
+        &p.background
+    })?;
     let gap = p.gap;
     let cell_w = p.cell_width;
     let cell_h = p.cell_height;
@@ -678,11 +713,7 @@ pub fn build_collage(inputs: &[String], output: &str, p: &CollageParams) -> Resu
             .map(|index| {
                 let col = index as u32 % cols;
                 let row = index as u32 / cols;
-                format!(
-                    "{}_{}",
-                    col * (cell_w + gap),
-                    row * (cell_h + gap)
-                )
+                format!("{}_{}", col * (cell_w + gap), row * (cell_h + gap))
             })
             .collect();
         graph.push_str(&format!(
@@ -832,15 +863,27 @@ pub fn build_video(
             args.push("-an".into());
         }
         _ => {
-            let kbps = if p.audio_bitrate_kbps > 0 { p.audio_bitrate_kbps } else { 192 };
-            let audio = if container_audio.trim().is_empty() { "aac" } else { container_audio };
+            let kbps = if p.audio_bitrate_kbps > 0 {
+                p.audio_bitrate_kbps
+            } else {
+                192
+            };
+            let audio = if container_audio.trim().is_empty() {
+                "aac"
+            } else {
+                container_audio
+            };
             args.push("-c:a".into());
             args.push(audio.into());
             args.push("-b:a".into());
             args.push(format!("{kbps}k"));
         }
     }
-    let spec = crate::containers::find_container(if p.container.trim().is_empty() { "mp4" } else { &p.container });
+    let spec = crate::containers::find_container(if p.container.trim().is_empty() {
+        "mp4"
+    } else {
+        &p.container
+    });
     let muxer = spec.map(|c| c.muxer).unwrap_or("mp4");
     if p.faststart && spec.map(|c| c.faststart).unwrap_or(true) {
         args.push("-movflags".into());
@@ -865,7 +908,11 @@ pub fn audio_encoder(p: &AudioParams) -> &'static str {
 }
 
 pub fn build_audio(encoder: &str, input: &str, output: &str, p: &AudioParams) -> Vec<String> {
-    let kbps = if p.bitrate_kbps > 0 { p.bitrate_kbps } else { 192 };
+    let kbps = if p.bitrate_kbps > 0 {
+        p.bitrate_kbps
+    } else {
+        192
+    };
     let spec = crate::containers::find_audio(&p.format);
     let lossy = spec.map(|f| f.lossy).unwrap_or(true);
     let mut args: Vec<String> = vec![
@@ -1072,11 +1119,19 @@ fn parse_tiff_orientation(tiff: &[u8]) -> Option<u16> {
     };
     let read_u16 = |at: usize| -> Option<u16> {
         let raw: [u8; 2] = tiff.get(at..at + 2)?.try_into().ok()?;
-        Some(if little { u16::from_le_bytes(raw) } else { u16::from_be_bytes(raw) })
+        Some(if little {
+            u16::from_le_bytes(raw)
+        } else {
+            u16::from_be_bytes(raw)
+        })
     };
     let read_u32 = |at: usize| -> Option<u32> {
         let raw: [u8; 4] = tiff.get(at..at + 4)?.try_into().ok()?;
-        Some(if little { u32::from_le_bytes(raw) } else { u32::from_be_bytes(raw) })
+        Some(if little {
+            u32::from_le_bytes(raw)
+        } else {
+            u32::from_be_bytes(raw)
+        })
     };
     let magic = read_u16(2)?;
     if magic != 42 {
@@ -1096,7 +1151,11 @@ fn parse_tiff_orientation(tiff: &[u8]) -> Option<u16> {
             return None;
         }
         let value = read_u16(entry + 8)?;
-        return if (1..=8).contains(&value) { Some(value) } else { None };
+        return if (1..=8).contains(&value) {
+            Some(value)
+        } else {
+            None
+        };
     }
     None
 }
@@ -1107,7 +1166,10 @@ pub fn merge_incompatibility(
     next: &crate::probe::MediaInfo,
 ) -> Option<String> {
     if first.video_codec != next.video_codec {
-        return Some(format!("编码不同（{:?} vs {:?}）", first.video_codec, next.video_codec));
+        return Some(format!(
+            "编码不同（{:?} vs {:?}）",
+            first.video_codec, next.video_codec
+        ));
     }
     if first.width != next.width || first.height != next.height {
         return Some(format!(
@@ -1223,10 +1285,16 @@ pub fn build_merge_segment(
     let mut rate = rate_args(
         encoder,
         &VideoParams {
-            rate_mode: if p.bitrate_kbps > 0 { "bitrate".into() } else { "quality".into() },
+            rate_mode: if p.bitrate_kbps > 0 {
+                "bitrate".into()
+            } else {
+                "quality".into()
+            },
             quality: if p.quality > 0 { p.quality } else { 23 },
             bitrate_kbps: p.bitrate_kbps,
-            resolution: target_height.map(|h| h.to_string()).unwrap_or_else(|| "1080".into()),
+            resolution: target_height
+                .map(|h| h.to_string())
+                .unwrap_or_else(|| "1080".into()),
             ..Default::default()
         },
     );
@@ -1289,7 +1357,11 @@ pub fn build_mux(
         args.push("-c:a".into());
         args.push("copy".into());
     } else {
-        let kbps = if p.audio_bitrate_kbps > 0 { p.audio_bitrate_kbps } else { 192 };
+        let kbps = if p.audio_bitrate_kbps > 0 {
+            p.audio_bitrate_kbps
+        } else {
+            192
+        };
         args.push("-c:a".into());
         args.push("aac".into());
         args.push("-b:a".into());
@@ -1386,9 +1458,15 @@ mod tests {
         p.resolution = "720".into();
         let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None);
         let vf = filter_arg(&args).expect("应生成 -vf");
-        assert!(vf.starts_with("crop=w='trunc(min(iw,ih*9/16)/2)*2'"), "裁剪应最先应用：{vf}");
+        assert!(
+            vf.starts_with("crop=w='trunc(min(iw,ih*9/16)/2)*2'"),
+            "裁剪应最先应用：{vf}"
+        );
         assert!(vf.contains(",transpose=1,"), "旋转应在裁剪之后：{vf}");
-        assert!(vf.ends_with(",scale=-2:720:flags=lanczos"), "缩放应最后应用：{vf}");
+        assert!(
+            vf.ends_with(",scale=-2:720:flags=lanczos"),
+            "缩放应最后应用：{vf}"
+        );
     }
 
     #[test]
@@ -1403,7 +1481,10 @@ mod tests {
     fn no_adjustments_means_no_filter_graph() {
         let p = video_params();
         let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None);
-        assert!(filter_arg(&args).is_none(), "无裁剪/旋转/缩放时不应插入 -vf");
+        assert!(
+            filter_arg(&args).is_none(),
+            "无裁剪/旋转/缩放时不应插入 -vf"
+        );
     }
 
     #[test]
@@ -1411,7 +1492,10 @@ mod tests {
         let mut p = video_params();
         p.crop = "1:1".into();
         let square = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None);
-        assert_eq!(filter_arg(&square).as_deref(), Some("crop=w='trunc(min(iw,ih)/2)*2':h='trunc(min(iw,ih)/2)*2'"));
+        assert_eq!(
+            filter_arg(&square).as_deref(),
+            Some("crop=w='trunc(min(iw,ih)/2)*2':h='trunc(min(iw,ih)/2)*2'")
+        );
 
         p.crop = "16:9".into();
         let wide = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None);
@@ -1451,7 +1535,10 @@ mod tests {
     #[test]
     fn exif_orientation_parser_reads_ifd0() {
         for orientation in 1u16..=8 {
-            assert_eq!(parse_exif_orientation(&exif_jpeg(orientation)), Some(orientation));
+            assert_eq!(
+                parse_exif_orientation(&exif_jpeg(orientation)),
+                Some(orientation)
+            );
         }
         // 非 JPEG / 缺 EXIF 一律返回 None
         assert_eq!(parse_exif_orientation(b"not a jpeg"), None);
@@ -1490,12 +1577,18 @@ mod tests {
         assert_eq!(vf, "transpose=1");
 
         // 关闭自动校正时不应出现任何 EXIF 变换。
-        let params_off = ImageParams { auto_orient: false, ..params.clone() };
+        let params_off = ImageParams {
+            auto_orient: false,
+            ..params.clone()
+        };
         let args_off = build_image(&input.to_string_lossy(), "out.jpg", &params_off);
         assert!(!args_off.contains(&"-vf".to_string()));
 
         // 自动校正 + 手动 90°，必须是「EXIF 一次 + 手动一次」，而不是被 ffmpeg 再隐式转一次。
-        let params_manual = ImageParams { rotation: "90".into(), ..params };
+        let params_manual = ImageParams {
+            rotation: "90".into(),
+            ..params
+        };
         let args_manual = build_image(&input.to_string_lossy(), "out.jpg", &params_manual);
         let vf_manual = args_manual
             .iter()
@@ -1517,14 +1610,23 @@ mod tests {
             optimize: true,
         };
         let args = build_gif("in.mp4", "out.gif", &p);
-        assert_eq!(args[args.iter().position(|a| a == "-ss").unwrap() + 1], "1.500");
-        assert_eq!(args[args.iter().position(|a| a == "-t").unwrap() + 1], "2.000");
+        assert_eq!(
+            args[args.iter().position(|a| a == "-ss").unwrap() + 1],
+            "1.500"
+        );
+        assert_eq!(
+            args[args.iter().position(|a| a == "-t").unwrap() + 1],
+            "2.000"
+        );
         let vf = args[args.iter().position(|a| a == "-vf").unwrap() + 1].clone();
         assert!(vf.contains("fps=12"));
         assert!(vf.contains("scale=320:-2"));
         assert!(vf.contains("palettegen") && vf.contains("paletteuse"));
 
-        let plain = GifParams { optimize: false, ..p };
+        let plain = GifParams {
+            optimize: false,
+            ..p
+        };
         let args_plain = build_gif("in.mp4", "out.gif", &plain);
         let vf_plain = args_plain[args_plain.iter().position(|a| a == "-vf").unwrap() + 1].clone();
         assert!(!vf_plain.contains("palettegen"), "{vf_plain}");
@@ -1538,17 +1640,33 @@ mod tests {
             audio_bitrate_kbps: 192,
         };
         let args = build_mux("v.mp4", "a.wav", "out.mp4", &replace, Some(3.0));
-        let maps: Vec<&String> = args.iter().filter(|a| a.starts_with("0:") || a.starts_with("1:")).collect();
+        let maps: Vec<&String> = args
+            .iter()
+            .filter(|a| a.starts_with("0:") || a.starts_with("1:"))
+            .collect();
         assert_eq!(maps, vec!["0:v:0", "1:a:0"]);
         let pos = args.iter().position(|a| a == "-c:v").unwrap();
         assert_eq!(args[pos + 1], "copy");
-        assert_eq!(args[args.iter().position(|a| a == "-t").unwrap() + 1], "3.000");
+        assert_eq!(
+            args[args.iter().position(|a| a == "-t").unwrap() + 1],
+            "3.000"
+        );
 
-        let add = MuxParams { mode: "add".into(), audio_mode: "copy".into(), ..replace };
+        let add = MuxParams {
+            mode: "add".into(),
+            audio_mode: "copy".into(),
+            ..replace
+        };
         let args_add = build_mux("v.mp4", "a.aac", "out.mp4", &add, None);
-        let maps_add: Vec<&String> = args_add.iter().filter(|a| a.starts_with("0:") || a.starts_with("1:")).collect();
+        let maps_add: Vec<&String> = args_add
+            .iter()
+            .filter(|a| a.starts_with("0:") || a.starts_with("1:"))
+            .collect();
         assert_eq!(maps_add, vec!["0:v:0", "0:a:0?", "1:a:0"]);
-        assert_eq!(args_add[args_add.iter().position(|a| a == "-c:a").unwrap() + 1], "copy");
+        assert_eq!(
+            args_add[args_add.iter().position(|a| a == "-c:a").unwrap() + 1],
+            "copy"
+        );
     }
 
     #[test]
@@ -1564,12 +1682,30 @@ mod tests {
             ..Default::default()
         };
         assert!(merge_incompatibility(&base, &base).is_none());
-        let different_res = crate::probe::MediaInfo { width: Some(640), height: Some(480), ..base.clone() };
-        assert!(merge_incompatibility(&base, &different_res).unwrap().contains("分辨率"));
-        let different_codec = crate::probe::MediaInfo { video_codec: Some("hevc".into()), ..base.clone() };
-        assert!(merge_incompatibility(&base, &different_codec).unwrap().contains("编码"));
-        let no_audio = crate::probe::MediaInfo { audio_codec: None, channels: None, sample_rate: None, ..base.clone() };
-        assert!(merge_incompatibility(&base, &no_audio).unwrap().contains("音轨"));
+        let different_res = crate::probe::MediaInfo {
+            width: Some(640),
+            height: Some(480),
+            ..base.clone()
+        };
+        assert!(merge_incompatibility(&base, &different_res)
+            .unwrap()
+            .contains("分辨率"));
+        let different_codec = crate::probe::MediaInfo {
+            video_codec: Some("hevc".into()),
+            ..base.clone()
+        };
+        assert!(merge_incompatibility(&base, &different_codec)
+            .unwrap()
+            .contains("编码"));
+        let no_audio = crate::probe::MediaInfo {
+            audio_codec: None,
+            channels: None,
+            sample_rate: None,
+            ..base.clone()
+        };
+        assert!(merge_incompatibility(&base, &no_audio)
+            .unwrap()
+            .contains("音轨"));
     }
 
     #[test]
@@ -1578,10 +1714,7 @@ mod tests {
             "D:\\videos\\a.mp4".to_string(),
             "C:\\it's\\b.mp4".to_string(),
         ]);
-        assert_eq!(
-            list,
-            "file 'D:/videos/a.mp4'\nfile 'C:/it'\\''s/b.mp4'\n"
-        );
+        assert_eq!(list, "file 'D:/videos/a.mp4'\nfile 'C:/it'\\''s/b.mp4'\n");
     }
 
     #[test]
@@ -1609,17 +1742,31 @@ mod tests {
 
     #[test]
     fn image_crop_validation_rejects_bad_input() {
-        let mut p = ImageParams { crop_mode: "custom".into(), ..Default::default() };
+        let mut p = ImageParams {
+            crop_mode: "custom".into(),
+            ..Default::default()
+        };
         assert!(validate_image_crop(&p).unwrap_err().contains("大于 0"));
         p.crop_w = 100;
         p.crop_h = 100;
         p.crop_x = -1;
         assert!(validate_image_crop(&p).unwrap_err().contains("负数"));
 
-        let ratio = ImageParams { crop_mode: "ratio".into(), crop_ratio: "5:4".into(), ..Default::default() };
-        assert!(validate_image_crop(&ratio).unwrap_err().contains("不支持的裁剪比例"));
-        let mode = ImageParams { crop_mode: "magic".into(), ..Default::default() };
-        assert!(validate_image_crop(&mode).unwrap_err().contains("不支持的裁剪模式"));
+        let ratio = ImageParams {
+            crop_mode: "ratio".into(),
+            crop_ratio: "5:4".into(),
+            ..Default::default()
+        };
+        assert!(validate_image_crop(&ratio)
+            .unwrap_err()
+            .contains("不支持的裁剪比例"));
+        let mode = ImageParams {
+            crop_mode: "magic".into(),
+            ..Default::default()
+        };
+        assert!(validate_image_crop(&mode)
+            .unwrap_err()
+            .contains("不支持的裁剪模式"));
 
         assert!(validate_custom_crop(0, 0, 640, 480, 640, 480).is_ok());
         assert!(validate_custom_crop(10, 0, 640, 480, 640, 480)
@@ -1662,15 +1809,31 @@ mod tests {
 
     #[test]
     fn sequence_size_policy_requires_equal_dims_for_source_mode() {
-        let p = SeqParams { size_mode: "source".into(), fps: 10, ..Default::default() };
+        let p = SeqParams {
+            size_mode: "source".into(),
+            fps: 10,
+            ..Default::default()
+        };
         assert!(seq_target_size(&p, &[(320, 240), (320, 240)]).is_ok());
         let err = seq_target_size(&p, &[(320, 240), (640, 480)]).unwrap_err();
         assert!(err.contains("要求所有图片同尺寸"), "{err}");
 
-        let fixed = SeqParams { size_mode: "fixed".into(), width: 0, height: 0, ..Default::default() };
-        assert!(seq_target_size(&fixed, &[(320, 240)]).unwrap_err().contains("大于 0"));
-        let bad = SeqParams { size_mode: "weird".into(), ..Default::default() };
-        assert!(seq_target_size(&bad, &[(320, 240)]).unwrap_err().contains("不支持"));
+        let fixed = SeqParams {
+            size_mode: "fixed".into(),
+            width: 0,
+            height: 0,
+            ..Default::default()
+        };
+        assert!(seq_target_size(&fixed, &[(320, 240)])
+            .unwrap_err()
+            .contains("大于 0"));
+        let bad = SeqParams {
+            size_mode: "weird".into(),
+            ..Default::default()
+        };
+        assert!(seq_target_size(&bad, &[(320, 240)])
+            .unwrap_err()
+            .contains("不支持"));
     }
 
     #[test]
@@ -1686,16 +1849,33 @@ mod tests {
             bitrate_kbps: 0,
         };
         let args = build_seq_video("dir/frame_%04d.png", "out.mp4", &p, Some((320, 240)), 7);
-        assert_eq!(args[args.iter().position(|a| a == "-framerate").unwrap() + 1], "12");
-        assert_eq!(args[args.iter().position(|a| a == "-start_number").unwrap() + 1], "7");
-        assert_eq!(args[args.iter().position(|a| a == "-frames:v").unwrap() + 1], "7");
+        assert_eq!(
+            args[args.iter().position(|a| a == "-framerate").unwrap() + 1],
+            "12"
+        );
+        assert_eq!(
+            args[args.iter().position(|a| a == "-start_number").unwrap() + 1],
+            "7"
+        );
+        assert_eq!(
+            args[args.iter().position(|a| a == "-frames:v").unwrap() + 1],
+            "7"
+        );
         let vf = args[args.iter().position(|a| a == "-vf").unwrap() + 1].clone();
-        assert!(vf.contains("scale=320:240") && vf.contains("pad=320:240"), "{vf}");
+        assert!(
+            vf.contains("scale=320:240") && vf.contains("pad=320:240"),
+            "{vf}"
+        );
     }
 
     #[test]
     fn frames_build_sets_fps_and_output_pattern() {
-        let p = FramesParams { fps: 5, width: 320, format: "png".into(), quality: 90 };
+        let p = FramesParams {
+            fps: 5,
+            width: 320,
+            format: "png".into(),
+            quality: 90,
+        };
         let args = build_video_frames("in.mp4", "dir/frame-%04d.png", &p);
         let vf = args[args.iter().position(|a| a == "-vf").unwrap() + 1].clone();
         assert_eq!(vf, "fps=5,scale=320:-2:flags=lanczos");
@@ -1715,18 +1895,28 @@ mod tests {
             format: "png".into(),
             quality: 90,
         };
-        let err = build_collage(&["a.png".into(), "b.png".into(), "c.png".into()], "out.png", &p)
-            .unwrap_err();
+        let err = build_collage(
+            &["a.png".into(), "b.png".into(), "c.png".into()],
+            "out.png",
+            &p,
+        )
+        .unwrap_err();
         assert!(err.contains("放不进"), "{err}");
 
-        let bad_color = CollageParams { background: "white".into(), ..p.clone() };
+        let bad_color = CollageParams {
+            background: "white".into(),
+            ..p.clone()
+        };
         assert!(build_collage(&["a.png".into()], "out.png", &bad_color)
             .unwrap_err()
             .contains("RRGGBB"));
 
         let args = build_collage(&["a.png".into(), "b.png".into()], "out.png", &p).unwrap();
         let graph = args[args.iter().position(|a| a == "-filter_complex").unwrap() + 1].clone();
-        assert!(graph.contains("xstack=inputs=2:layout=0_0|100_0"), "{graph}");
+        assert!(
+            graph.contains("xstack=inputs=2:layout=0_0|100_0"),
+            "{graph}"
+        );
         assert_eq!(collage_canvas(2, 2, 100, 80, 10), (210, 170));
     }
 }

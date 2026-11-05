@@ -1,6 +1,9 @@
 fn main() {
     let gpl = std::env::var("CARGO_FEATURE_GPL").is_ok();
-    println!("cargo:rustc-env=FF_FLAVOR={}", if gpl { "gpl" } else { "lgpl" });
+    println!(
+        "cargo:rustc-env=FF_FLAVOR={}",
+        if gpl { "gpl" } else { "lgpl" }
+    );
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_GPL");
 

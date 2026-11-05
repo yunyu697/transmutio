@@ -61,19 +61,30 @@ pub fn merge(inputs: &[String], output: &Path) -> Result<usize, String> {
             .and_then(|dict| dict.get(b"Parent").ok())
             .and_then(|object| object.as_reference().ok());
         while let Some(parent_id) = parent {
-            let Some(dict) = merged.objects.get(&parent_id).and_then(|o| o.as_dict().ok()) else {
+            let Some(dict) = merged
+                .objects
+                .get(&parent_id)
+                .and_then(|o| o.as_dict().ok())
+            else {
                 break;
             };
             for key in inherited_keys {
                 if let Ok(value) = dict.get(key) {
-                    if !inherited.iter().any(|(existing, _)| existing.as_slice() == key) {
+                    if !inherited
+                        .iter()
+                        .any(|(existing, _)| existing.as_slice() == key)
+                    {
                         inherited.push((key.to_vec(), value.clone()));
                     }
                 }
             }
             parent = dict.get(b"Parent").ok().and_then(|o| o.as_reference().ok());
         }
-        if let Some(dict) = merged.objects.get_mut(page_id).and_then(|o| o.as_dict_mut().ok()) {
+        if let Some(dict) = merged
+            .objects
+            .get_mut(page_id)
+            .and_then(|o| o.as_dict_mut().ok())
+        {
             for (key, value) in inherited {
                 if dict.get(&key).is_err() {
                     dict.set(key, value);
@@ -92,7 +103,11 @@ pub fn merge(inputs: &[String], output: &Path) -> Result<usize, String> {
     let pages_root_id = merged.add_object(Object::Dictionary(pages_root));
 
     for page_id in &page_ids {
-        if let Some(dict) = merged.objects.get_mut(page_id).and_then(|o| o.as_dict_mut().ok()) {
+        if let Some(dict) = merged
+            .objects
+            .get_mut(page_id)
+            .and_then(|o| o.as_dict_mut().ok())
+        {
             dict.set("Parent", Object::Reference(pages_root_id));
         }
     }
@@ -127,12 +142,20 @@ pub fn parse_ranges(spec: &str, total: usize) -> Result<Vec<(u32, u32)>, String>
         }
         let (start, end) = match part.split_once('-') {
             Some((a, b)) => {
-                let a = a.trim().parse::<u32>().map_err(|_| format!("无法解析页码「{a}」"))?;
-                let b = b.trim().parse::<u32>().map_err(|_| format!("无法解析页码「{b}」"))?;
+                let a = a
+                    .trim()
+                    .parse::<u32>()
+                    .map_err(|_| format!("无法解析页码「{a}」"))?;
+                let b = b
+                    .trim()
+                    .parse::<u32>()
+                    .map_err(|_| format!("无法解析页码「{b}」"))?;
                 (a, b)
             }
             None => {
-                let n = part.parse::<u32>().map_err(|_| format!("无法解析页码「{part}」"))?;
+                let n = part
+                    .parse::<u32>()
+                    .map_err(|_| format!("无法解析页码「{part}」"))?;
                 (n, n)
             }
         };
@@ -352,7 +375,14 @@ mod tests {
         fs::write(&a, minimal_pdf(2)).unwrap();
         fs::write(&b, minimal_pdf(3)).unwrap();
         let out = dir.join("merged.pdf");
-        let total = merge(&[a.to_string_lossy().to_string(), b.to_string_lossy().to_string()], &out).unwrap();
+        let total = merge(
+            &[
+                a.to_string_lossy().to_string(),
+                b.to_string_lossy().to_string(),
+            ],
+            &out,
+        )
+        .unwrap();
         assert_eq!(total, 5);
         assert_eq!(page_count(&out.to_string_lossy()).unwrap(), 5);
         let size = fs::metadata(&out).unwrap().len();
@@ -388,7 +418,11 @@ mod tests {
         assert_eq!(files.len(), 2);
         assert_eq!(page_count(&files[0].to_string_lossy()).unwrap(), 2);
         assert_eq!(page_count(&files[1].to_string_lossy()).unwrap(), 1);
-        assert!(files[0].file_name().unwrap().to_string_lossy().contains("p0001-0002"));
+        assert!(files[0]
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .contains("p0001-0002"));
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -396,7 +430,9 @@ mod tests {
     fn range_parser_rejects_invalid_specs() {
         assert!(parse_ranges("", 5).unwrap_err().contains("请填写"));
         assert!(parse_ranges("0-2", 5).unwrap_err().contains("从 1 开始"));
-        assert!(parse_ranges("4-2", 5).unwrap_err().contains("起始页大于结束页"));
+        assert!(parse_ranges("4-2", 5)
+            .unwrap_err()
+            .contains("起始页大于结束页"));
         assert!(parse_ranges("1-9", 5).unwrap_err().contains("超出总页数"));
         assert!(parse_ranges("1,1", 5).unwrap_err().contains("重复"));
         assert!(parse_ranges("1,,2", 5).unwrap_err().contains("空段"));

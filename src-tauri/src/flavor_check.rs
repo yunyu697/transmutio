@@ -66,7 +66,12 @@ struct Recorder {
 
 impl Recorder {
     fn new() -> Self {
-        Self { checks: Vec::new(), passed: 0, failed: 0, skipped: 0 }
+        Self {
+            checks: Vec::new(),
+            passed: 0,
+            failed: 0,
+            skipped: 0,
+        }
     }
     fn pass(&mut self, name: &str, level: &str, detail: String, evidence: Value) {
         self.passed += 1;
@@ -287,7 +292,8 @@ pub async fn run_checks(report_path: &str) -> i32 {
     let flip_ok = if is_gpl {
         flavor::allow_gpl_effective(false) && flavor.allow_gpl(false)
     } else {
-        flavor::allow_gpl_effective(false) == false && flavor.accepts_build(true, false, false).is_err()
+        flavor::allow_gpl_effective(false) == false
+            && flavor.accepts_build(true, false, false).is_err()
     };
     let flip_evidence = json!({
         "env": { "FORMATFORGE_ALLOW_GPL": std::env::var("FORMATFORGE_ALLOW_GPL").ok(), "FORMATFORGE_DISABLE_GPL": std::env::var("FORMATFORGE_DISABLE_GPL").ok() },
@@ -377,8 +383,14 @@ pub async fn run_checks(report_path: &str) -> i32 {
                 .ok()
                 .and_then(|i| i.ffmpeg.as_ref().map(|t| t.path.clone()));
             let isolated = ids_distinct
-                && lgpl_path.as_deref().map(|p| Path::new(p).starts_with(&lgpl_appdata)).unwrap_or(false)
-                && gpl_path.as_deref().map(|p| Path::new(p).starts_with(&gpl_appdata)).unwrap_or(false)
+                && lgpl_path
+                    .as_deref()
+                    .map(|p| Path::new(p).starts_with(&lgpl_appdata))
+                    .unwrap_or(false)
+                && gpl_path
+                    .as_deref()
+                    .map(|p| Path::new(p).starts_with(&gpl_appdata))
+                    .unwrap_or(false)
                 && lgpl_path != gpl_path;
             rec.judge(
                 "数据目录隔离：两变体 tools 路径不同",
@@ -408,7 +420,10 @@ pub async fn run_checks(report_path: &str) -> i32 {
                 "数据目录隔离：删除一端不影响另一端",
                 LOGIC,
                 lgpl_survives && !gpl_appdata.exists(),
-                format!("删除 {} 后，LGPL 落位文件仍存在={lgpl_survives}", gpl_appdata.display()),
+                format!(
+                    "删除 {} 后，LGPL 落位文件仍存在={lgpl_survives}",
+                    gpl_appdata.display()
+                ),
                 json!({ "lgplStillExists": lgpl_survives, "gplRemoved": !gpl_appdata.exists() }),
             );
         }
@@ -427,10 +442,10 @@ pub async fn run_checks(report_path: &str) -> i32 {
         match (&gpl_build, &lgpl_build) {
             (Some(gp), _) => {
                 let ffmpeg = gp.to_string_lossy().to_string();
-                let ffprobe = ffmpeg.replace("ffmpeg.exe", "ffprobe.exe").replace("/ffmpeg", "/ffprobe");
-                let ffprobe = Path::new(&ffprobe)
-                    .exists()
-                    .then(|| ffprobe.clone());
+                let ffprobe = ffmpeg
+                    .replace("ffmpeg.exe", "ffprobe.exe")
+                    .replace("/ffmpeg", "/ffprobe");
+                let ffprobe = Path::new(&ffprobe).exists().then(|| ffprobe.clone());
                 let src = work.join("src-3s.mp4");
                 let gen = run_ffmpeg(
                     &ffmpeg,
@@ -463,7 +478,11 @@ pub async fn run_checks(report_path: &str) -> i32 {
                         );
                         let out_dir = work.join("gpl-out");
                         let _ = std::fs::create_dir_all(&out_dir);
-                        let info = tools::describe_from_paths(gp, ffprobe.as_deref().map(Path::new), "custom");
+                        let info = tools::describe_from_paths(
+                            gp,
+                            ffprobe.as_deref().map(Path::new),
+                            "custom",
+                        );
                         let state = Arc::new(AppState::default());
                         *state.tools.lock().await = Some(info.clone());
                         {
@@ -499,12 +518,18 @@ pub async fn run_checks(report_path: &str) -> i32 {
                                             .map(|m| m.len() > 1000)
                                             .unwrap_or(false);
                                         let temps = temp_files(&out_dir);
-                                        let codec = probe_codec(ffprobe.as_deref(), Path::new(&done.output));
+                                        let codec = probe_codec(
+                                            ffprobe.as_deref(),
+                                            Path::new(&done.output),
+                                        );
                                         let ok = done.status == "done"
                                             && done.encoder_used.as_deref() == Some("libx264")
                                             && exists
                                             && temps.is_empty()
-                                            && codec.as_deref().map(|c| c.contains("h264")).unwrap_or(false);
+                                            && codec
+                                                .as_deref()
+                                                .map(|c| c.contains("h264"))
+                                                .unwrap_or(false);
                                         rec.judge(
                                             "真实转码：GPL 版用 libx264 转出 MP4",
                                             REAL,
@@ -534,7 +559,11 @@ pub async fn run_checks(report_path: &str) -> i32 {
                     }
                 }
             }
-            _ => rec.skip("真实转码：GPL 版用 libx264 转出 MP4", REAL, "未找到 GPL 构建".into()),
+            _ => rec.skip(
+                "真实转码：GPL 版用 libx264 转出 MP4",
+                REAL,
+                "未找到 GPL 构建".into(),
+            ),
         }
     }
 
@@ -581,7 +610,8 @@ pub async fn run_checks(report_path: &str) -> i32 {
                     }
                     let ctx = Ctx::silent(state.clone());
                     tokio::spawn(jobs::start_scheduler(ctx.clone()));
-                    for (label, encoder) in [("software", "software"), ("显式 libx264", "libx264")] {
+                    for (label, encoder) in [("software", "software"), ("显式 libx264", "libx264")]
+                    {
                         let stem = format!("lgpl-reject-{encoder}");
                         let spec = JobSpec {
                             kind: "video-mp4".into(),
@@ -598,7 +628,9 @@ pub async fn run_checks(report_path: &str) -> i32 {
                             Ok(created) => {
                                 let job = created[0].clone();
                                 match wait_job(&ctx, &job.id, Duration::from_secs(30)).await {
-                                    Err(e) => rec.fail("LGPL 版：拒绝 GPL 编码器", REAL, e, json!({})),
+                                    Err(e) => {
+                                        rec.fail("LGPL 版：拒绝 GPL 编码器", REAL, e, json!({}))
+                                    }
                                     Ok(done) => {
                                         let no_output = !Path::new(&done.output).exists();
                                         let temps = temp_files(&out_dir);

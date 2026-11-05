@@ -148,19 +148,39 @@ pub fn audio_ext(id: &str) -> Option<&'static str> {
 }
 
 fn list_containers() -> String {
-    VIDEO_CONTAINERS.iter().map(|c| c.id).collect::<Vec<_>>().join(" / ")
+    VIDEO_CONTAINERS
+        .iter()
+        .map(|c| c.id)
+        .collect::<Vec<_>>()
+        .join(" / ")
 }
 
 fn list_audio_formats() -> String {
-    AUDIO_FORMATS.iter().map(|f| f.id).collect::<Vec<_>>().join(" / ")
+    AUDIO_FORMATS
+        .iter()
+        .map(|f| f.id)
+        .collect::<Vec<_>>()
+        .join(" / ")
 }
 
 /// 校验容器与视频编码是否兼容；不兼容组合在入队阶段直接拒绝。
 pub fn validate_video(container: &str, codec: &str) -> Result<(), String> {
-    let container = if container.trim().is_empty() { "mp4" } else { container };
-    let spec = find_container(container)
-        .ok_or_else(|| format!("不支持的视频容器「{container}」，可选：{}", list_containers()))?;
-    let codec = if codec.trim().is_empty() { "h264" } else { codec };
+    let container = if container.trim().is_empty() {
+        "mp4"
+    } else {
+        container
+    };
+    let spec = find_container(container).ok_or_else(|| {
+        format!(
+            "不支持的视频容器「{container}」，可选：{}",
+            list_containers()
+        )
+    })?;
+    let codec = if codec.trim().is_empty() {
+        "h264"
+    } else {
+        codec
+    };
     if !spec.codecs.contains(&codec) {
         return Err(format!(
             "容器 {} 不支持 {} 编码，可组合：{}",
@@ -173,9 +193,16 @@ pub fn validate_video(container: &str, codec: &str) -> Result<(), String> {
 }
 
 pub fn validate_audio(format: &str) -> Result<(), String> {
-    let format = if format.trim().is_empty() { "mp3" } else { format };
+    let format = if format.trim().is_empty() {
+        "mp3"
+    } else {
+        format
+    };
     if find_audio(format).is_none() {
-        return Err(format!("不支持的音频格式「{format}」，可选：{}", list_audio_formats()));
+        return Err(format!(
+            "不支持的音频格式「{format}」，可选：{}",
+            list_audio_formats()
+        ));
     }
     Ok(())
 }

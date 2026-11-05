@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
@@ -174,10 +174,7 @@ impl Ctx {
     }
 
     /// 注入「完成后动作」执行器（打开目录 / 关机）。便于无窗口测试断言，不触碰真实系统。
-    pub fn with_after_action(
-        mut self,
-        after: impl Fn(&str, &str) + Send + Sync + 'static,
-    ) -> Self {
+    pub fn with_after_action(mut self, after: impl Fn(&str, &str) + Send + Sync + 'static) -> Self {
         self.after = Arc::new(after);
         self
     }
@@ -236,8 +233,13 @@ fn kind_ext(kind: &str, params: &Value) -> String {
         }
         // 视频容器由 params.container 决定（mp4 / mkv / webm / mov / ts / avi）。
         "video-mp4" => {
-            let container = params.get("container").and_then(Value::as_str).unwrap_or("mp4");
-            containers::container_ext(container).unwrap_or("mp4").to_string()
+            let container = params
+                .get("container")
+                .and_then(Value::as_str)
+                .unwrap_or("mp4");
+            containers::container_ext(container)
+                .unwrap_or("mp4")
+                .to_string()
         }
         "video-gif" => "gif".into(),
         "pdf-merge" | "pdf-split" => "pdf".into(),
@@ -246,14 +248,22 @@ fn kind_ext(kind: &str, params: &Value) -> String {
                 .get("format")
                 .and_then(Value::as_str)
                 .unwrap_or("png");
-            if format == "jpg" { "jpg".into() } else { "png".into() }
+            if format == "jpg" {
+                "jpg".into()
+            } else {
+                "png".into()
+            }
         }
         "video-frames" => {
             let format = params
                 .get("format")
                 .and_then(Value::as_str)
                 .unwrap_or("png");
-            if format == "jpg" { "jpg".into() } else { "png".into() }
+            if format == "jpg" {
+                "jpg".into()
+            } else {
+                "png".into()
+            }
         }
         "image-collage" => {
             let format = params
@@ -268,7 +278,12 @@ fn kind_ext(kind: &str, params: &Value) -> String {
         }
         "image" => {
             let p: args::ImageParams = serde_json::from_value(params.clone()).unwrap_or_default();
-            args::image_ext(if p.format.is_empty() { "jpg" } else { &p.format }).to_string()
+            args::image_ext(if p.format.is_empty() {
+                "jpg"
+            } else {
+                &p.format
+            })
+            .to_string()
         }
         _ => "mp4".into(),
     }
@@ -358,9 +373,19 @@ fn utc_date() -> String {
 
 /// 渲染命名模板（只渲染文件名主体，扩展名由任务类型单独追加）。
 /// 未知占位符原样保留，避免把用户写的花括号悄悄吃掉。
-pub fn render_name(template: &str, source_stem: &str, date: &str, index: usize, ext: &str) -> String {
+pub fn render_name(
+    template: &str,
+    source_stem: &str,
+    date: &str,
+    index: usize,
+    ext: &str,
+) -> String {
     let template = template.trim();
-    let template = if template.is_empty() { "{name}" } else { template };
+    let template = if template.is_empty() {
+        "{name}"
+    } else {
+        template
+    };
     let rendered = template
         .replace("{name}", source_stem)
         .replace("{date}", date)
@@ -550,8 +575,12 @@ pub async fn enqueue(ctx: &Ctx, specs: Vec<JobSpec>) -> Result<Vec<Job>, String>
     let (ffprobe, has_ffmpeg) = {
         let tools = state.tools.lock().await;
         (
-            tools.as_ref().and_then(|t| t.ffprobe.as_ref().map(|p| p.path.clone())),
-            tools.as_ref().and_then(|t| t.ffmpeg.as_ref().map(|p| p.path.clone())),
+            tools
+                .as_ref()
+                .and_then(|t| t.ffprobe.as_ref().map(|p| p.path.clone())),
+            tools
+                .as_ref()
+                .and_then(|t| t.ffmpeg.as_ref().map(|p| p.path.clone())),
         )
     };
     if has_ffmpeg.is_none() {
@@ -578,19 +607,30 @@ pub async fn enqueue(ctx: &Ctx, specs: Vec<JobSpec>) -> Result<Vec<Job>, String>
 
         let mut info = match ffprobe.as_deref() {
             Some(probe_bin) => probe::probe_media(probe_bin, &spec.input).await,
-            None => probe::MediaInfo { path: spec.input.clone(), ..Default::default() },
+            None => probe::MediaInfo {
+                path: spec.input.clone(),
+                ..Default::default()
+            },
         };
-        if info.error.as_deref().map(|e| e.contains("0 字节")).unwrap_or(false) {
+        if info
+            .error
+            .as_deref()
+            .map(|e| e.contains("0 字节"))
+            .unwrap_or(false)
+        {
             return Err(format!("{}：文件为空，已拒绝入队", info.name));
         }
         let mut total_duration = info.duration_sec;
 
         // 图片自定义裁剪需要在入队阶段对照源图尺寸校验，避免任务跑起来才失败。
         if spec.kind == "image" {
-            let p: args::ImageParams = serde_json::from_value(spec.params.clone()).unwrap_or_default();
+            let p: args::ImageParams =
+                serde_json::from_value(spec.params.clone()).unwrap_or_default();
             if p.crop_mode == "custom" {
                 if let (Some(width), Some(height)) = (info.width, info.height) {
-                    args::validate_custom_crop(p.crop_x, p.crop_y, p.crop_w, p.crop_h, width, height)?;
+                    args::validate_custom_crop(
+                        p.crop_x, p.crop_y, p.crop_w, p.crop_h, width, height,
+                    )?;
                 }
             }
         }
@@ -606,7 +646,10 @@ pub async fn enqueue(ctx: &Ctx, specs: Vec<JobSpec>) -> Result<Vec<Job>, String>
                 } else {
                     match ffprobe.as_deref() {
                         Some(probe_bin) => probe::probe_media(probe_bin, input).await,
-                        None => probe::MediaInfo { path: input.clone(), ..Default::default() },
+                        None => probe::MediaInfo {
+                            path: input.clone(),
+                            ..Default::default()
+                        },
                     }
                 };
                 match (part.width, part.height) {
@@ -647,7 +690,8 @@ pub async fn enqueue(ctx: &Ctx, specs: Vec<JobSpec>) -> Result<Vec<Job>, String>
         }
 
         let dir = PathBuf::from(&spec.output_dir);
-        std::fs::create_dir_all(&dir).map_err(|e| format!("无法创建输出目录 {}：{e}", dir.display()))?;
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| format!("无法创建输出目录 {}：{e}", dir.display()))?;
 
         let ext = kind_ext(&spec.kind, &spec.params);
         let source_stem = spec
@@ -663,7 +707,10 @@ pub async fn enqueue(ctx: &Ctx, specs: Vec<JobSpec>) -> Result<Vec<Job>, String>
             &ext,
         );
         // 模板里可能显式写了 {ext}，此时不要再追加一次扩展名。
-        let stem = if stem.to_ascii_lowercase().ends_with(&format!(".{}", ext.to_ascii_lowercase())) {
+        let stem = if stem
+            .to_ascii_lowercase()
+            .ends_with(&format!(".{}", ext.to_ascii_lowercase()))
+        {
             stem[..stem.len() - ext.len() - 1].to_string()
         } else {
             stem
@@ -700,7 +747,11 @@ pub async fn enqueue(ctx: &Ctx, specs: Vec<JobSpec>) -> Result<Vec<Job>, String>
 
         {
             let mut inner = state.inner.lock().await;
-            let used: Vec<PathBuf> = inner.jobs.iter().map(|j| PathBuf::from(&j.output)).collect();
+            let used: Vec<PathBuf> = inner
+                .jobs
+                .iter()
+                .map(|j| PathBuf::from(&j.output))
+                .collect();
             let target = dir.join(format!("{stem}.{ext}"));
             let reserved = used.iter().any(|p| p == &target);
             let exists = target.exists();
@@ -709,7 +760,10 @@ pub async fn enqueue(ctx: &Ctx, specs: Vec<JobSpec>) -> Result<Vec<Job>, String>
                 job.status = "skipped".into();
                 job.message = Some(format!(
                     "目标文件已存在（{}），按「跳过」策略未生成新文件",
-                    target.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
+                    target
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_default()
                 ));
                 job.finished_at = Some(now_ms());
                 job.output = target.to_string_lossy().to_string();
@@ -796,7 +850,11 @@ pub async fn cancel(ctx: &Ctx, id: &str) -> Result<(), String> {
             tokio::time::sleep(Duration::from_secs(3)).await;
             let status = {
                 let inner = ctx2.state.inner.lock().await;
-                inner.jobs.iter().find(|j| j.id == id2).map(|j| j.status.clone())
+                inner
+                    .jobs
+                    .iter()
+                    .find(|j| j.id == id2)
+                    .map(|j| j.status.clone())
             };
             if status.as_deref() == Some("cancelled") {
                 cleanup_temp(&ctx2, &id2).await;
@@ -899,7 +957,9 @@ pub async fn start_scheduler(ctx: Ctx) {
             let mut inner = state.inner.lock().await;
             // 队列级暂停：只停止调度新任务；已在运行的任务会自然跑完。
             while !inner.paused && inner.running < inner.concurrency {
-                let Some(id) = inner.queue.pop_front() else { break };
+                let Some(id) = inner.queue.pop_front() else {
+                    break;
+                };
                 let Some(pos) = inner
                     .jobs
                     .iter()
@@ -971,15 +1031,19 @@ async fn finish_slot(ctx: &Ctx, id: &str) {
         inner.cancel_requested.remove(id);
         inner.children.remove(id);
         let drained = inner.running == 0 && inner.queue.is_empty() && !inner.drained;
-        let dir = inner
-            .jobs
-            .iter()
-            .find(|j| j.id == id)
-            .and_then(|j| Path::new(&j.output).parent().map(|p| p.to_string_lossy().to_string()));
+        let dir = inner.jobs.iter().find(|j| j.id == id).and_then(|j| {
+            Path::new(&j.output)
+                .parent()
+                .map(|p| p.to_string_lossy().to_string())
+        });
         if drained {
             inner.drained = true;
         }
-        if drained { dir } else { None }
+        if drained {
+            dir
+        } else {
+            None
+        }
     };
     // 批次结束动作（打开目录 / 关机）只在这里触发一次；回调可由测试注入，不直接操作宿主。
     if let Some(dir) = drained_dir {
@@ -1073,7 +1137,10 @@ fn classify(stderr: &str) -> (String, String) {
         || low.contains("operation timed out")
     {
         "io-temporary"
-    } else if low.contains("out of memory") || low.contains("cannot allocate memory") || low.contains("内存") {
+    } else if low.contains("out of memory")
+        || low.contains("cannot allocate memory")
+        || low.contains("内存")
+    {
         "hw-memory"
     } else if low.contains("mfx session")
         || low.contains("createcomponent")
@@ -1141,7 +1208,12 @@ fn is_hardware_encoder(id: &str) -> bool {
         || id.ends_with("_mf")
 }
 
-fn encoder_chain(caps: Option<&probe::Capabilities>, codec: &str, mode: &str, allow_gpl: bool) -> Vec<String> {
+fn encoder_chain(
+    caps: Option<&probe::Capabilities>,
+    codec: &str,
+    mode: &str,
+    allow_gpl: bool,
+) -> Vec<String> {
     let Some(caps) = caps else {
         return if mode == "software" || mode == "auto" {
             vec![]
@@ -1365,19 +1437,18 @@ async fn parse_progress(
         // 多步任务（合并转码 + 拼接）把每一步映射到总进度的一段，避免进度条回跳。
         let ratio = (progress.0 + step_ratio * progress.1).clamp(0.0, 0.999);
         let pct = (ratio * 100.0) as i32;
-        let should_emit = last_pct < 0 || pct - last_pct >= 2 || last_emit.elapsed() > Duration::from_millis(250);
+        let should_emit =
+            last_pct < 0 || pct - last_pct >= 2 || last_emit.elapsed() > Duration::from_millis(250);
         if should_emit {
             last_emit = Instant::now();
             last_pct = pct;
-            let eta = duration
-                .filter(|d| *d > 0.0)
-                .and_then(|d| {
-                    speed
-                        .as_deref()
-                        .and_then(|s| s.trim_end_matches('x').parse::<f64>().ok())
-                        .filter(|s| *s > 0.01)
-                        .map(|s| (d - out_us / 1_000_000.0).max(0.0) / s)
-                });
+            let eta = duration.filter(|d| *d > 0.0).and_then(|d| {
+                speed
+                    .as_deref()
+                    .and_then(|s| s.trim_end_matches('x').parse::<f64>().ok())
+                    .filter(|s| *s > 0.01)
+                    .map(|s| (d - out_us / 1_000_000.0).max(0.0) / s)
+            });
             let speed_clone = speed.clone();
             let _ = set_job(&ctx, &job_id, |job| {
                 job.progress = ratio;
@@ -1421,8 +1492,11 @@ async fn write_job_log(ctx: &Ctx, id: &str, status: &str, attempts: &[String], s
     if std::fs::create_dir_all(&dir).is_err() {
         return;
     }
-    let Some(job) = get_job(ctx, id).await else { return };
-    let params = serde_json::to_string_pretty(&job.params).unwrap_or_else(|_| job.params.to_string());
+    let Some(job) = get_job(ctx, id).await else {
+        return;
+    };
+    let params =
+        serde_json::to_string_pretty(&job.params).unwrap_or_else(|_| job.params.to_string());
     let body = format!(
         "Transmutio 任务日志\n\
          id: {id}\n\
@@ -1446,7 +1520,11 @@ async fn write_job_log(ctx: &Ctx, id: &str, status: &str, attempts: &[String], s
         job.encoder_used,
         job.error_kind,
         job.message,
-        if attempts.is_empty() { "无".to_string() } else { attempts.join("；") },
+        if attempts.is_empty() {
+            "无".to_string()
+        } else {
+            attempts.join("；")
+        },
     );
     let path = dir.join(format!("job-{id}.log"));
     if std::fs::write(&path, body).is_ok() {
@@ -1477,7 +1555,10 @@ async fn run_composite(
     let state = ctx.state.clone();
     let ffprobe = {
         let tools = state.tools.lock().await;
-        tools.as_ref().and_then(|t| t.ffprobe.as_ref()).map(|t| t.path.clone())
+        tools
+            .as_ref()
+            .and_then(|t| t.ffprobe.as_ref())
+            .map(|t| t.path.clone())
     };
     let ext = Path::new(&job.output)
         .extension()
@@ -1491,7 +1572,8 @@ async fn run_composite(
 
     match job.kind.as_str() {
         "video-merge" => {
-            let p: args::MergeParams = serde_json::from_value(job.params.clone()).unwrap_or_default();
+            let p: args::MergeParams =
+                serde_json::from_value(job.params.clone()).unwrap_or_default();
             let inputs: Vec<String> = if job.inputs.is_empty() {
                 vec![job.input.clone()]
             } else {
@@ -1500,7 +1582,10 @@ async fn run_composite(
             if inputs.len() < 2 {
                 failure = Some(("invalid-params".into(), "合并至少需要 2 个输入文件".into()));
             } else if ffprobe.is_none() {
-                failure = Some(("input".into(), "找不到 ffprobe，无法判断输入参数是否一致".into()));
+                failure = Some((
+                    "input".into(),
+                    "找不到 ffprobe，无法判断输入参数是否一致".into(),
+                ));
             } else {
                 let probe_bin = ffprobe.clone().unwrap_or_default();
                 let mut infos: Vec<probe::MediaInfo> = Vec::new();
@@ -1554,7 +1639,11 @@ async fn run_composite(
                             used_encoder = Some("copy".into());
                         }
                     } else {
-                        let codec = if p.codec.is_empty() { "h264" } else { p.codec.as_str() };
+                        let codec = if p.codec.is_empty() {
+                            "h264"
+                        } else {
+                            p.codec.as_str()
+                        };
                         let chain = encoder_chain(caps.as_ref(), codec, "auto", allow_gpl);
                         let encoder = chain.first().cloned().or_else(|| {
                             if caps.is_none() {
@@ -1599,11 +1688,13 @@ async fn run_composite(
                                         ),
                                         duration: d,
                                         label: format!("统一转码 {}/{}", index + 1, inputs.len()),
-                                        });
+                                    });
                                 }
                                 let list = dir.join(format!(".ff-list-{id}.txt"));
                                 let abs_segments = absolute_paths(&segments);
-                                if let Err(err) = std::fs::write(&list, args::concat_list(&abs_segments)) {
+                                if let Err(err) =
+                                    std::fs::write(&list, args::concat_list(&abs_segments))
+                                {
                                     failure =
                                         Some(("output".into(), format!("无法写入拼接清单：{err}")));
                                 } else {
@@ -1651,7 +1742,11 @@ async fn run_composite(
                             format!("{} 里没有音轨，无法用于混流", audio_info.name),
                         ));
                     } else if p.audio_mode == "copy" {
-                        let codec = audio_info.audio_codec.clone().unwrap_or_default().to_lowercase();
+                        let codec = audio_info
+                            .audio_codec
+                            .clone()
+                            .unwrap_or_default()
+                            .to_lowercase();
                         // MP4 可直接容纳的常见音频编码；其余格式必须转 AAC。
                         let copyable = ["aac", "mp3", "ac3", "eac3", "opus", "alac", "mp4a"];
                         if !copyable.contains(&codec.as_str()) {
@@ -1694,7 +1789,10 @@ async fn run_composite(
                             if p.start_sec >= total {
                                 failure = Some((
                                     "invalid-params".into(),
-                                    format!("开始时间 {:.2}s 超出视频时长 {:.2}s", p.start_sec, total),
+                                    format!(
+                                        "开始时间 {:.2}s 超出视频时长 {:.2}s",
+                                        p.start_sec, total
+                                    ),
                                 ));
                             }
                         }
@@ -1705,11 +1803,7 @@ async fn run_composite(
                         };
                         if failure.is_none() {
                             plan.push(CompositeStep {
-                                argv: args::build_gif(
-                                    &job.input,
-                                    &temp.to_string_lossy(),
-                                    &p,
-                                ),
+                                argv: args::build_gif(&job.input, &temp.to_string_lossy(), &p),
                                 duration,
                                 label: if p.optimize {
                                     "GIF（调色板优化）".into()
@@ -1955,136 +2049,136 @@ async fn run_pdf(ctx: Ctx, id: String, job: Job, dir: PathBuf, temp: PathBuf) {
     let dir2 = dir.clone();
     let temp2 = temp.clone();
     let id2 = id.clone();
-    let result: Result<PdfOutcome, String> = tokio::task::spawn_blocking(move || -> Result<PdfOutcome, String> {
-        let stem = file_stem(&job2.output);
-        match kind.as_str() {
-            "pdf-merge" => {
-                let total = pdf::merge(&job2.inputs, &temp2)?;
-                let overwrite = conflict_policy(Some(&job2.conflict)) == "overwrite";
-                let (target, size) = if overwrite {
-                    let size = rename_overwrite(&temp2, Path::new(&job2.output))
-                        .map_err(|e| format!("写入输出失败：{e}"))?;
-                    (PathBuf::from(&job2.output), size)
-                } else {
-                    match rename_atomic(&temp2, Path::new(&job2.output)) {
-                        Ok(size) => (PathBuf::from(&job2.output), size),
-                        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
-                            let target = unique_output(&dir2, &stem, "pdf", &[]);
-                            let size = rename_atomic(&temp2, &target)
-                                .map_err(|e| format!("写入输出失败：{e}"))?;
-                            (target, size)
+    let result: Result<PdfOutcome, String> =
+        tokio::task::spawn_blocking(move || -> Result<PdfOutcome, String> {
+            let stem = file_stem(&job2.output);
+            match kind.as_str() {
+                "pdf-merge" => {
+                    let total = pdf::merge(&job2.inputs, &temp2)?;
+                    let overwrite = conflict_policy(Some(&job2.conflict)) == "overwrite";
+                    let (target, size) = if overwrite {
+                        let size = rename_overwrite(&temp2, Path::new(&job2.output))
+                            .map_err(|e| format!("写入输出失败：{e}"))?;
+                        (PathBuf::from(&job2.output), size)
+                    } else {
+                        match rename_atomic(&temp2, Path::new(&job2.output)) {
+                            Ok(size) => (PathBuf::from(&job2.output), size),
+                            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+                                let target = unique_output(&dir2, &stem, "pdf", &[]);
+                                let size = rename_atomic(&temp2, &target)
+                                    .map_err(|e| format!("写入输出失败：{e}"))?;
+                                (target, size)
+                            }
+                            Err(err) => return Err(format!("写入输出失败：{err}")),
                         }
-                        Err(err) => return Err(format!("写入输出失败：{err}")),
+                    };
+                    Ok(PdfOutcome {
+                        first_output: target,
+                        bytes: size,
+                        message: format!("已合并 {total} 页 PDF"),
+                    })
+                }
+                "pdf-split" => {
+                    let tmpdir = dir2.join(format!(".ff-tmp-split-{id2}"));
+                    let _ = std::fs::remove_dir_all(&tmpdir);
+                    let per_page = job2
+                        .params
+                        .get("mode")
+                        .and_then(Value::as_str)
+                        .unwrap_or("per-page")
+                        == "per-page";
+                    let ranges = job2
+                        .params
+                        .get("ranges")
+                        .and_then(Value::as_str)
+                        .map(str::to_string);
+                    let produced =
+                        pdf::split(&job2.inputs[0], &tmpdir, &stem, per_page, ranges.as_deref())?;
+                    let mut used: Vec<PathBuf> = Vec::new();
+                    let mut bytes = 0u64;
+                    let mut first: Option<PathBuf> = None;
+                    for file in produced {
+                        let ext = file
+                            .extension()
+                            .map(|e| e.to_string_lossy().to_string())
+                            .unwrap_or_else(|| "pdf".into());
+                        let target = unique_output(
+                            &dir2,
+                            &file_stem(file.to_string_lossy().as_ref()),
+                            &ext,
+                            &used,
+                        );
+                        std::fs::rename(&file, &target).map_err(|e| {
+                            format!("写入拆分结果失败（{}）：{e}", target.display())
+                        })?;
+                        bytes += std::fs::metadata(&target).map(|m| m.len()).unwrap_or(0);
+                        used.push(target.clone());
+                        first.get_or_insert(target);
                     }
-                };
-                Ok(PdfOutcome {
-                    first_output: target,
-                    bytes: size,
-                    message: format!("已合并 {total} 页 PDF"),
-                })
-            }
-            "pdf-split" => {
-                let tmpdir = dir2.join(format!(".ff-tmp-split-{id2}"));
-                let _ = std::fs::remove_dir_all(&tmpdir);
-                let per_page = job2
-                    .params
-                    .get("mode")
-                    .and_then(Value::as_str)
-                    .unwrap_or("per-page")
-                    == "per-page";
-                let ranges = job2
-                    .params
-                    .get("ranges")
-                    .and_then(Value::as_str)
-                    .map(str::to_string);
-                let produced = pdf::split(
-                    &job2.inputs[0],
-                    &tmpdir,
-                    &stem,
-                    per_page,
-                    ranges.as_deref(),
-                )?;
-                let mut used: Vec<PathBuf> = Vec::new();
-                let mut bytes = 0u64;
-                let mut first: Option<PathBuf> = None;
-                for file in produced {
-                    let ext = file
-                        .extension()
-                        .map(|e| e.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "pdf".into());
-                    let target = unique_output(&dir2, &file_stem(file.to_string_lossy().as_ref()), &ext, &used);
-                    std::fs::rename(&file, &target)
-                        .map_err(|e| format!("写入拆分结果失败（{}）：{e}", target.display()))?;
-                    bytes += std::fs::metadata(&target).map(|m| m.len()).unwrap_or(0);
-                    used.push(target.clone());
-                    first.get_or_insert(target);
+                    let _ = std::fs::remove_dir_all(&tmpdir);
+                    Ok(PdfOutcome {
+                        first_output: first.ok_or("拆分没有产生任何文件")?,
+                        bytes,
+                        message: format!("已拆分为 {} 个 PDF", used.len()),
+                    })
                 }
-                let _ = std::fs::remove_dir_all(&tmpdir);
-                Ok(PdfOutcome {
-                    first_output: first.ok_or("拆分没有产生任何文件")?,
-                    bytes,
-                    message: format!("已拆分为 {} 个 PDF", used.len()),
-                })
-            }
-            _ => {
-                let tools = crate::pdf_tools::resolve(pdf_dir.as_deref());
-                let pdftoppm = tools
-                    .pdftoppm
-                    .clone()
-                    .ok_or_else(|| tools.reason.clone().unwrap_or_else(|| "未找到 pdftoppm".into()))?;
-                let format = job2
-                    .params
-                    .get("format")
-                    .and_then(Value::as_str)
-                    .unwrap_or("png")
-                    .to_string();
-                let dpi = job2.params.get("dpi").and_then(Value::as_u64).unwrap_or(96) as u32;
-                let total = pdf::page_count(&job2.inputs[0])?;
-                let tmpdir = dir2.join(format!(".ff-tmp-pdfimg-{id2}"));
-                let _ = std::fs::remove_dir_all(&tmpdir);
-                let produced = pdf::rasterize(
-                    &pdftoppm,
-                    &job2.inputs[0],
-                    &tmpdir,
-                    "page",
-                    &format,
-                    dpi,
-                    1,
-                    total.max(1) as u32,
-                )?;
-                let ext = if format == "jpg" { "jpg" } else { "png" };
-                let mut used: Vec<PathBuf> = Vec::new();
-                let mut bytes = 0u64;
-                let mut first: Option<PathBuf> = None;
-                for (index, file) in produced.iter().enumerate() {
-                    let target = unique_output(
-                        &dir2,
-                        &format!("{stem}-p{:04}", index + 1),
-                        ext,
-                        &used,
-                    );
-                    std::fs::rename(file, &target)
-                        .map_err(|e| format!("写入图片失败（{}）：{e}", target.display()))?;
-                    bytes += std::fs::metadata(&target).map(|m| m.len()).unwrap_or(0);
-                    used.push(target.clone());
-                    first.get_or_insert(target);
-                }
-                let _ = std::fs::remove_dir_all(&tmpdir);
-                Ok(PdfOutcome {
-                    first_output: first.ok_or("PDF 渲染没有产生图片")?,
-                    bytes,
-                    message: format!(
-                        "已输出 {} 张图片（{} DPI，{} 页）",
-                        used.len(),
+                _ => {
+                    let tools = crate::pdf_tools::resolve(pdf_dir.as_deref());
+                    let pdftoppm = tools.pdftoppm.clone().ok_or_else(|| {
+                        tools
+                            .reason
+                            .clone()
+                            .unwrap_or_else(|| "未找到 pdftoppm".into())
+                    })?;
+                    let format = job2
+                        .params
+                        .get("format")
+                        .and_then(Value::as_str)
+                        .unwrap_or("png")
+                        .to_string();
+                    let dpi = job2.params.get("dpi").and_then(Value::as_u64).unwrap_or(96) as u32;
+                    let total = pdf::page_count(&job2.inputs[0])?;
+                    let tmpdir = dir2.join(format!(".ff-tmp-pdfimg-{id2}"));
+                    let _ = std::fs::remove_dir_all(&tmpdir);
+                    let produced = pdf::rasterize(
+                        &pdftoppm,
+                        &job2.inputs[0],
+                        &tmpdir,
+                        "page",
+                        &format,
                         dpi,
-                        total
-                    ),
-                })
+                        1,
+                        total.max(1) as u32,
+                    )?;
+                    let ext = if format == "jpg" { "jpg" } else { "png" };
+                    let mut used: Vec<PathBuf> = Vec::new();
+                    let mut bytes = 0u64;
+                    let mut first: Option<PathBuf> = None;
+                    for (index, file) in produced.iter().enumerate() {
+                        let target =
+                            unique_output(&dir2, &format!("{stem}-p{:04}", index + 1), ext, &used);
+                        std::fs::rename(file, &target)
+                            .map_err(|e| format!("写入图片失败（{}）：{e}", target.display()))?;
+                        bytes += std::fs::metadata(&target).map(|m| m.len()).unwrap_or(0);
+                        used.push(target.clone());
+                        first.get_or_insert(target);
+                    }
+                    let _ = std::fs::remove_dir_all(&tmpdir);
+                    Ok(PdfOutcome {
+                        first_output: first.ok_or("PDF 渲染没有产生图片")?,
+                        bytes,
+                        message: format!(
+                            "已输出 {} 张图片（{} DPI，{} 页）",
+                            used.len(),
+                            dpi,
+                            total
+                        ),
+                    })
+                }
             }
-        }
-    })
-    .await
-    .unwrap_or_else(|e| Err(format!("PDF 任务执行失败：{e}")));
+        })
+        .await
+        .unwrap_or_else(|e| Err(format!("PDF 任务执行失败：{e}")));
 
     match result {
         Ok(outcome) => {
@@ -2144,15 +2238,7 @@ async fn run_frames(ctx: Ctx, id: String, job: Job, ffmpeg: String, dir: PathBuf
         job.message = Some(format!("正在按 {} fps 抽帧…", p.fps.max(1)));
     })
     .await;
-    let outcome = execute_streaming(
-        &ctx,
-        &id,
-        &ffmpeg,
-        argv,
-        job.duration_sec,
-        (0.0, 0.92),
-    )
-    .await;
+    let outcome = execute_streaming(&ctx, &id, &ffmpeg, argv, job.duration_sec, (0.0, 0.92)).await;
     if !outcome.success {
         let (kind, message) = classify(&outcome.stderr);
         let (kind, message) = if outcome.killed {
@@ -2161,14 +2247,33 @@ async fn run_frames(ctx: Ctx, id: String, job: Job, ffmpeg: String, dir: PathBuf
             (kind, message)
         };
         let _ = set_job(&ctx, &id, |job| {
-            job.status = if kind == "cancelled" { "cancelled".into() } else { "failed".into() };
-            job.error_kind = if kind == "cancelled" { None } else { Some(kind.clone()) };
+            job.status = if kind == "cancelled" {
+                "cancelled".into()
+            } else {
+                "failed".into()
+            };
+            job.error_kind = if kind == "cancelled" {
+                None
+            } else {
+                Some(kind.clone())
+            };
             job.message = Some(message.clone());
             job.finished_at = Some(now_ms());
             job.progress = 0.0;
         })
         .await;
-        write_job_log(&ctx, &id, if kind == "cancelled" { "cancelled" } else { "failed" }, &[], &outcome.stderr).await;
+        write_job_log(
+            &ctx,
+            &id,
+            if kind == "cancelled" {
+                "cancelled"
+            } else {
+                "failed"
+            },
+            &[],
+            &outcome.stderr,
+        )
+        .await;
         if kind != "cancelled" {
             maybe_auto_retry(&ctx, &id, &kind).await;
         }
@@ -2204,13 +2309,10 @@ async fn run_frames(ctx: Ctx, id: String, job: Job, ffmpeg: String, dir: PathBuf
     let mut bytes = 0u64;
     let mut first: Option<PathBuf> = None;
     for (index, frame) in frames.iter().enumerate() {
-        let target = unique_output(
-            &dir,
-            &format!("{stem}-{:04}", index + 1),
-            ext,
-            &used,
-        );
-        std::fs::rename(frame, &target).map_err(|e| e.to_string()).ok();
+        let target = unique_output(&dir, &format!("{stem}-{:04}", index + 1), ext, &used);
+        std::fs::rename(frame, &target)
+            .map_err(|e| e.to_string())
+            .ok();
         if target.is_file() {
             bytes += std::fs::metadata(&target).map(|m| m.len()).unwrap_or(0);
             used.push(target.clone());
@@ -2235,10 +2337,7 @@ async fn run_frames(ctx: Ctx, id: String, job: Job, ffmpeg: String, dir: PathBuf
     finish_slot(&ctx, &id).await;
 }
 
-async fn run_job(
-    ctx: Ctx,
-    id: String,
-) {
+async fn run_job(ctx: Ctx, id: String) {
     let state = ctx.state.clone();
     let job = match get_job(&ctx, &id).await {
         Some(job) => job,
@@ -2268,7 +2367,10 @@ async fn run_job(
     let (caps, allow_gpl) = {
         let inner = state.inner.lock().await;
         // 变体策略在编译期钉死：GPL 变体恒允许 GPL 编码器，LGPL 版不接受。
-        (inner.caps.clone(), crate::flavor::allow_gpl_effective(inner.allow_gpl))
+        (
+            inner.caps.clone(),
+            crate::flavor::allow_gpl_effective(inner.allow_gpl),
+        )
     };
 
     let dir = Path::new(&job.output)
@@ -2313,7 +2415,14 @@ async fn run_job(
 
     // 视频 → 图片序列是多文件产物，单独走一个执行器。
     if job.kind == "video-frames" {
-        run_frames(ctx.clone(), id.clone(), job.clone(), ffmpeg.clone(), dir.clone()).await;
+        run_frames(
+            ctx.clone(),
+            id.clone(),
+            job.clone(),
+            ffmpeg.clone(),
+            dir.clone(),
+        )
+        .await;
         return;
     }
 
@@ -2375,7 +2484,8 @@ async fn run_job(
             }
         }
         "image-collage" => {
-            let p: args::CollageParams = serde_json::from_value(job.params.clone()).unwrap_or_default();
+            let p: args::CollageParams =
+                serde_json::from_value(job.params.clone()).unwrap_or_default();
             match args::build_collage(&job.inputs, temp.to_string_lossy().as_ref(), &p) {
                 Ok(argv) => Some(argv),
                 Err(message) => {
@@ -2397,7 +2507,8 @@ async fn run_job(
 
     let chain: Vec<String> = match job.kind.as_str() {
         "video-mp4" => {
-            let p: args::VideoParams = serde_json::from_value(job.params.clone()).unwrap_or_default();
+            let p: args::VideoParams =
+                serde_json::from_value(job.params.clone()).unwrap_or_default();
             let codec = if p.codec.is_empty() { "h264" } else { &p.codec };
             let chain = encoder_chain(caps.as_ref(), codec, &p.encoder, allow_gpl);
             if chain.is_empty() {
@@ -2429,11 +2540,18 @@ async fn run_job(
             chain
         }
         "audio-mp3" | "audio-aac" => {
-            let p: args::AudioParams = serde_json::from_value(job.params.clone()).unwrap_or_default();
+            let p: args::AudioParams =
+                serde_json::from_value(job.params.clone()).unwrap_or_default();
             let wanted = args::audio_encoder(&p);
             let usable = caps
                 .as_ref()
-                .map(|c| c.audio_encoders.iter().filter(|e| e.compiled && e.allowed && e.available).map(|e| e.id.clone()).collect::<Vec<_>>())
+                .map(|c| {
+                    c.audio_encoders
+                        .iter()
+                        .filter(|e| e.compiled && e.allowed && e.available)
+                        .map(|e| e.id.clone())
+                        .collect::<Vec<_>>()
+                })
                 .unwrap_or_default();
             let mut chain = Vec::new();
             if usable.contains(&wanted.to_string()) || caps.is_none() {
@@ -2468,8 +2586,13 @@ async fn run_job(
             Some(argv) => argv,
             None => match job.kind.as_str() {
                 "video-mp4" => {
-                    let p: args::VideoParams = serde_json::from_value(job.params.clone()).unwrap_or_default();
-                    let accel = if p.hw_decode { best_decode_accel(caps.as_ref()) } else { None };
+                    let p: args::VideoParams =
+                        serde_json::from_value(job.params.clone()).unwrap_or_default();
+                    let accel = if p.hw_decode {
+                        best_decode_accel(caps.as_ref())
+                    } else {
+                        None
+                    };
                     // 容器决定可用的音频编码：webm 只能用 opus/vorbis，mp4/mov 用 aac。
                     let usable_audio = caps
                         .as_ref()
@@ -2483,26 +2606,40 @@ async fn run_job(
                         .unwrap_or_default();
                     let container_audio =
                         containers::pick_container_audio_encoder(&p.container, "", &usable_audio);
-                    args::build_video(encoder, &job.input, temp.to_string_lossy().as_ref(), &p, container_audio, accel.as_deref())
+                    args::build_video(
+                        encoder,
+                        &job.input,
+                        temp.to_string_lossy().as_ref(),
+                        &p,
+                        container_audio,
+                        accel.as_deref(),
+                    )
                 }
                 "audio-mp3" | "audio-aac" => {
-                    let p: args::AudioParams = serde_json::from_value(job.params.clone()).unwrap_or_default();
+                    let p: args::AudioParams =
+                        serde_json::from_value(job.params.clone()).unwrap_or_default();
                     args::build_audio(encoder, &job.input, temp.to_string_lossy().as_ref(), &p)
                 }
                 _ => {
-                    let p: args::ImageParams = serde_json::from_value(job.params.clone()).unwrap_or_default();
+                    let p: args::ImageParams =
+                        serde_json::from_value(job.params.clone()).unwrap_or_default();
                     args::build_image(&job.input, temp.to_string_lossy().as_ref(), &p)
                 }
             },
         };
 
-        let label = if encoder.is_empty() { "image".to_string() } else { encoder.clone() };
+        let label = if encoder.is_empty() {
+            "image".to_string()
+        } else {
+            encoder.clone()
+        };
         let _ = set_job(&ctx, &id, |job| {
             job.message = Some(format!("正在使用 {label} 转换…"));
         })
         .await;
 
-        let outcome = execute_streaming(&ctx, &id, &ffmpeg, argv, job.duration_sec, (0.0, 1.0)).await;
+        let outcome =
+            execute_streaming(&ctx, &id, &ffmpeg, argv, job.duration_sec, (0.0, 1.0)).await;
         last_stderr = outcome.stderr.clone();
 
         let cancelled_now = {
@@ -2610,7 +2747,9 @@ async fn run_job(
         remove_temp_file(&temp).await;
 
         let hardware = is_hardware_encoder(encoder);
-        let fallbackable = (kind == "hw-unavailable" || kind == "hw-memory" || (hardware && kind == "invalid-params"))
+        let fallbackable = (kind == "hw-unavailable"
+            || kind == "hw-memory"
+            || (hardware && kind == "invalid-params"))
             && idx + 1 < chain.len();
         if fallbackable {
             attempts_info.push(format!(
@@ -2652,7 +2791,11 @@ async fn run_job(
 
     let final_status = {
         let inner = state.inner.lock().await;
-        inner.jobs.iter().find(|j| j.id == id).map(|j| j.status.clone())
+        inner
+            .jobs
+            .iter()
+            .find(|j| j.id == id)
+            .map(|j| j.status.clone())
     };
     if final_status.as_deref() == Some("done") || final_status.as_deref() == Some("cancelled") {
         return;
@@ -2808,9 +2951,15 @@ mod tests {
             "clip-20261105-3.gif"
         );
         // 未识别的占位符原样保留，不会被悄悄吃掉
-        assert_eq!(render_name("{name}-{unknown}", "clip", "20261105", 1, "mp4"), "clip-{unknown}");
+        assert_eq!(
+            render_name("{name}-{unknown}", "clip", "20261105", 1, "mp4"),
+            "clip-{unknown}"
+        );
         // 路径分隔符与 Windows 保留字符必须被替换，避免模板越权写目录
-        assert_eq!(render_name("{name}/../x:{index}", "clip", "20261105", 2, "mp4"), "clip_.._x_2");
+        assert_eq!(
+            render_name("{name}/../x:{index}", "clip", "20261105", 2, "mp4"),
+            "clip_.._x_2"
+        );
         // 渲染结果为空时回退到源文件名，绝不产生空文件名
         assert_eq!(render_name("   ", "clip", "20261105", 1, "mp4"), "clip");
     }
@@ -2819,7 +2968,14 @@ mod tests {
     fn auto_retry_only_covers_retryable_categories() {
         assert!(is_retryable_kind("hw-unavailable"));
         assert!(is_retryable_kind("io-temporary"));
-        for kind in ["invalid-params", "input", "encoder-missing", "output", "hw-memory", "unknown"] {
+        for kind in [
+            "invalid-params",
+            "input",
+            "encoder-missing",
+            "output",
+            "hw-memory",
+            "unknown",
+        ] {
             assert!(!is_retryable_kind(kind), "{kind} 不应自动重试");
         }
     }
@@ -2836,7 +2992,10 @@ mod tests {
     #[test]
     fn output_extension_follows_container_and_audio_format() {
         assert_eq!(kind_ext("video-mp4", &json!({ "container": "mkv" })), "mkv");
-        assert_eq!(kind_ext("video-mp4", &json!({ "container": "webm" })), "webm");
+        assert_eq!(
+            kind_ext("video-mp4", &json!({ "container": "webm" })),
+            "webm"
+        );
         assert_eq!(kind_ext("video-mp4", &json!({})), "mp4");
         assert_eq!(kind_ext("audio-aac", &json!({ "format": "flac" })), "flac");
         assert_eq!(kind_ext("audio-aac", &json!({ "format": "aac" })), "m4a");
@@ -2852,7 +3011,10 @@ mod tests {
             None,
         )
         .unwrap_err();
-        assert!(err.contains("MP4") && err.contains("vp9"), "应拒绝 mp4+vp9：{err}");
+        assert!(
+            err.contains("MP4") && err.contains("vp9"),
+            "应拒绝 mp4+vp9：{err}"
+        );
         let err = precheck_spec("audio-mp3", &[], &json!({ "format": "amr" }), None).unwrap_err();
         assert!(err.contains("amr"), "应拒绝未知音频格式：{err}");
         assert!(precheck_spec("audio-mp3", &[], &json!({ "format": "opus" }), None).is_ok());
@@ -2864,7 +3026,10 @@ mod tests {
         let existing = dir.join("clip.mp4");
         std::fs::write(&existing, b"original").unwrap();
         // 模拟 enqueue 的 skip 分支：目标已存在则不改名、不写文件。
-        let target = dir.join(format!("{}.mp4", render_name("", "clip", "20261105", 1, "mp4")));
+        let target = dir.join(format!(
+            "{}.mp4",
+            render_name("", "clip", "20261105", 1, "mp4")
+        ));
         assert!(target.exists());
         assert_eq!(std::fs::read(&existing).unwrap(), b"original");
         std::fs::remove_dir_all(&dir).ok();

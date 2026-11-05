@@ -34,7 +34,10 @@ fn ensure_object<'a>(value: &'a Value, label: &str) -> Result<&'a Map<String, Va
 fn check_keys(map: &Map<String, Value>, allowed: &[&str], label: &str) -> Result<(), String> {
     for key in map.keys() {
         if !allowed.contains(&key.as_str()) {
-            return Err(format!("{label} 含未知字段「{key}」；允许的字段：{}", allowed.join(", ")));
+            return Err(format!(
+                "{label} 含未知字段「{key}」；允许的字段：{}",
+                allowed.join(", ")
+            ));
         }
     }
     Ok(())
@@ -98,20 +101,74 @@ fn validate_panel(panel: &Value, name: &str) -> Result<(), String> {
     let map = ensure_object(panel, &format!("panels.{name}"))?;
     let allowed: &[&str] = match name {
         "video" => &[
-            "container", "codec", "encoder", "rateMode", "quality", "bitrateKbps", "resolution", "fps",
-            "crop", "rotation", "audioMode", "audioBitrateKbps", "hwDecode", "faststart",
+            "container",
+            "codec",
+            "encoder",
+            "rateMode",
+            "quality",
+            "bitrateKbps",
+            "resolution",
+            "fps",
+            "crop",
+            "rotation",
+            "audioMode",
+            "audioBitrateKbps",
+            "hwDecode",
+            "faststart",
         ],
-        "audio" => &["format", "bitrateKbps", "sampleRate", "channels", "normalize"],
+        "audio" => &[
+            "format",
+            "bitrateKbps",
+            "sampleRate",
+            "channels",
+            "normalize",
+        ],
         "image" => &[
-            "format", "quality", "maxEdge", "rotation", "autoOrient", "cropMode", "cropRatio",
-            "cropX", "cropY", "cropW", "cropH",
+            "format",
+            "quality",
+            "maxEdge",
+            "rotation",
+            "autoOrient",
+            "cropMode",
+            "cropRatio",
+            "cropX",
+            "cropY",
+            "cropW",
+            "cropH",
         ],
-        "merge" => &["mode", "resolution", "fps", "audioMode", "codec", "quality", "bitrateKbps"],
+        "merge" => &[
+            "mode",
+            "resolution",
+            "fps",
+            "audioMode",
+            "codec",
+            "quality",
+            "bitrateKbps",
+        ],
         "mux" => &["mode", "audioMode", "audioBitrateKbps"],
         "gif" => &["fps", "width", "startSec", "durationSec", "optimize"],
-        "seq" => &["fps", "startNumber", "sizeMode", "width", "height", "encoder", "quality", "bitrateKbps"],
+        "seq" => &[
+            "fps",
+            "startNumber",
+            "sizeMode",
+            "width",
+            "height",
+            "encoder",
+            "quality",
+            "bitrateKbps",
+        ],
         "frames" => &["fps", "width", "format", "quality"],
-        "collage" => &["cols", "rows", "cellWidth", "cellHeight", "gap", "background", "fit", "format", "quality"],
+        "collage" => &[
+            "cols",
+            "rows",
+            "cellWidth",
+            "cellHeight",
+            "gap",
+            "background",
+            "fit",
+            "format",
+            "quality",
+        ],
         "pdf" => &["mergeMode", "splitMode", "ranges", "imageFormat", "dpi"],
         _ => unreachable!(),
     };
@@ -272,12 +329,15 @@ mod tests {
         let err = parse(&base.replace("transmutio-preset", "other-app")).unwrap_err();
         assert!(err.contains("不是 Transmutio 预设"), "{err}");
 
-        let err = parse(r#"{"version":1,"kind":"transmutio-preset","panels":{},"output":{},"extra":1}"#)
-            .unwrap_err();
+        let err =
+            parse(r#"{"version":1,"kind":"transmutio-preset","panels":{},"output":{},"extra":1}"#)
+                .unwrap_err();
         assert!(err.contains("未知字段「extra」"), "{err}");
 
-        let err = parse(r#"{"version":1,"kind":"transmutio-preset","panels":{"unknown":{}},"output":{}}"#)
-            .unwrap_err();
+        let err = parse(
+            r#"{"version":1,"kind":"transmutio-preset","panels":{"unknown":{}},"output":{}}"#,
+        )
+        .unwrap_err();
         assert!(err.contains("未知字段「unknown」"), "{err}");
     }
 
@@ -285,7 +345,10 @@ mod tests {
     fn rejects_invalid_field_values_explicitly() {
         let err = parse(r#"{"version":1,"kind":"transmutio-preset","panels":{"video":{"colorSpace":"bt709"}},"output":{}}"#)
             .unwrap_err();
-        assert!(err.contains("panels.video 含未知字段「colorSpace」"), "{err}");
+        assert!(
+            err.contains("panels.video 含未知字段「colorSpace」"),
+            "{err}"
+        );
 
         let err = parse(r#"{"version":1,"kind":"transmutio-preset","panels":{},"output":{"conflict":"rename"}}"#)
             .unwrap_err();
