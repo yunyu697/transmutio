@@ -69,6 +69,7 @@ const baseCaps = (over = {}) => ({
   audioEncoders: [],
   decodeAccels: [],
   softwareH264Available: false,
+  subtitleBurn: false,
   notes: [],
   ...over,
 });

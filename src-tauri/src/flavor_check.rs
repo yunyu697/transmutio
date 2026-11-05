@@ -204,6 +204,7 @@ fn caps_with_gpl_encoders(version: &str) -> Capabilities {
             reason: Some("本检查不启用硬解".into()),
         }],
         software_h264_available: true,
+        subtitle_burn: false,
         notes: vec!["flavor-check 手工能力表：只含 GPL 编码器，用于验证变体放行/拒绝".into()],
     }
 }

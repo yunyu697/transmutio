@@ -52,6 +52,8 @@ pub struct Capabilities {
     pub audio_encoders: Vec<EncoderCap>,
     pub decode_accels: Vec<DecodeCap>,
     pub software_h264_available: bool,
+    /// 是否可烧录字幕（FFmpeg 构建包含 libass / subtitles 滤镜）
+    pub subtitle_burn: bool,
     pub notes: Vec<String>,
 }
 
@@ -417,6 +419,33 @@ fn parse_hwaccels(text: &str) -> HashSet<String> {
     set
 }
 
+/// 烧录字幕依赖 libass。以真实构建为准：`-filters` 中存在 `subtitles` 滤镜即可，
+/// 拿不到时再退回 `-buildconf` 的 `--enable-libass`；两者都不成立就是不可用。
+async fn detect_subtitle_burn(ffmpeg: &str) -> bool {
+    let (filters_ok, filters_text) = exec_with_timeout(
+        ffmpeg,
+        vec!["-hide_banner".into(), "-filters".into()],
+        Duration::from_secs(15),
+    )
+    .await;
+    if filters_ok
+        && filters_text.lines().any(|line| {
+            let mut parts = line.split_whitespace();
+            parts.next();
+            parts.next() == Some("subtitles")
+        })
+    {
+        return true;
+    }
+    let (build_ok, build_text) = exec_with_timeout(
+        ffmpeg,
+        vec!["-hide_banner".into(), "-buildconf".into()],
+        Duration::from_secs(15),
+    )
+    .await;
+    build_ok && build_text.contains("--enable-libass")
+}
+
 fn fingerprint_of(info: &ToolsInfo) -> String {
     format!(
         "{}|{}|{}|{}|{}",
@@ -634,6 +663,9 @@ pub async fn detect(
         HashSet::new()
     };
 
+    // 3) 烧录字幕能力（libass）。拿不到一律按不可用处理，前端据此灰显「烧录」。
+    let subtitle_burn = detect_subtitle_burn(&ffmpeg).await;
+
     let mut notes: Vec<String> = Vec::new();
     let mut video_encoders = Vec::new();
     let mut audio_encoders = Vec::new();
@@ -794,6 +826,11 @@ pub async fn detect(
                 .into(),
         );
     }
+    if !subtitle_burn {
+        notes.push(
+            "当前 FFmpeg 构建不包含 libass：无法把字幕烧录进画面（内嵌字幕轨仍可用）。".into(),
+        );
+    }
 
     let caps = Capabilities {
         probed_at: now_ms(),
@@ -808,6 +845,7 @@ pub async fn detect(
         audio_encoders,
         decode_accels,
         software_h264_available,
+        subtitle_burn,
         notes,
     };
     write_cache(app, &caps);

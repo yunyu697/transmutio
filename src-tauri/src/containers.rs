@@ -15,6 +15,8 @@ pub struct VideoContainer {
     pub codecs: &'static [&'static str],
     /// 该容器允许的音频编码候选（按优先级）
     pub audio_codecs: &'static [&'static str],
+    /// 内嵌字幕轨的处理方式：`mov_text` 需转码、`copy` 直接复制；None 表示不承载字幕轨
+    pub subtitle_codec: Option<&'static str>,
     pub faststart: bool,
 }
 
@@ -37,6 +39,7 @@ pub const VIDEO_CONTAINERS: &[VideoContainer] = &[
         muxer: "mp4",
         codecs: &["h264", "hevc", "av1"],
         audio_codecs: &["aac"],
+        subtitle_codec: Some("mov_text"),
         faststart: true,
     },
     VideoContainer {
@@ -46,6 +49,7 @@ pub const VIDEO_CONTAINERS: &[VideoContainer] = &[
         muxer: "matroska",
         codecs: &["h264", "hevc", "av1", "vp9", "vp8"],
         audio_codecs: &["aac", "libopus", "libvorbis"],
+        subtitle_codec: Some("copy"),
         faststart: false,
     },
     VideoContainer {
@@ -55,6 +59,7 @@ pub const VIDEO_CONTAINERS: &[VideoContainer] = &[
         muxer: "webm",
         codecs: &["vp9", "vp8", "av1"],
         audio_codecs: &["libopus", "libvorbis"],
+        subtitle_codec: None,
         faststart: false,
     },
     VideoContainer {
@@ -64,6 +69,7 @@ pub const VIDEO_CONTAINERS: &[VideoContainer] = &[
         muxer: "mov",
         codecs: &["h264", "hevc"],
         audio_codecs: &["aac"],
+        subtitle_codec: Some("mov_text"),
         faststart: true,
     },
     VideoContainer {
@@ -73,6 +79,7 @@ pub const VIDEO_CONTAINERS: &[VideoContainer] = &[
         muxer: "mpegts",
         codecs: &["h264", "hevc"],
         audio_codecs: &["aac"],
+        subtitle_codec: None,
         faststart: false,
     },
     VideoContainer {
@@ -82,6 +89,7 @@ pub const VIDEO_CONTAINERS: &[VideoContainer] = &[
         muxer: "avi",
         codecs: &["h264", "mpeg4"],
         audio_codecs: &["libmp3lame"],
+        subtitle_codec: None,
         faststart: false,
     },
 ];
@@ -133,6 +141,13 @@ pub const AUDIO_FORMATS: &[AudioFormat] = &[
 
 pub fn find_container(id: &str) -> Option<&'static VideoContainer> {
     VIDEO_CONTAINERS.iter().find(|c| c.id == id)
+}
+
+/// 内嵌字幕轨的编码方式：mp4 / mov 转 `mov_text`，mkv 直接 `copy`；
+/// 其余容器返回 None（必须改为烧录或换容器，绝不静默丢字幕）。
+pub fn subtitle_codec(id: &str) -> Option<&'static str> {
+    let id = if id.trim().is_empty() { "mp4" } else { id };
+    find_container(id).and_then(|c| c.subtitle_codec)
 }
 
 pub fn find_audio(id: &str) -> Option<&'static AudioFormat> {
@@ -292,6 +307,25 @@ mod tests {
         assert_eq!(pick_container_audio_encoder("avi", "", &[]), "libmp3lame");
         // webm 下用户偏好 aac 时必须被拒绝并退回 opus，不能产出非法文件。
         assert_eq!(pick_container_audio_encoder("webm", "aac", &[]), "libopus");
+    }
+
+    #[test]
+    fn subtitle_container_matrix_matches_muxer_capability() {
+        assert_eq!(
+            subtitle_codec("mp4"),
+            Some("mov_text"),
+            "mp4 需转码 mov_text"
+        );
+        assert_eq!(
+            subtitle_codec("mov"),
+            Some("mov_text"),
+            "mov 需转码 mov_text"
+        );
+        assert_eq!(subtitle_codec("mkv"), Some("copy"), "mkv 可直接复制");
+        assert_eq!(subtitle_codec("webm"), None, "webm 不承载字幕轨");
+        assert_eq!(subtitle_codec("avi"), None, "avi 不承载字幕轨");
+        assert_eq!(subtitle_codec("ts"), None, "ts 不承载字幕轨");
+        assert_eq!(subtitle_codec(""), Some("mov_text"), "空容器按 mp4");
     }
 
     #[test]

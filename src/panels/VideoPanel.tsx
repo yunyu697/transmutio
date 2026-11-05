@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { formatBytes, formatDuration } from "@formatforge/design-tokens";
-import { api, type Capabilities, type Job, type VideoParams, type WatermarkParams } from "../lib/api";
+import { api, type Capabilities, type Job, type SubtitleParams, type VideoParams, type WatermarkParams } from "../lib/api";
 import { DropZone, Field, FileTable, Group, OutputNaming, Segmented, SwitchRow, useMediaFiles, type NamingPrefs } from "./shared";
 import { loadPanelPrefs, savePanelPrefs } from "../lib/panelPrefs";
 import { WATERMARK_DEFAULTS, normalizeWatermark, pickWatermarkImage } from "../lib/watermark";
+import {
+  SUBTITLE_DEFAULTS,
+  SUBTITLE_SOFT_CONTAINERS,
+  normalizeSubtitle,
+  pickSubtitleFile,
+} from "../lib/subtitle";
 import {
   CODEC_LABELS,
   VIDEO_CONTAINERS,
@@ -34,6 +40,7 @@ const DEFAULT_PARAMS: VideoParams = {
   speed: 1,
   keepPitch: true,
   watermark: { ...WATERMARK_DEFAULTS },
+  subtitle: { ...SUBTITLE_DEFAULTS, extraPaths: [] },
 };
 
 /** 水印位置九宫格：每行一组，配合「自定义坐标」一起构成 3×3 + 自定义。 */
@@ -97,7 +104,11 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
   // 面板参数持久化：重启后恢复上次选择（按方法隔离，避免不同方法互相污染默认值）。
   const [params, setParams] = useState<VideoParams>(() => {
     const loaded = loadPanelPrefs(`video:${methodId}`, initialParams(methodId));
-    return { ...loaded, watermark: normalizeWatermark(loaded.watermark) };
+    return {
+      ...loaded,
+      watermark: normalizeWatermark(loaded.watermark),
+      subtitle: normalizeSubtitle(loaded.subtitle),
+    };
   });
   const [naming, setNaming] = useState<NamingPrefs>(() => loadPanelPrefs(`naming:${methodId}`, { template: "", conflict: "suffix" }));
   const [starting, setStarting] = useState(false);
@@ -108,8 +119,24 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
     setParams((prev) => ({ ...prev, [key]: value }));
   const setWatermark = <K extends keyof WatermarkParams>(key: K, value: WatermarkParams[K]) =>
     setParams((prev) => ({ ...prev, watermark: { ...prev.watermark, [key]: value } }));
+  const setSubtitle = <K extends keyof SubtitleParams>(key: K, value: SubtitleParams[K]) =>
+    setParams((prev) => ({ ...prev, subtitle: { ...prev.subtitle, [key]: value } }));
 
   const isWatermark = methodId === "video-watermark";
+  const isSubtitle = methodId === "video-subtitle";
+
+  // 字幕前置约束：容器不承载内嵌轨道、变速 + 烧录、缺少 libass 都不能入队。
+  const subtitleBurnUnavailable = caps?.subtitleBurn === false;
+  const subtitleSoftContainerBad =
+    isSubtitle &&
+    params.subtitle.enabled &&
+    params.subtitle.mode === "soft" &&
+    !SUBTITLE_SOFT_CONTAINERS.includes(params.container);
+  const subtitleSpeedConflict =
+    isSubtitle && params.subtitle.enabled && params.subtitle.mode === "hard" && params.speed !== 1;
+  const subtitleBurnBlocked =
+    isSubtitle && params.subtitle.enabled && params.subtitle.mode === "hard" && subtitleBurnUnavailable;
+  const subtitleBlocked = subtitleSoftContainerBad || subtitleSpeedConflict || subtitleBurnBlocked;
 
   const codecCaps = useMemo(
     () => (caps ? caps.videoEncoders.filter((e) => e.codec === params.codec) : []),
@@ -173,17 +200,43 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
       toast("水印已开启，请先选择水印图片（png / jpg / jpeg / webp）", "error");
       return;
     }
+    if (isSubtitle && params.subtitle.enabled) {
+      if (!params.subtitle.path.trim()) {
+        toast("字幕已开启，请先选择字幕文件（srt / ass / ssa / vtt）", "error");
+        return;
+      }
+      if (subtitleSoftContainerBad) {
+        toast(
+          `容器 ${containerSpec.label} 不承载内嵌字幕轨，请改 MP4/MKV/MOV 或改用烧录`,
+          "error",
+        );
+        return;
+      }
+      if (subtitleSpeedConflict) {
+        toast("变速时不能烧录字幕：请改为内嵌字幕，或把倍速设回 1", "error");
+        return;
+      }
+      if (subtitleBurnBlocked) {
+        toast("当前 FFmpeg 未包含 libass，无法烧录字幕：请改用内嵌字幕，或安装带 libass 的 FFmpeg", "error");
+        return;
+      }
+    }
     setStarting(true);
     try {
-      // 水印关闭时不携带 watermark 字段，保持与原逻辑完全一致。
-      const { watermark, ...paramsWithoutWatermark } = params;
+      // 水印 / 字幕关闭时不携带对应字段，保持与原逻辑完全一致。
+      const { watermark, subtitle, ...paramsWithoutExtras } = params;
+      const jobParams = {
+        ...paramsWithoutExtras,
+        ...(watermark.enabled ? { watermark } : {}),
+        ...(isSubtitle && subtitle.enabled ? { subtitle } : {}),
+      };
       const specs = files
         .filter((f) => !f.error)
         .map((f) => ({
           kind: "video-mp4" as const,
           input: f.path,
           outputDir,
-          params: watermark.enabled ? { ...params, watermark } : { ...paramsWithoutWatermark },
+          params: jobParams,
           nameTemplate: naming.template.trim() || undefined,
           conflict: naming.conflict,
         }));
@@ -210,7 +263,7 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
             ← 方法列表
           </button>
           <div>
-            <h1>{methodId === "video-watermark" ? "添加水印" : methodId === "video-compress" ? "视频压缩" : methodId === "video-crop" ? "画面裁剪" : "视频转码"}</h1>
+            <h1>{methodId === "video-watermark" ? "添加水印" : methodId === "video-subtitle" ? "添加字幕" : methodId === "video-compress" ? "视频压缩" : methodId === "video-crop" ? "画面裁剪" : "视频转码"}</h1>
             <p>MP4 / MKV / WebM / MOV / TS / AVI · 编码器按容器与探测结果联动 · 硬件编码优先 · 绝不覆盖原文件</p>
           </div>
           <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
@@ -527,6 +580,228 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
             </Group>
           ) : null}
 
+          {isSubtitle ? (
+            <Group title="字幕" icon="subtitle">
+              <SwitchRow
+                label="启用字幕"
+                hint="关闭时不向 ffmpeg 传任何字幕参数，行为与未接入字幕时一致"
+                on={params.subtitle.enabled}
+                onChange={(value) => setSubtitle("enabled", value)}
+              />
+              {params.subtitle.enabled ? (
+                <>
+                  <Field label="字幕模式" tag={params.subtitle.mode === "hard" ? "烧录进画面" : "内嵌字幕轨"}>
+                    <Segmented
+                      value={params.subtitle.mode}
+                      onChange={(value) =>
+                        setParams((prev) => ({
+                          ...prev,
+                          subtitle: {
+                            ...prev.subtitle,
+                            mode: value,
+                            // 烧录只支持一份字幕文件：切到 hard 时丢弃附加轨。
+                            extraPaths: value === "hard" ? [] : prev.subtitle.extraPaths,
+                          },
+                        }))
+                      }
+                      options={[
+                        { value: "soft", label: "内嵌", title: "字幕作为独立字幕轨封装进容器，可开关" },
+                        {
+                          value: "hard",
+                          label: "烧录",
+                          disabled: subtitleBurnUnavailable,
+                          title: subtitleBurnUnavailable
+                            ? "当前 FFmpeg 未包含 libass，无法烧录字幕"
+                            : "把字幕渲染进画面，任意视频容器可用；变速时禁止",
+                        },
+                      ]}
+                    />
+                  </Field>
+                  {subtitleBurnUnavailable ? (
+                    <div className="note warn">当前 FFmpeg 未包含 libass，无法烧录字幕：请改用内嵌字幕，或安装带 libass 的 FFmpeg 构建。</div>
+                  ) : null}
+                  {subtitleSoftContainerBad ? (
+                    <div className="note warn">
+                      当前容器 {containerSpec.label} 不承载内嵌字幕轨，请改 MP4/MKV/MOV 或改用烧录。
+                    </div>
+                  ) : null}
+                  {subtitleSpeedConflict ? (
+                    <div className="note warn">
+                      变速时不能烧录字幕（字幕时间轴会与变速后的画面/音频不同步）：请改为内嵌字幕，或把倍速设回 1。
+                    </div>
+                  ) : null}
+                  <Field label="主字幕文件" tag="srt / ass / ssa / vtt">
+                    <button
+                      className="btn small"
+                      type="button"
+                      onClick={async () => {
+                        const picked = await pickSubtitleFile(false);
+                        if (picked?.[0]) setSubtitle("path", picked[0]);
+                      }}
+                    >
+                      选择字幕文件
+                    </button>
+                    <div className="note" title={params.subtitle.path} style={{ wordBreak: "break-all" }}>
+                      {params.subtitle.path || "尚未选择字幕文件"}
+                    </div>
+                  </Field>
+                  {params.subtitle.mode === "soft" ? (
+                    <Field label="附加字幕轨" tag="可多选">
+                      <button
+                        className="btn small"
+                        type="button"
+                        onClick={async () => {
+                          const picked = await pickSubtitleFile(true);
+                          if (!picked?.length) return;
+                          setParams((prev) => {
+                            const existing = new Set([prev.subtitle.path, ...prev.subtitle.extraPaths]);
+                            return {
+                              ...prev,
+                              subtitle: {
+                                ...prev.subtitle,
+                                extraPaths: [
+                                  ...prev.subtitle.extraPaths,
+                                  ...picked.filter((path) => path !== prev.subtitle.path && !existing.has(path)),
+                                ],
+                              },
+                            };
+                          });
+                        }}
+                      >
+                        添加更多字幕轨
+                      </button>
+                      {params.subtitle.extraPaths.length ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          {params.subtitle.extraPaths.map((path) => (
+                            <div key={path} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <code style={{ flex: 1, fontSize: 10.5, wordBreak: "break-all" }} title={path}>
+                                {path}
+                              </code>
+                              <button
+                                className="btn small ghost"
+                                type="button"
+                                onClick={() =>
+                                  setSubtitle(
+                                    "extraPaths",
+                                    params.subtitle.extraPaths.filter((item) => item !== path),
+                                  )
+                                }
+                              >
+                                删除
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="note">主字幕始终保留为第一条轨道；可继续添加上限内的附加字幕轨。</div>
+                      )}
+                    </Field>
+                  ) : null}
+                  <Field label="字幕语言" tag="默认 chi">
+                    <input
+                      className="input"
+                      value={params.subtitle.language}
+                      placeholder="chi"
+                      onChange={(event) => setSubtitle("language", event.target.value)}
+                    />
+                  </Field>
+                  {params.subtitle.mode === "soft" ? (
+                    <SwitchRow
+                      label="标为默认轨"
+                      hint="给主字幕加 disposition:default，播放器默认选中该字幕"
+                      on={params.subtitle.defaultTrack}
+                      onChange={(value) => setSubtitle("defaultTrack", value)}
+                    />
+                  ) : null}
+                  {params.subtitle.mode === "hard" ? (
+                    <>
+                      <Field label={`字号 ${params.subtitle.fontSizePct.toFixed(1)}%`} tag="画面高度 %">
+                        <input
+                          className="slider"
+                          type="range"
+                          min={1}
+                          max={20}
+                          step={0.5}
+                          value={params.subtitle.fontSizePct}
+                          onChange={(event) => setSubtitle("fontSizePct", Number(event.target.value))}
+                        />
+                      </Field>
+                      <Field label={`描边 ${params.subtitle.outline}`} tag="0–6">
+                        <input
+                          className="slider"
+                          type="range"
+                          min={0}
+                          max={6}
+                          step={1}
+                          value={params.subtitle.outline}
+                          onChange={(event) => setSubtitle("outline", Number(event.target.value))}
+                        />
+                      </Field>
+                      <Field label="位置">
+                        <Segmented
+                          value={params.subtitle.position}
+                          onChange={(value) => setSubtitle("position", value)}
+                          options={[
+                            { value: "bottom", label: "底部" },
+                            { value: "middle", label: "居中" },
+                            { value: "top", label: "顶部" },
+                          ]}
+                        />
+                      </Field>
+                      <div className="row2">
+                        <Field label="字幕颜色" tag="#RRGGBB">
+                          <input
+                            className="input"
+                            value={params.subtitle.color}
+                            onChange={(event) => {
+                              const next = event.target.value;
+                              if (/^#[0-9a-fA-F]{0,6}$/.test(next)) setSubtitle("color", next.toUpperCase());
+                            }}
+                            onBlur={() =>
+                              setSubtitle(
+                                "color",
+                                /^#[0-9a-fA-F]{6}$/.test(params.subtitle.color)
+                                  ? params.subtitle.color.toUpperCase()
+                                  : SUBTITLE_DEFAULTS.color,
+                              )
+                            }
+                          />
+                        </Field>
+                        <Field label="取色">
+                          <input
+                            className="input"
+                            type="color"
+                            value={
+                              /^#[0-9a-fA-F]{6}$/.test(params.subtitle.color)
+                                ? params.subtitle.color
+                                : SUBTITLE_DEFAULTS.color
+                            }
+                            onChange={(event) => setSubtitle("color", event.target.value.toUpperCase())}
+                          />
+                        </Field>
+                      </div>
+                      <Field label="垂直边距（px）">
+                        <input
+                          className="input"
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={params.subtitle.marginV}
+                          onChange={(event) =>
+                            setSubtitle("marginV", Math.max(0, Math.round(Number(event.target.value) || 0)))
+                          }
+                        />
+                      </Field>
+                    </>
+                  ) : null}
+                  <div className="note">
+                    内嵌字幕仅 MP4 / MOV / MKV 承载（MP4 / MOV 用 mov_text，MKV 直接复制流）；WebM / TS / AVI 请改用烧录。烧录在任意视频容器可用，但不能与变速同时使用。
+                  </div>
+                </>
+              ) : null}
+            </Group>
+          ) : null}
+
           <Group title="变速" icon="gauge">
             <Field label="倍速" tag={speedLabel(params.speed)}>
               <Segmented
@@ -658,7 +933,20 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
             "添加文件后显示粗估体积"
           )}
         </div>
-        <button className="btn primary" onClick={start} disabled={starting || !files.length}>
+        <button
+          className="btn primary"
+          onClick={start}
+          disabled={starting || !files.length || subtitleBlocked}
+          title={
+            subtitleSoftContainerBad
+              ? `容器 ${containerSpec.label} 不承载内嵌字幕轨，请改 MP4/MKV/MOV 或改用烧录`
+              : subtitleSpeedConflict
+                ? "变速时不能烧录字幕"
+                : subtitleBurnBlocked
+                  ? "当前 FFmpeg 未包含 libass，无法烧录字幕"
+                  : undefined
+          }
+        >
           <Icon name="play" size={14} />
           {starting ? "正在入队…" : "开始转换"}
         </button>

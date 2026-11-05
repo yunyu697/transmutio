@@ -35,6 +35,59 @@ pub struct VideoParams {
     /// 水印叠加（默认关闭）
     #[serde(default)]
     pub watermark: WatermarkParams,
+    /// 字幕：内嵌（soft）或烧录（hard），默认关闭
+    #[serde(default)]
+    pub subtitle: SubtitleParams,
+}
+
+/// 字幕参数。`baseHeight` 由后端探测后回填（`#[serde(skip)]`），
+/// 用于把「画面高度 × 字号百分比」换算成烧录滤镜需要的像素字号。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SubtitleParams {
+    pub enabled: bool,
+    /// soft | hard；空字符串等价 soft
+    pub mode: String,
+    /// 主字幕文件（srt / ass / ssa / vtt）
+    pub path: String,
+    /// 仅 soft：附加字幕轨（多文件合并进同一任务）
+    pub extra_paths: Vec<String>,
+    /// 默认 "chi"
+    pub language: String,
+    /// 主字幕标 disposition:default
+    pub default_track: bool,
+    /// hard：字号 = 输出画面高 × 百分比，合法 1.0–20.0，默认 4.5
+    pub font_size_pct: f64,
+    /// hard：描边 0–6，默认 2
+    pub outline: u32,
+    /// hard：bottom | middle | top；空字符串等价 bottom
+    pub position: String,
+    /// hard：#RRGGBB，默认 #FFFFFF
+    pub color: String,
+    /// hard：垂直边距，默认 24
+    pub margin_v: u32,
+    /// 输出画面高度，由后端探测回填
+    #[serde(skip)]
+    pub base_height: u32,
+}
+
+impl Default for SubtitleParams {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            mode: String::new(),
+            path: String::new(),
+            extra_paths: Vec::new(),
+            language: "chi".into(),
+            default_track: false,
+            font_size_pct: 4.5,
+            outline: 2,
+            position: String::new(),
+            color: "#FFFFFF".into(),
+            margin_v: 24,
+            base_height: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -1058,6 +1111,179 @@ pub fn validate_watermark(w: &WatermarkParams) -> Result<(), String> {
     }
 }
 
+/// 字幕模式：空字符串等价 soft。非法值由 `validate_subtitle` 拒绝。
+pub fn subtitle_mode(s: &SubtitleParams) -> &str {
+    let mode = s.mode.trim();
+    if mode.is_empty() {
+        "soft"
+    } else {
+        mode
+    }
+}
+
+fn subtitle_language(s: &SubtitleParams) -> &str {
+    let language = s.language.trim();
+    if language.is_empty() {
+        "chi"
+    } else {
+        language
+    }
+}
+
+/// 烧录字号像素：输出画面高 × 百分比，四舍五入且不小于 8。
+pub fn subtitle_font_px(base_height: u32, font_size_pct: f64) -> u32 {
+    let pct = if font_size_pct.is_finite() && (1.0..=20.0).contains(&font_size_pct) {
+        font_size_pct
+    } else {
+        4.5
+    };
+    (base_height as f64 * pct / 100.0).round().max(8.0) as u32
+}
+
+/// ASS Alignment：bottom → 2，middle → 5，top → 8。
+pub fn subtitle_alignment(position: &str) -> u32 {
+    match position.trim() {
+        "top" => 8,
+        "middle" => 5,
+        _ => 2,
+    }
+}
+
+/// `#RRGGBB` → ASS 颜色 `&HBBGGRR`。
+pub fn subtitle_ass_color(color: &str) -> Result<String, String> {
+    let raw = color.trim();
+    let hex = raw.strip_prefix('#').unwrap_or(raw);
+    if hex.len() != 6 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(format!("字幕颜色「{raw}」不是合法的 #RRGGBB 颜色"));
+    }
+    let upper = hex.to_ascii_uppercase();
+    Ok(format!(
+        "&H{}{}{}",
+        &upper[4..6],
+        &upper[2..4],
+        &upper[0..2]
+    ))
+}
+
+/// ffmpeg 滤镜参数会经过两层解析，Windows 路径必须按实测可行的方式转义：
+/// 常规路径用单引号包裹 + 反斜杠加倍 + 冒号加反斜杠；含单引号的路径改用
+/// 无引号形式（正斜杠）并做三层转义（单引号在两层解析里无法用引号包裹表达）。
+fn escape_subtitle_path(path: &str) -> String {
+    if path.contains('\'') {
+        let slashed = path.replace('\\', "/");
+        return slashed.replace(':', r"\\:").replace('\'', r"\\\'");
+    }
+    format!("'{}'", path.replace('\\', r"\\").replace(':', r"\:"))
+}
+
+/// 烧录字幕的滤镜片段。`subtitles` 必须在 scale 之后、水印 overlay 之前。
+pub fn hard_subtitle_filter(s: &SubtitleParams) -> Result<String, String> {
+    if s.base_height == 0 {
+        return Err("无法读取输入画面尺寸，不能按画面高度换算烧录字号".into());
+    }
+    let px = subtitle_font_px(s.base_height, s.font_size_pct);
+    let color = subtitle_ass_color(&s.color)?;
+    let style = format!(
+        "Fontname=Arial,Fontsize={px},Outline={},Alignment={},PrimaryColour={},MarginV={}",
+        s.outline.min(6),
+        subtitle_alignment(&s.position),
+        color,
+        s.margin_v
+    );
+    Ok(format!(
+        "subtitles={}:force_style='{style}'",
+        escape_subtitle_path(&s.path)
+    ))
+}
+
+fn validate_subtitle_file(path: &str) -> Result<(), String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() || !std::path::Path::new(trimmed).is_file() {
+        return Err(format!(
+            "字幕文件不存在：{path}（请重新选择字幕文件，或关闭字幕）"
+        ));
+    }
+    let ext = std::path::Path::new(trimmed)
+        .extension()
+        .map(|e| e.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    if !["srt", "ass", "ssa", "vtt"].contains(&ext.as_str()) {
+        return Err(format!(
+            "不支持的字幕格式「{ext}」，可选 srt / ass / ssa / vtt"
+        ));
+    }
+    Ok(())
+}
+
+/// 字幕入队校验：文件、格式、容器能力、变速 + 烧录的组合都在这里拒绝。
+pub fn validate_subtitle(s: &SubtitleParams, container: &str, speed: f64) -> Result<(), String> {
+    if !s.enabled {
+        return Ok(());
+    }
+    let mode = subtitle_mode(s);
+    if !matches!(mode, "soft" | "hard") {
+        return Err(format!("不支持的字幕模式「{mode}」，可选 soft / hard"));
+    }
+    validate_subtitle_file(&s.path)?;
+    for extra in &s.extra_paths {
+        validate_subtitle_file(extra)?;
+    }
+    if mode == "hard" {
+        if !s.extra_paths.is_empty() {
+            return Err("烧录模式只支持一份字幕文件：请移除附加字幕轨，或改为内嵌字幕".into());
+        }
+        if (speed_or_default(speed) - 1.0).abs() > 1e-9 {
+            return Err(
+                "变速时不能烧录字幕（字幕时间轴会与变速后的画面/音频不同步）：请改为内嵌字幕，或把倍速设为 1"
+                    .into(),
+            );
+        }
+        if !s.font_size_pct.is_finite() || !(1.0..=20.0).contains(&s.font_size_pct) {
+            return Err(format!("烧录字幕字号 {}% 超出范围 1–20", s.font_size_pct));
+        }
+        if s.outline > 6 {
+            return Err(format!("字幕描边 {} 超出范围 0–6", s.outline));
+        }
+        match s.position.trim() {
+            "" | "bottom" | "middle" | "top" => {}
+            other => {
+                return Err(format!(
+                    "不支持的字幕位置「{other}」，可选 bottom / middle / top"
+                ))
+            }
+        }
+        subtitle_ass_color(&s.color)?;
+        return Ok(());
+    }
+    if crate::containers::subtitle_codec(container).is_none() {
+        return Err(subtitle_container_error(container));
+    }
+    Ok(())
+}
+
+fn subtitle_container_error(container: &str) -> String {
+    let id = if container.trim().is_empty() {
+        "mp4"
+    } else {
+        container
+    };
+    let label = crate::containers::find_container(id)
+        .map(|c| c.label)
+        .unwrap_or("该容器");
+    format!("容器 {label} 不承载内嵌字幕轨：请改用 MKV/MP4/MOV，或把字幕烧录进画面")
+}
+
+/// 运行期能力校验：hard 模式必须由带 libass 的 FFmpeg 构建执行。
+pub fn validate_subtitle_burn(s: &SubtitleParams, burn_available: bool) -> Result<(), String> {
+    if !s.enabled || subtitle_mode(s) != "hard" || burn_available {
+        return Ok(());
+    }
+    Err(
+        "当前 FFmpeg 构建不包含 libass，无法烧录字幕：请安装带 libass 的 FFmpeg 构建，或把字幕模式改为内嵌字幕"
+            .into(),
+    )
+}
+
 /// 裁剪后的宽高（与 `crop_filter` 的表达式一致：宽高取偶）。
 fn crop_dimensions(mode: &str, width: u32, height: u32) -> (u32, u32) {
     let (w, h) = (width as u64, height as u64);
@@ -1233,6 +1459,32 @@ pub fn build_video(
         args.push("-i".into());
         args.push(p.watermark.path.clone());
     }
+    let subtitle_kind = if p.subtitle.enabled {
+        subtitle_mode(&p.subtitle)
+    } else {
+        ""
+    };
+    let soft_subtitle = subtitle_kind == "soft";
+    let hard_subtitle = subtitle_kind == "hard";
+    let soft_codec = if soft_subtitle {
+        Some(
+            crate::containers::subtitle_codec(&p.container)
+                .ok_or_else(|| subtitle_container_error(&p.container))?,
+        )
+    } else {
+        None
+    };
+    // 字幕文件作为独立输入追加；主输入是 0，水印（若启用）占 1。
+    let mut subtitle_input_start = 0usize;
+    if soft_subtitle {
+        subtitle_input_start = 1 + usize::from(wm_plan.is_some());
+        args.push("-i".into());
+        args.push(p.subtitle.path.clone());
+        for extra in &p.subtitle.extra_paths {
+            args.push("-i".into());
+            args.push(extra.clone());
+        }
+    }
     args.push("-map".into());
     if wm_plan.is_some() {
         args.push("[outv]".into());
@@ -1242,6 +1494,14 @@ pub fn build_video(
     if p.audio_mode != "none" {
         args.push("-map".into());
         args.push("0:a:0?".into());
+    }
+    if soft_subtitle {
+        args.push("-map".into());
+        args.push(format!("{subtitle_input_start}:s:0"));
+        for index in 0..p.subtitle.extra_paths.len() {
+            args.push("-map".into());
+            args.push(format!("{}:s:0", subtitle_input_start + 1 + index));
+        }
     }
     let mut filters: Vec<String> = Vec::new();
     if let Some(crop) = crop_filter(&p.crop) {
@@ -1254,6 +1514,16 @@ pub fn build_video(
                 filters.push(format!("scale=-2:{h}:flags=lanczos"));
             }
         }
+    }
+    if hard_subtitle {
+        // 烧录必须发生在 scale 之后（字号按最终画面高度换算），且不能与变速共存。
+        if (speed_or_default(p.speed) - 1.0).abs() > 1e-9 {
+            return Err(
+                "变速时不能烧录字幕（字幕时间轴会与变速后的画面/音频不同步）：请改为内嵌字幕，或把倍速设为 1"
+                    .into(),
+            );
+        }
+        filters.push(hard_subtitle_filter(&p.subtitle)?);
     }
     if let Some((video_filter, _)) = speed_filters(p.speed, p.keep_pitch) {
         filters.push(video_filter);
@@ -1332,6 +1602,19 @@ pub fn build_video(
             args.push(audio.into());
             args.push("-b:a".into());
             args.push(format!("{kbps}k"));
+        }
+    }
+    if let Some(codec) = soft_codec {
+        args.push("-c:s".into());
+        args.push(codec.into());
+        let language = subtitle_language(&p.subtitle);
+        for index in 0..=p.subtitle.extra_paths.len() {
+            args.push(format!("-metadata:s:s:{index}"));
+            args.push(format!("language={language}"));
+        }
+        if p.subtitle.default_track {
+            args.push("-disposition:s:0".into());
+            args.push("default".into());
         }
     }
     let spec = crate::containers::find_container(if p.container.trim().is_empty() {
@@ -1944,6 +2227,7 @@ mod tests {
             speed: 1.0,
             keep_pitch: true,
             watermark: WatermarkParams::default(),
+            subtitle: SubtitleParams::default(),
         }
     }
 
@@ -2894,5 +3178,296 @@ mod tests {
         assert_eq!(image_base_dims(&img, "in.png", 640, 480), (200, 133));
         img.rotation = "90".into();
         assert_eq!(image_base_dims(&img, "in.png", 640, 480), (133, 200));
+    }
+
+    fn temp_subtitle(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("ff-sub-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(name);
+        std::fs::write(
+            &path,
+            "1\n00:00:00,000 --> 00:00:02,000\nhello\n\n2\n00:00:02,000 --> 00:00:04,000\nworld\n",
+        )
+        .unwrap();
+        path
+    }
+
+    fn map_targets(args: &[String]) -> Vec<String> {
+        args.iter()
+            .enumerate()
+            .filter(|(_, a)| a.as_str() == "-map")
+            .filter_map(|(i, _)| args.get(i + 1).cloned())
+            .collect()
+    }
+
+    fn flag_value(args: &[String], flag: &str) -> Option<String> {
+        let pos = args.iter().position(|a| a.as_str() == flag)?;
+        args.get(pos + 1).cloned()
+    }
+
+    #[test]
+    fn subtitle_soft_mp4_maps_mov_text_and_language() {
+        let file = temp_subtitle("soft.mp4.srt");
+        let mut p = video_params();
+        p.audio_mode = "aac".into();
+        p.subtitle = SubtitleParams {
+            enabled: true,
+            mode: "soft".into(),
+            path: file.to_string_lossy().to_string(),
+            language: "chi".into(),
+            default_track: true,
+            ..Default::default()
+        };
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
+        let maps = map_targets(&args);
+        assert!(maps.contains(&"0:v:0".to_string()), "{maps:?}");
+        assert!(maps.contains(&"0:a:0?".to_string()), "{maps:?}");
+        assert!(maps.contains(&"1:s:0".to_string()), "{maps:?}");
+        assert_eq!(flag_value(&args, "-c:s").as_deref(), Some("mov_text"));
+        assert!(args.contains(&"language=chi".to_string()));
+        assert_eq!(
+            count_flag(&args, "-disposition:s:0"),
+            1,
+            "主字幕应设 default disposition"
+        );
+        assert_eq!(
+            flag_value(&args, "-disposition:s:0").as_deref(),
+            Some("default")
+        );
+    }
+
+    #[test]
+    fn subtitle_soft_mkv_copies_stream() {
+        let file = temp_subtitle("soft.mkv.srt");
+        let mut p = video_params();
+        p.container = "mkv".into();
+        p.subtitle = SubtitleParams {
+            enabled: true,
+            mode: "soft".into(),
+            path: file.to_string_lossy().to_string(),
+            ..Default::default()
+        };
+        let args = build_video("libx265", "in.mp4", "out.mkv", &p, "aac", None).unwrap();
+        assert_eq!(flag_value(&args, "-c:s").as_deref(), Some("copy"));
+        assert!(map_targets(&args).contains(&"1:s:0".to_string()));
+    }
+
+    #[test]
+    fn subtitle_soft_multiple_files_map_and_metadata_each() {
+        let main = temp_subtitle("multi-1.srt");
+        let second = temp_subtitle("multi-2.srt");
+        let third = temp_subtitle("multi-3.srt");
+        let mut p = video_params();
+        p.audio_mode = "aac".into();
+        p.subtitle = SubtitleParams {
+            enabled: true,
+            mode: "soft".into(),
+            path: main.to_string_lossy().to_string(),
+            extra_paths: vec![
+                second.to_string_lossy().to_string(),
+                third.to_string_lossy().to_string(),
+            ],
+            language: "chi".into(),
+            default_track: true,
+            ..Default::default()
+        };
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
+        let maps = map_targets(&args);
+        assert_eq!(
+            maps.iter().filter(|m| m.contains(":s:0")).count(),
+            3,
+            "{maps:?}"
+        );
+        assert!(maps.contains(&"1:s:0".to_string()), "{maps:?}");
+        assert!(maps.contains(&"2:s:0".to_string()), "{maps:?}");
+        assert!(maps.contains(&"3:s:0".to_string()), "{maps:?}");
+        let metadata_flags = args
+            .iter()
+            .filter(|a| a.starts_with("-metadata:s:s:"))
+            .count();
+        assert_eq!(metadata_flags, 3, "每条字幕轨都要写 language");
+        assert_eq!(
+            count_flag(&args, "-disposition:s:0"),
+            1,
+            "只有主字幕轨设默认"
+        );
+    }
+
+    #[test]
+    fn subtitle_container_matrix_accepts_only_mp4_mov_mkv() {
+        let file = temp_subtitle("matrix.srt");
+        let s = SubtitleParams {
+            enabled: true,
+            mode: "soft".into(),
+            path: file.to_string_lossy().to_string(),
+            ..Default::default()
+        };
+        for container in ["mp4", "mov", "mkv"] {
+            assert!(
+                validate_subtitle(&s, container, 1.0).is_ok(),
+                "{container} 应支持内嵌字幕"
+            );
+        }
+        for container in ["webm", "avi", "ts"] {
+            let err = validate_subtitle(&s, container, 1.0).unwrap_err();
+            assert!(err.contains("不承载内嵌字幕轨"), "{container}: {err}");
+        }
+    }
+
+    #[test]
+    fn subtitle_hard_filter_string_has_font_alignment_and_color() {
+        let mut p = video_params();
+        p.subtitle = SubtitleParams {
+            enabled: true,
+            mode: "hard".into(),
+            path: "sub.srt".into(),
+            font_size_pct: 4.5,
+            outline: 2,
+            position: "bottom".into(),
+            color: "#FF0000".into(),
+            margin_v: 24,
+            base_height: 1080,
+            ..Default::default()
+        };
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
+        let vf = filter_arg(&args).expect("hard 应生成 -vf");
+        assert!(vf.contains("subtitles="), "{vf}");
+        assert!(vf.contains("force_style="), "{vf}");
+        assert!(vf.contains("Fontsize=49"), "1080 × 4.5% ≈ 49，实际 {vf}");
+        assert!(vf.contains("Outline=2"), "{vf}");
+        assert!(vf.contains("Alignment=2"), "{vf}");
+        assert!(
+            vf.contains("PrimaryColour=&H0000FF"),
+            "#FF0000 → &H0000FF，实际 {vf}"
+        );
+        assert!(vf.contains("MarginV=24"), "{vf}");
+
+        assert_eq!(subtitle_alignment("bottom"), 2);
+        assert_eq!(subtitle_alignment(""), 2);
+        assert_eq!(subtitle_alignment("middle"), 5);
+        assert_eq!(subtitle_alignment("top"), 8);
+        assert_eq!(subtitle_ass_color("#123456").unwrap(), "&H563412");
+        assert_eq!(subtitle_font_px(1080, 4.5), 49);
+        assert_eq!(subtitle_font_px(240, 4.5), 11);
+        assert_eq!(subtitle_font_px(100, 1.0), 8, "最小 8 像素");
+    }
+
+    #[test]
+    fn subtitle_hard_filter_sits_after_scale_and_before_watermark() {
+        let mut p = video_params();
+        p.resolution = "1080".into();
+        p.watermark = WatermarkParams {
+            enabled: true,
+            path: "wm.png".into(),
+            base_width: 1920,
+            base_height: 1080,
+            wm_width: 96,
+            wm_height: 96,
+            ..Default::default()
+        };
+        p.subtitle = SubtitleParams {
+            enabled: true,
+            mode: "hard".into(),
+            path: "sub.srt".into(),
+            base_height: 1080,
+            ..Default::default()
+        };
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
+        let graph = complex_arg(&args).expect("水印 + 烧录应生成 -filter_complex");
+        let scale = graph.find("scale=-2:1080").expect("应含 scale");
+        let subtitles = graph.find("subtitles=").expect("应含 subtitles");
+        let overlay = graph.find("overlay=").expect("应含 overlay");
+        assert!(
+            scale < subtitles && subtitles < overlay,
+            "链顺序必须是 scale → subtitles → overlay：{graph}"
+        );
+        assert_eq!(graph.matches("subtitles=").count(), 1, "{graph}");
+    }
+
+    #[test]
+    fn subtitle_hard_rejects_speed_change_but_soft_allows_it() {
+        let file = temp_subtitle("speed.srt");
+        let mut s = SubtitleParams {
+            enabled: true,
+            mode: "hard".into(),
+            path: file.to_string_lossy().to_string(),
+            ..Default::default()
+        };
+        let err = validate_subtitle(&s, "mp4", 1.5).unwrap_err();
+        assert_eq!(
+            err,
+            "变速时不能烧录字幕（字幕时间轴会与变速后的画面/音频不同步）：请改为内嵌字幕，或把倍速设为 1"
+        );
+        assert!(validate_subtitle(&s, "mp4", 1.0).is_ok());
+
+        s.mode = "soft".into();
+        assert!(validate_subtitle(&s, "mp4", 1.5).is_ok());
+        let mut p = video_params();
+        p.speed = 1.5;
+        p.audio_mode = "aac".into();
+        p.subtitle = s.clone();
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
+        let vf = filter_arg(&args).expect("变速应生成 -vf");
+        assert_eq!(vf.matches("setpts=").count(), 1, "{vf}");
+        assert!(map_targets(&args).contains(&"1:s:0".to_string()));
+    }
+
+    #[test]
+    fn subtitle_hard_without_libass_is_rejected() {
+        let s = SubtitleParams {
+            enabled: true,
+            mode: "hard".into(),
+            path: "sub.srt".into(),
+            ..Default::default()
+        };
+        let err = validate_subtitle_burn(&s, false).unwrap_err();
+        assert!(err.contains("libass"), "{err}");
+        assert!(err.contains("内嵌字幕"), "{err}");
+        assert!(validate_subtitle_burn(&s, true).is_ok());
+        let soft = SubtitleParams {
+            enabled: true,
+            mode: "soft".into(),
+            ..Default::default()
+        };
+        assert!(
+            validate_subtitle_burn(&soft, false).is_ok(),
+            "软字幕不依赖 libass"
+        );
+    }
+
+    #[test]
+    fn subtitle_validation_rejects_missing_files_and_bad_extension() {
+        let missing = SubtitleParams {
+            enabled: true,
+            mode: "soft".into(),
+            path: "not-there.srt".into(),
+            ..Default::default()
+        };
+        let err = validate_subtitle(&missing, "mp4", 1.0).unwrap_err();
+        assert!(err.contains("字幕文件不存在"), "{err}");
+        assert!(err.contains("请重新选择字幕文件"), "{err}");
+
+        let bad = temp_subtitle("bad.txt");
+        let s = SubtitleParams {
+            enabled: true,
+            mode: "soft".into(),
+            path: bad.to_string_lossy().to_string(),
+            ..Default::default()
+        };
+        assert!(validate_subtitle(&s, "mp4", 1.0)
+            .unwrap_err()
+            .contains("不支持的字幕格式"));
+
+        let main = temp_subtitle("extra-main.srt");
+        let s = SubtitleParams {
+            enabled: true,
+            mode: "soft".into(),
+            path: main.to_string_lossy().to_string(),
+            extra_paths: vec!["missing-extra.srt".into()],
+            ..Default::default()
+        };
+        assert!(validate_subtitle(&s, "mp4", 1.0)
+            .unwrap_err()
+            .contains("字幕文件不存在"));
     }
 }

@@ -338,6 +338,7 @@ fn test_caps(version: &str) -> Capabilities {
             reason: Some("本检查未启用硬解，避免依赖 GPU".into()),
         }],
         software_h264_available: true,
+        subtitle_burn: false,
         notes: vec!["headless 检查用手工能力表，不替代真实探测；真实探测由 verify-mvp 覆盖".into()],
     }
 }

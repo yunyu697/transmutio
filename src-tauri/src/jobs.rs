@@ -469,6 +469,7 @@ fn precheck_spec(
                 return Err("变速会改变音轨时长，不能与原样复制音轨同时使用：请改为按容器转码或移除音轨".into());
             }
             args::validate_watermark(&p.watermark)?;
+            args::validate_subtitle(&p.subtitle, &p.container, p.speed)?;
             containers::validate_video(&p.container, &p.codec)
         }
         "audio-mp3" | "audio-aac" => {
@@ -2400,6 +2401,28 @@ async fn watermark_dims_for_job(
     }))
 }
 
+/// 烧录字幕的字号按「最终画面高度 × 百分比」换算，运行前必须拿到真实高度。
+async fn subtitle_base_height_for_job(
+    probe_bin: Option<&str>,
+    job: &Job,
+) -> Result<Option<u32>, String> {
+    if job.kind != "video-mp4" {
+        return Ok(None);
+    }
+    let p: args::VideoParams =
+        serde_json::from_value(job.params.clone()).map_err(|e| format!("视频参数格式错误：{e}"))?;
+    if !p.subtitle.enabled || args::subtitle_mode(&p.subtitle) != "hard" {
+        return Ok(None);
+    }
+    let bin =
+        probe_bin.ok_or_else(|| "找不到 ffprobe，无法读取烧录字幕所需的画面高度".to_string())?;
+    let info = probe::probe_media(bin, &job.input).await;
+    match (info.width, info.height) {
+        (Some(w), Some(h)) if w > 0 && h > 0 => Ok(Some(args::video_base_dims(&p, w, h).1)),
+        _ => Err(format!("无法读取输入画面尺寸：{}", job.input)),
+    }
+}
+
 async fn run_job(ctx: Ctx, id: String) {
     let state = ctx.state.clone();
     let job = match get_job(&ctx, &id).await {
@@ -2435,6 +2458,8 @@ async fn run_job(ctx: Ctx, id: String) {
             crate::flavor::allow_gpl_effective(inner.allow_gpl),
         )
     };
+    // 拿不到能力探测结果时按不可用处理：烧录字幕必须有 libass。
+    let subtitle_burn = caps.as_ref().map(|c| c.subtitle_burn).unwrap_or(false);
 
     let dir = Path::new(&job.output)
         .parent()
@@ -2659,6 +2684,30 @@ async fn run_job(ctx: Ctx, id: String) {
         }
     };
 
+    // 烧录字幕的字号依赖真实输出高度；探测失败时任务直接失败。
+    let subtitle_base_height = {
+        let probe_bin = tools_snapshot
+            .as_ref()
+            .and_then(|t| t.ffprobe.as_ref())
+            .map(|p| p.path.as_str());
+        match subtitle_base_height_for_job(probe_bin, &job).await {
+            Ok(height) => height,
+            Err(message) => {
+                remove_temp_file(&temp).await;
+                set_job(&ctx, &id, |job| {
+                    job.status = "failed".into();
+                    job.error_kind = Some("invalid-params".into());
+                    job.message = Some(message);
+                    job.finished_at = Some(now_ms());
+                })
+                .await;
+                write_job_log(&ctx, &id, "failed", &[], "").await;
+                finish_slot(&ctx, &id).await;
+                return;
+            }
+        }
+    };
+
     let mut last_stderr = String::new();
     for (idx, encoder) in chain.iter().enumerate() {
         let cancelled = {
@@ -2680,6 +2729,20 @@ async fn run_job(ctx: Ctx, id: String) {
                         p.watermark.base_height = dims.base_height;
                         p.watermark.wm_width = dims.wm_width;
                         p.watermark.wm_height = dims.wm_height;
+                    }
+                    p.subtitle.base_height = subtitle_base_height.unwrap_or(0);
+                    if let Err(message) = args::validate_subtitle_burn(&p.subtitle, subtitle_burn) {
+                        remove_temp_file(&temp).await;
+                        set_job(&ctx, &id, |job| {
+                            job.status = "failed".into();
+                            job.error_kind = Some("invalid-params".into());
+                            job.message = Some(message);
+                            job.finished_at = Some(now_ms());
+                        })
+                        .await;
+                        write_job_log(&ctx, &id, "failed", &[], "").await;
+                        finish_slot(&ctx, &id).await;
+                        return;
                     }
                     let accel = if p.hw_decode {
                         best_decode_accel(caps.as_ref())

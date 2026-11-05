@@ -953,6 +953,88 @@ identifier（dark 反编译 `ShortcutProperty System.AppUserModel.ID`）、NSIS 
 * 水印 + 变速 + 裁剪组合时的**主观**画面位置与时长（后台已断言时长/分辨率/像素）；
 * BMP/TIFF 输出叠加水印未验证；GIF/合并/混流入口未提供水印控件（符合本轮范围）。
 
+## 4.16 字幕（内嵌 / 烧录）（第七轮）
+
+「添加字幕」卡启用，kind 仍为 `video-mp4`。参数集中在 `args.rs`，面板只传结构化的 `subtitle` 对象；不引入新依赖，烧录依赖 FFmpeg 内置 `subtitles`（libass）。
+
+### 两条路径的实现差异
+
+| | 内嵌（soft） | 烧录（hard） |
+| --- | --- | --- |
+| 原理 | 字幕作为独立轨道写入容器，播放器可开关 | `subtitles` 滤镜把文字画进像素，不可关闭 |
+| 映射 | 字幕文件各用独立 `-i`，按 `1:s:0`、`2:s:0`… 逐条 `-map` | 无额外轨道，只加一个滤镜 |
+| 编码 | mp4/mov → `-c:s mov_text`；mkv → `-c:s copy`（srt/ass/ssa/webvtt） | 不涉及字幕编码，只转视频画面 |
+| 元数据 | `-metadata:s:s:<n> language=<lang>`；`default_track` → `-disposition:s:0 default` | 无（样式写进画面） |
+| 多文件 | 支持，同一任务内合并多条字幕轨 | 不支持（一次只烧一条；面板也只给主字幕） |
+| 与变速 | 可共存（字幕轨不经过视频滤镜，时间轴由播放器按倍速处理） | **禁止**（见下） |
+| 滤镜链 | 不进入 `-vf` / `-filter_complex` | `crop → rotation → scale → subtitles → [水印 overlay] → VAAPI` |
+
+### 变速 + 烧录的取舍
+
+选择「**变速时禁用烧录**」：`subtitles` 按帧时间戳渲染文字，而 `setpts` 会改写视频 PTS、音频又由 `atempo` 独立变速；把 `subtitles` 放在 `setpts` 前后都无法同时保证文字出现时刻与音频一致（放前面会整体压缩字幕时间、放后面则按变速后的时间重采样字幕），必然出现字幕提前/滞后。与其给出「看起来能跑」的结果，不如显式拒绝：
+
+> 变速时不能烧录字幕（字幕时间轴会与变速后的画面/音频不同步）：请改为内嵌字幕，或把倍速设为 1
+
+内嵌字幕 + 变速仍允许（封装层只存轨道，播放器按倍速回放）。
+
+### 容器能力矩阵
+
+| 容器 | 内嵌 soft | 烧录 hard |
+| --- | --- | --- |
+| MP4 | `mov_text` | 支持 |
+| MOV | `mov_text` | 支持 |
+| MKV | `srt/ass/ssa/webvtt` copy | 支持 |
+| TS | **拒绝**（不承载内嵌字幕） | 支持（烧进画面） |
+| WebM | **拒绝** | 支持 |
+| AVI | **拒绝** | 支持 |
+
+不支持内嵌的容器会返回可读错误并由面板提前禁用，**不会生成静默丢字幕的文件**。
+
+### libass 检测与降级
+
+`probe.rs` 新增 `subtitleBurn` 能力：先查 `ffmpeg -filters` 是否含 `subtitles`，否则查 `-buildconf` 是否带 `--enable-libass`；任一路径缺失即 false。本机 LGPL 构建为 **true**。为 false 时面板禁用「烧录」并说明原因，后端运行期也会显式失败。
+
+### 失败态
+
+字幕文件不存在 / 空路径 / 扩展名不在 srt/ass/ssa/vtt、附加轨缺失、容器不支持内嵌、变速+烧录、libass 缺失 —— 全部显式失败或面板灰显，文案可操作（例：`字幕文件不存在：<path>（请重新选择字幕文件，或关闭字幕）`）。
+
+### 断言结果（后台，无窗口）
+
+| 验证 | 结果 | 覆盖 |
+| --- | --- | --- |
+| `cargo test` | **95 / 95**（原 85 + 10 条字幕） | 单条/多条 soft 映射、默认轨与语言标签、三种容器 soft 能力与三种拒绝、hard 滤镜串（字号/描边/位置/颜色）、变速+烧录拒绝、内嵌+变速允许且 `setpts` 仅 1 次、libass=false 失败 |
+| `npm run verify:formats` | **22 / 22**（原 17 + 5） | 字幕卡启用、面板控件、`SubtitleParams`/`subtitleBurn`、容器不兼容与变速+烧录的阻止逻辑 |
+| `p2-check`（LGPL FFmpeg） | **24 / 24**（原 19 + 5） | 见真跑表 |
+| `cargo fmt --check` | 通过 | — |
+
+真跑明细（全部 ffprobe 复核）：
+
+| 用例 | 结果 |
+| --- | --- |
+| MP4 内嵌 | 1 条 `mov_text` 字幕流、`disposition.default=1`、`language=chi` |
+| MKV 内嵌 | 字幕流存在、`subrip`、`language=chi` |
+| 烧录 MP4 | 字幕区域像素均值与「无字幕版」相差 **19.7**（阈值 >15）→ 文字确实画进画面；时长 **2.00 s**、音频 48 kHz / 2 声道未变 |
+| WebM 内嵌 | 拒绝，文案含「不承载内嵌字幕轨」 |
+| 字幕文件缺失 | 拒绝，文案含「字幕文件不存在」 |
+
+> 说明：p2 样片仅 320×240，默认 4.5% 字号约 11 px，固定采样区差值不足以稳定超过阈值，故真跑改用 12%（约 29 px）验证像素变化；产品默认值与功能未改。
+
+### 本轮产物（`dist-artifacts/`，四包重建）
+
+| 变体 | 安装包 | 字节 | SHA-256 |
+| --- | --- | --- | --- |
+| LGPL | `lgpl/Transmutio_0.1.0_x64_en-US.msi` | 2,695,168 | `9f152bccc3a1e1270780c0150d2cd8b762e5f399bb413d7efc0938a485ee40bc` |
+| LGPL | `lgpl/Transmutio_0.1.0_x64-setup.exe` | 1,839,931 | `f933a185cfb5e192f0a1510a5f6dfffd56edc756e9727db4a68200b08faf1e85` |
+| GPL | `gpl/Transmutio GPL_0.1.0_x64_en-US.msi` | 2,686,976 | `d82b0d5501690d2d9ca2c569941d5f4c6fd7b6aa826639e853661fb348f76964` |
+| GPL | `gpl/Transmutio GPL_0.1.0_x64-setup.exe` | 1,838,344 | `dd7e6ab931bd150a5e37e642f019416f795998cc2116b77e54a284d748c039e4` |
+
+### 仍需人工开窗确认（本轮未开窗）
+
+* 「添加字幕」卡可点、面板控件齐全（模式切换、附加轨列表、颜色输入）；
+* 选字幕文件的过滤器（srt/ass/ssa/vtt）与路径显示；
+* 本机 `subtitleBurn=true` 时「烧录」可选；人为换成无 libass 的 FFmpeg 时应灰显并给原因；
+* 烧录字幕的主观字体/描边/位置观感（后台只断言像素确实变化）。
+
 ---
 
 ## 5. 应用级链路（`scripts/app-e2e.mjs`）与已知问题

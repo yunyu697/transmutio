@@ -47,7 +47,7 @@ export const sections: SectionDef[] = [
       m("video", "video-crop", "画面裁剪", "16:9 / 1:1 / 9:16 居中裁剪，可配合旋转", "crop", true, "video"),
       m("video", "video-merge", "视频合并", "多文件按顺序拼接；同参直接复制流", "merge", true, "video"),
       m("video", "video-watermark", "添加水印", "图片 / 文字水印与位置控制", "watermark", true, "video"),
-      m("video", "video-subtitle", "添加字幕", "内嵌字幕或外挂字幕", "subtitle", false),
+      m("video", "video-subtitle", "添加字幕", "内嵌字幕或外挂字幕", "subtitle", true, "video"),
       m("video", "video-mux", "音视频混流", "替换 / 追加音轨，视频流原样复制", "mux", true, "video"),
       m("video", "video-gif", "转 GIF", "区间截取 + 调色板优化", "gif", true, "video"),
       m("video", "image-seq-video", "图片序列转视频", "帧率 / 起始编号 / 尺寸统一 / 编码器", "film", true, "sequence"),

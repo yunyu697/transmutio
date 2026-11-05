@@ -64,6 +64,8 @@ export interface Capabilities {
   audioEncoders: EncoderCap[];
   decodeAccels: DecodeCap[];
   softwareH264Available: boolean;
+  /** 是否可烧录字幕（FFmpeg 构建包含 libass / subtitles 滤镜） */
+  subtitleBurn: boolean;
   notes: string[];
 }
 
@@ -164,6 +166,31 @@ export interface WatermarkParams {
   rotation: number;
 }
 
+/** 字幕参数（后端 camelCase 反序列化；关闭时不传该字段）。 */
+export interface SubtitleParams {
+  enabled: boolean;
+  /** soft = 内嵌字幕轨；hard = 烧录进画面 */
+  mode: "soft" | "hard";
+  /** 主字幕文件（srt / ass / ssa / vtt） */
+  path: string;
+  /** 仅 soft：附加字幕轨 */
+  extraPaths: string[];
+  /** 字幕语言标签（默认 chi） */
+  language: string;
+  /** 主字幕标为默认轨（仅 soft） */
+  defaultTrack: boolean;
+  /** hard：字号（画面高度百分比，1–20） */
+  fontSizePct: number;
+  /** hard：描边 0–6 */
+  outline: number;
+  /** hard：bottom | middle | top */
+  position: "bottom" | "middle" | "top";
+  /** hard：#RRGGBB */
+  color: string;
+  /** hard：垂直边距（像素） */
+  marginV: number;
+}
+
 export interface VideoParams {
   /** mp4 | mkv | webm | mov | ts | avi */
   container: string;
@@ -187,6 +214,8 @@ export interface VideoParams {
   keepPitch: boolean;
   /** 图片水印；enabled=false 时入队不携带该字段 */
   watermark: WatermarkParams;
+  /** 字幕；enabled=false 时入队不携带该字段 */
+  subtitle: SubtitleParams;
 }
 
 export interface AudioParams {

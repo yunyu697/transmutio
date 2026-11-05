@@ -82,6 +82,7 @@ const CAPS = {
   ],
   decodeAccels: [{ id: "d3d11va", label: "D3D11VA", available: true, reason: null }],
   softwareH264Available: true,
+  subtitleBurn: true,
   notes: [],
 };
 

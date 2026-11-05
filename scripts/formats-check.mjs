@@ -167,10 +167,100 @@ check(
     : "api.ts 定义 WatermarkParams，VideoParams / ImageParams 均含 watermark: WatermarkParams",
 );
 
+// 字幕：卡片启用、面板控件、前端参数类型与容器/变速阻止逻辑。
+const videoSubtitleLine = catalog.split("\n").find((line) => line.includes('"video-subtitle"')) ?? "";
 check(
-  "静态断言数量 ≥ 17",
-  results.length + 1 >= 17,
-  `当前 ${results.length + 1} 条断言（保留原有 13 条并新增水印断言）`,
+  "字幕卡已启用",
+  !videoSubtitleLine.includes(", false") && videoSubtitleLine.includes('"video"') && videoSubtitleLine.includes('"subtitle"'),
+  `video-subtitle=${videoSubtitleLine.trim() || "缺失"}`,
+);
+
+const subtitleUiTokens = [
+  'title="字幕"',
+  '"内嵌"',
+  '"烧录"',
+  "fontSizePct",
+  "outline",
+  '"bottom"',
+  '"middle"',
+  '"top"',
+  "color",
+  "marginV",
+  "defaultTrack",
+];
+const missingSubtitleUi = subtitleUiTokens.filter((token) => !videoPanel.includes(token));
+check(
+  "视频面板含字幕模式 / 样式 / 位置 / 颜色控件",
+  missingSubtitleUi.length === 0,
+  missingSubtitleUi.length
+    ? `缺少 ${missingSubtitleUi.join(", ")}`
+    : "内嵌/烧录、fontSizePct、outline、bottom/middle/top、color、marginV、defaultTrack 均在 VideoPanel 中",
+);
+
+const subtitleParamsBlock = apiSource.slice(
+  apiSource.indexOf("export interface SubtitleParams"),
+  apiSource.indexOf("export interface VideoParams"),
+);
+const subtitleFields = [
+  "enabled",
+  "mode",
+  "path",
+  "extraPaths",
+  "language",
+  "defaultTrack",
+  "fontSizePct",
+  "outline",
+  "position",
+  "color",
+  "marginV",
+];
+const missingSubtitleFields = subtitleFields.filter((field) => !subtitleParamsBlock.includes(field));
+check(
+  "前端定义 SubtitleParams 与 subtitleBurn",
+  apiSource.includes("export interface SubtitleParams") &&
+    missingSubtitleFields.length === 0 &&
+    apiSource.includes("subtitle: SubtitleParams") &&
+    apiSource.includes("subtitleBurn: boolean"),
+  missingSubtitleFields.length
+    ? `SubtitleParams 缺少 ${missingSubtitleFields.join(", ")}`
+    : "api.ts 定义 SubtitleParams（11 个 camelCase 字段）、VideoParams.subtitle 与 Capabilities.subtitleBurn",
+);
+
+const subtitleBlockTokens = [
+  "SUBTITLE_SOFT_CONTAINERS",
+  "subtitleSoftContainerBad",
+  "subtitleSpeedConflict",
+  "不承载内嵌字幕轨",
+  "请改 MP4/MKV/MOV 或改用烧录",
+  "变速时不能烧录字幕",
+  "disabled={starting || !files.length || subtitleBlocked}",
+];
+const missingSubtitleBlock = subtitleBlockTokens.filter((token) => !videoPanel.includes(token));
+check(
+  "视频面板阻止容器不兼容与变速 + 烧录",
+  missingSubtitleBlock.length === 0,
+  missingSubtitleBlock.length
+    ? `缺少 ${missingSubtitleBlock.join(", ")}`
+    : "soft 容器白名单、容器不兼容提示、变速 + 烧录提示与开始按钮禁用均在 VideoPanel 中",
+);
+
+const subtitleModule = readFileSync(join(root, "src/lib/subtitle.ts"), "utf8");
+const subtitleExts = ["srt", "ass", "ssa", "vtt"];
+const missingSubtitleExts = subtitleExts.filter((ext) => !subtitleModule.includes(`"${ext}"`));
+check(
+  "字幕选择器限定 srt / ass / ssa / vtt",
+  subtitleModule.includes("SUBTITLE_EXTENSIONS") &&
+    subtitleModule.includes("SUBTITLE_DEFAULTS") &&
+    missingSubtitleExts.length === 0,
+  missingSubtitleExts.length
+    ? `缺少 ${missingSubtitleExts.join(", ")}`
+    : "subtitle.ts 定义 SUBTITLE_DEFAULTS 与 SUBTITLE_EXTENSIONS（srt/ass/ssa/vtt），并提供归一化与文件选择",
+);
+
+check(
+  "静态断言数量 ≥ 21",
+  results.length + 1 >= 21,
+  `当前 ${results.length + 1} 条断言（保留原有 17 条并新增字幕断言）`,
 );
 
 let failed = 0;

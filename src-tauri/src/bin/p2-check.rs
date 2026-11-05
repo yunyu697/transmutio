@@ -242,6 +242,7 @@ fn run_all() -> Result<(), String> {
     format_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
     speed_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
     watermark_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
+    subtitle_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
     preset_roundtrip(&dir, &mut report);
 
     report.write();
@@ -1056,6 +1057,7 @@ fn speed_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report) 
             speed,
             keep_pitch: true,
             watermark: args::WatermarkParams::default(),
+            subtitle: args::SubtitleParams::default(),
         };
         let argv = match args::build_video(
             "libopenh264",
@@ -1302,6 +1304,7 @@ fn watermark_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Repo
             wm_height: 64,
             ..Default::default()
         },
+        subtitle: args::SubtitleParams::default(),
     };
     for container in ["mp4", "mkv"] {
         let label = format!("{name}-video-{container}");
@@ -1381,6 +1384,438 @@ fn watermark_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Repo
             &format!("{name}-validate"),
             format!("错误文案异常：{missing}"),
         );
+    }
+}
+
+struct SubtitleTrack {
+    codec: String,
+    language: String,
+    default: i64,
+}
+
+struct SubtitleProbe {
+    tracks: Vec<SubtitleTrack>,
+    duration: f64,
+    sample_rate: u32,
+    channels: u32,
+}
+
+fn probe_subtitles(ffprobe: &Path, path: &Path) -> Result<SubtitleProbe, String> {
+    let json = run(
+        ffprobe,
+        &[
+            "-v".into(),
+            "error".into(),
+            "-show_streams".into(),
+            "-show_format".into(),
+            "-of".into(),
+            "json".into(),
+            path.to_string_lossy().to_string(),
+        ],
+    )?;
+    let value: serde_json::Value =
+        serde_json::from_str(&json).map_err(|e| format!("ffprobe JSON 解析失败：{e}"))?;
+    let streams = value
+        .get("streams")
+        .and_then(|s| s.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let mut tracks = Vec::new();
+    let mut sample_rate = 0;
+    let mut channels = 0;
+    for stream in &streams {
+        match stream.get("codec_type").and_then(|v| v.as_str()) {
+            Some("subtitle") => tracks.push(SubtitleTrack {
+                codec: stream
+                    .get("codec_name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                language: stream
+                    .get("tags")
+                    .and_then(|t| t.get("language"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                default: stream
+                    .get("disposition")
+                    .and_then(|d| d.get("default"))
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0),
+            }),
+            Some("audio") if sample_rate == 0 => {
+                sample_rate = stream
+                    .get("sample_rate")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+                channels = stream.get("channels").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+            }
+            _ => {}
+        }
+    }
+    let duration = value
+        .get("format")
+        .and_then(|f| f.get("duration"))
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse().ok())
+        .or_else(|| {
+            streams
+                .iter()
+                .find(|s| s.get("codec_type").and_then(|v| v.as_str()) == Some("video"))
+                .and_then(|s| s.get("duration"))
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.parse().ok())
+        })
+        .unwrap_or(0.0);
+    Ok(SubtitleProbe {
+        tracks,
+        duration,
+        sample_rate,
+        channels,
+    })
+}
+
+/// 区域 RGB 均值（crop → rawvideo rgb24），用于对比烧录前后的字幕区域。
+fn mean_region(
+    ffmpeg: &Path,
+    input: &Path,
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+) -> Result<(f64, f64, f64), String> {
+    let out = input.with_extension("region.rgb");
+    run(
+        ffmpeg,
+        &[
+            "-hide_banner".into(),
+            "-nostdin".into(),
+            "-y".into(),
+            "-loglevel".into(),
+            "error".into(),
+            "-i".into(),
+            input.to_string_lossy().to_string(),
+            "-vf".into(),
+            format!("crop={w}:{h}:{x}:{y},format=rgb24"),
+            "-frames:v".into(),
+            "1".into(),
+            "-an".into(),
+            "-pix_fmt".into(),
+            "rgb24".into(),
+            "-f".into(),
+            "rawvideo".into(),
+            out.to_string_lossy().to_string(),
+        ],
+    )?;
+    let bytes = std::fs::read(&out).map_err(|e| format!("读取像素失败：{e}"))?;
+    let _ = std::fs::remove_file(&out);
+    if bytes.len() < 3 {
+        return Err(format!("像素数据不足：{} 字节", bytes.len()));
+    }
+    let pixels = (bytes.len() / 3) as f64;
+    let mut sums = [0f64; 3];
+    for chunk in bytes.chunks_exact(3) {
+        sums[0] += chunk[0] as f64;
+        sums[1] += chunk[1] as f64;
+        sums[2] += chunk[2] as f64;
+    }
+    Ok((sums[0] / pixels, sums[1] / pixels, sums[2] / pixels))
+}
+
+fn libass_available(ffmpeg: &Path) -> bool {
+    let filters = run(ffmpeg, &["-hide_banner".into(), "-filters".into()]).unwrap_or_default();
+    filters.lines().any(|line| {
+        let mut parts = line.split_whitespace();
+        parts.next();
+        parts.next() == Some("subtitles")
+    })
+}
+
+/// 字幕矩阵：软字幕 mp4/mkv、烧录前后的字幕区域像素对比、容器拒绝路径、缺失文件。
+fn subtitle_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report) {
+    let name = "subtitle";
+    let base = dir.join("sub-base.mp4");
+    if !base.is_file() {
+        if let Err(e) = run(
+            ffmpeg,
+            &[
+                "-hide_banner".into(),
+                "-nostdin".into(),
+                "-y".into(),
+                "-loglevel".into(),
+                "error".into(),
+                "-f".into(),
+                "lavfi".into(),
+                "-i".into(),
+                "testsrc2=size=320x240:rate=30:duration=2".into(),
+                "-f".into(),
+                "lavfi".into(),
+                "-i".into(),
+                "sine=frequency=440:sample_rate=48000:duration=2".into(),
+                "-c:v".into(),
+                "libopenh264".into(),
+                "-c:a".into(),
+                "aac".into(),
+                "-b:a".into(),
+                "128k".into(),
+                "-ac".into(),
+                "2".into(),
+                "-shortest".into(),
+                base.to_string_lossy().to_string(),
+            ],
+        ) {
+            return report.fail(name, format!("生成基准视频失败：{e}"));
+        }
+    }
+
+    let srt = dir.join("sub.srt");
+    let srt_body = "1\n00:00:00,000 --> 00:00:02,000\nSUBTITLE LINE ONE LONG TEXT\nSUBTITLE LINE TWO LONG TEXT\n";
+    if let Err(e) = std::fs::write(&srt, srt_body) {
+        return report.fail(name, format!("写字幕文件失败：{e}"));
+    }
+
+    let subtitle = |mode: &str| {
+        let mut s = args::SubtitleParams {
+            enabled: true,
+            mode: mode.into(),
+            path: srt.to_string_lossy().to_string(),
+            language: "chi".into(),
+            default_track: true,
+            ..Default::default()
+        };
+        if mode == "hard" {
+            s.base_height = 240;
+        }
+        s
+    };
+    let video_params = |container: &str, subtitle: args::SubtitleParams| args::VideoParams {
+        container: container.into(),
+        codec: "h264".into(),
+        encoder: "libopenh264".into(),
+        rate_mode: "quality".into(),
+        quality: 23,
+        bitrate_kbps: 0,
+        resolution: "source".into(),
+        fps: "source".into(),
+        crop: "source".into(),
+        rotation: "0".into(),
+        audio_mode: "aac".into(),
+        audio_bitrate_kbps: 128,
+        hw_decode: false,
+        faststart: true,
+        speed: 1.0,
+        keep_pitch: true,
+        watermark: args::WatermarkParams::default(),
+        subtitle,
+    };
+
+    // mp4 内嵌：必须转码 mov_text，language 与 default disposition 写入容器。
+    let label = format!("{name}-soft-mp4");
+    let out = dir.join("sub-soft.mp4");
+    let p = video_params("mp4", subtitle("soft"));
+    match args::build_video(
+        "libopenh264",
+        base.to_string_lossy().as_ref(),
+        out.to_string_lossy().as_ref(),
+        &p,
+        "aac",
+        None,
+    ) {
+        Ok(argv) => match run(ffmpeg, &argv) {
+            Ok(_) => match probe_subtitles(ffprobe, &out) {
+                Ok(probe) => {
+                    let track = probe.tracks.first();
+                    let ok = probe.tracks.len() == 1
+                        && track.map(|t| t.codec.as_str()) == Some("mov_text")
+                        && track.map(|t| t.language.as_str()) == Some("chi")
+                        && track.map(|t| t.default) == Some(1);
+                    if ok {
+                        let t = track.unwrap();
+                        report.pass(
+                            &label,
+                            format!(
+                                "1 条 mov_text 字幕流，language={}，disposition.default={}",
+                                t.language, t.default
+                            ),
+                        );
+                    } else {
+                        report.fail(
+                            &label,
+                            format!(
+                                "字幕流 {} 条（期望 1，mov_text/chi/default=1）：{:?}",
+                                probe.tracks.len(),
+                                probe
+                                    .tracks
+                                    .iter()
+                                    .map(|t| (&t.codec, &t.language, t.default))
+                                    .collect::<Vec<_>>()
+                            ),
+                        );
+                    }
+                }
+                Err(e) => report.fail(&label, e),
+            },
+            Err(e) => report.fail(&label, format!("ffmpeg 失败：{e}")),
+        },
+        Err(e) => report.fail(&label, e),
+    }
+
+    // mkv 内嵌：-c:s copy，srt 原样成为 subrip 轨。
+    let label = format!("{name}-soft-mkv");
+    let out = dir.join("sub-soft.mkv");
+    let p = video_params("mkv", subtitle("soft"));
+    match args::build_video(
+        "libopenh264",
+        base.to_string_lossy().as_ref(),
+        out.to_string_lossy().as_ref(),
+        &p,
+        "aac",
+        None,
+    ) {
+        Ok(argv) => match run(ffmpeg, &argv) {
+            Ok(_) => match probe_subtitles(ffprobe, &out) {
+                Ok(probe) => {
+                    let codec = probe.tracks.first().map(|t| t.codec.clone());
+                    if probe.tracks.len() == 1 && codec.as_deref() == Some("subrip") {
+                        report.pass(
+                            &label,
+                            format!(
+                                "1 条 subrip 字幕流（copy），language={}",
+                                probe.tracks[0].language
+                            ),
+                        );
+                    } else {
+                        report.fail(
+                            &label,
+                            format!(
+                                "字幕流 {} 条，codec={codec:?}（期望 1 条 subrip）",
+                                probe.tracks.len()
+                            ),
+                        );
+                    }
+                }
+                Err(e) => report.fail(&label, e),
+            },
+            Err(e) => report.fail(&label, format!("ffmpeg 失败：{e}")),
+        },
+        Err(e) => report.fail(&label, e),
+    }
+
+    // 烧录：仅当 FFmpeg 含 libass 时验证像素差异；否则验证显式拒绝路径。
+    let label = format!("{name}-hard-burn");
+    if !libass_available(ffmpeg) {
+        let err = args::validate_subtitle_burn(&subtitle("hard"), false).unwrap_err();
+        if err.contains("libass") {
+            report.pass(
+                &label,
+                format!("FFmpeg 无 libass（-filters 无 subtitles）→ 显式拒绝：{err}"),
+            );
+        } else {
+            report.fail(&label, format!("缺少能力时的错误文案异常：{err}"));
+        }
+    } else {
+        let plain_out = dir.join("sub-plain.mp4");
+        let burn_out = dir.join("sub-burn.mp4");
+        let plain_params = video_params("mp4", args::SubtitleParams::default());
+        let mut hard = subtitle("hard");
+        // 320x240 的低分辨率样片里，4.5% 字号只有约 11px，落在固定采样区里的占比过小；
+        // 这里用 12%（约 29px）保证「字幕区域均值差」这一断言能真实反映烧录结果。
+        hard.font_size_pct = 12.0;
+        hard.outline = 2;
+        hard.position = "bottom".into();
+        hard.color = "#FFFFFF".into();
+        hard.margin_v = 24;
+        let burn_params = video_params("mp4", hard);
+        let mut ran = true;
+        for (params, out) in [(&plain_params, &plain_out), (&burn_params, &burn_out)] {
+            let argv = match args::build_video(
+                "libopenh264",
+                base.to_string_lossy().as_ref(),
+                out.to_string_lossy().as_ref(),
+                params,
+                "aac",
+                None,
+            ) {
+                Ok(argv) => argv,
+                Err(e) => {
+                    report.fail(&label, e);
+                    ran = false;
+                    break;
+                }
+            };
+            if let Err(e) = run(ffmpeg, &argv) {
+                report.fail(&label, format!("ffmpeg 失败：{e}"));
+                ran = false;
+                break;
+            }
+        }
+        if ran {
+            // 底部 1/3、水平中部：320x240 → 160x80 @ (80,160)。
+            match (
+                mean_region(ffmpeg, &plain_out, 80, 160, 160, 80),
+                mean_region(ffmpeg, &burn_out, 80, 160, 160, 80),
+            ) {
+                (Ok(plain), Ok(burned)) => {
+                    let diff = (0..3)
+                        .map(|i| match i {
+                            0 => (plain.0 - burned.0).abs(),
+                            1 => (plain.1 - burned.1).abs(),
+                            _ => (plain.2 - burned.2).abs(),
+                        })
+                        .fold(0.0, f64::max);
+                    let probed = probe_subtitles(ffprobe, &burn_out).ok();
+                    let duration_ok = probed
+                        .as_ref()
+                        .map(|p| (p.duration - 2.0).abs() <= 0.1)
+                        .unwrap_or(false);
+                    let audio_ok = probed
+                        .as_ref()
+                        .map(|p| p.sample_rate == 48000 && p.channels == 2)
+                        .unwrap_or(false);
+                    if diff > 15.0 && duration_ok && audio_ok {
+                        let p = probed.unwrap();
+                        report.pass(
+                            &label,
+                            format!(
+                                "字幕区域均值对比 max Δ={diff:.1}（>15），时长 {:.2}s，音频 {} Hz / {} 声道",
+                                p.duration, p.sample_rate, p.channels
+                            ),
+                        );
+                    } else {
+                        report.fail(
+                            &label,
+                            format!(
+                                "max Δ={diff:.1}（期望 >15），时长 {:?}，音频 {:?}",
+                                probed.as_ref().map(|p| p.duration),
+                                probed.as_ref().map(|p| (p.sample_rate, p.channels))
+                            ),
+                        );
+                    }
+                }
+                (Err(e), _) | (_, Err(e)) => report.fail(&label, e),
+            }
+        }
+    }
+
+    // webm 不承载内嵌字幕轨：必须给出可操作错误。
+    let label = format!("{name}-webm-reject");
+    let err = args::validate_subtitle(&subtitle("soft"), "webm", 1.0).unwrap_err();
+    if err.contains("不承载内嵌字幕轨") {
+        report.pass(&label, err);
+    } else {
+        report.fail(&label, format!("错误文案异常：{err}"));
+    }
+
+    // 字幕文件缺失：拒绝并提示重新选择。
+    let label = format!("{name}-missing-file");
+    let mut missing = subtitle("soft");
+    missing.path = dir.join("missing-sub.srt").to_string_lossy().to_string();
+    let err = args::validate_subtitle(&missing, "mp4", 1.0).unwrap_err();
+    if err.contains("字幕文件不存在") {
+        report.pass(&label, err);
+    } else {
+        report.fail(&label, format!("错误文案异常：{err}"));
     }
 }
 
