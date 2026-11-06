@@ -37,9 +37,15 @@
       },
       "wix": {
         "upgradeCode": "{B7E4D190-3C62-5A8F-9D2B-E6F1047C8A53}",
-        "fragmentPaths": ["wix/legacy-block.wxs"],
-        "componentGroupRefs": ["TransmutioLegacyGuard"]
+        "fragmentPaths": [
+          "wix/legacy-block.wxs"
+        ],
+        "componentGroupRefs": [
+          "TransmutioLegacyGuard"
+        ],
+        "version": "1.0.0.1"
       }
     }
-  }
+  },
+  "version": "1.0.0-alpha1"
 }

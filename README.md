@@ -62,9 +62,23 @@ GPU 能力矩阵与实测/文档/待验证标注见 [GPU-能力矩阵.md](GPU-�
   「PDF 工具目录」或 `PDFTOPPM_PATH`）与「重新检测」按钮，查找顺序仍是
   `PDFTOPPM_PATH → 设置目录 → TRANSMUTIO_PDF_TOOLS → PATH`。
 
-## 下载与许可（v0.1.0）
+## 下载与许可
 
-- 发布页：<https://github.com/yunyu697/transmutio/releases/tag/v0.1.0>
+许可分两层，**互不替代**，请分开看：
+
+| 层 | 对象 | 许可 |
+| --- | --- | --- |
+| ① 应用代码 | 本仓库全部源码（含 `src/`、`src-tauri/`、`scripts/`、`packages/` 等所有子目录） | **MIT**，全文见根目录 [LICENSE](LICENSE)，覆盖整个仓库 |
+| ② 第三方二进制 | FFmpeg / Poppler（安装包**不包含**，用户自行获取） | 各自的 LGPL / GPL 路线，见下文与 [LICENSING.md](LICENSING.md) |
+
+- **应用代码 = MIT**：任何人可自由使用、修改、再分发本仓库代码，只需保留版权与许可声明。
+- **FFmpeg / Poppler = 各自的 LGPL / GPL 路线**：这两个二进制不属于本仓库代码，
+  也不随安装包分发。LGPL 变体只接受 LGPL 构建的 FFmpeg；GPL 变体只接受 GPL 构建的 FFmpeg
+  （可用 libx264 / libx265）。Poppler 为 GPL-2.0+，仅在「PDF 转图片」功能中作为外部工具使用。
+  第三方许可证全文保持原样，位于 `licenses/`。
+
+- 发布页：<https://github.com/yunyu697/transmutio/releases>（`v0.1.0` 为历史版本；
+  当前为 `1.0.0-alpha*` 预发布，不建议日常使用）
 - **安装包不包含 FFmpeg / Poppler 二进制**。仓库与 Release 附件都不分发这两个二进制：
   FFmpeg 由用户自行准备并在首次启动时经引导页校验（版本 / 构建配置 / SHA-256）后落位到
   应用数据目录；「PDF 转图片」需用户自行安装 Poppler 的 `pdftoppm`。因此本项目不承担
@@ -73,13 +87,12 @@ GPU 能力矩阵与实测/文档/待验证标注见 [GPU-能力矩阵.md](GPU-�
 
   | 包 | 接受的 FFmpeg 构建 | 含义 |
   | --- | --- | --- |
-  | `Transmutio_0.1.0_x64_*`（LGPL 变体，默认） | 仅 LGPL 构建（拒绝 `--enable-gpl` / `--enable-nonfree`） | 选择此包 = 只使用 LGPL 许可的 FFmpeg 与编码器（如 libopenh264 / libvpx / SVT-AV1 / aac / libmp3lame） |
-  | `Transmutio GPL_0.1.0_x64_*`（GPL 变体） | 仅 GPL 构建（含 libx264 / libx265） | 选择此包 = 接受 GPL 许可的 FFmpeg 构建，可用 x264 / x265 |
+  | `Transmutio_<版本>_x64_*`（LGPL 变体，默认） | 仅 LGPL 构建（拒绝 `--enable-gpl` / `--enable-nonfree`） | 选择此包 = 只使用 LGPL 许可的 FFmpeg 与编码器（如 libopenh264 / libvpx / SVT-AV1 / aac / libmp3lame） |
+  | `Transmutio GPL_<版本>_x64_*`（GPL 变体） | 仅 GPL 构建（含 libx264 / libx265） | 选择此包 = 接受 GPL 许可的 FFmpeg 构建，可用 x264 / x265 |
 
-  两包共用同一份应用源码，差异仅为编译期 `gpl` feature + Tauri overlay（独立应用标识与数据目录）。
-- **应用自身代码尚未附开源许可证**（默认版权保留）。上表的「LGPL / GPL」指两个包所接受的
-  **FFmpeg 许可路线**，不是应用代码本身的双许可；若要以 LGPL/GPL 对外授权应用代码，
-  需要先补充 `LICENSE` 并做一次明确的许可决定（当前未做）。
+  两包共用同一份应用源码（同一 MIT 许可），差异仅为编译期 `gpl` feature + Tauri overlay
+  （独立应用标识与数据目录）。上表的「LGPL / GPL」只描述**所接受的 FFmpeg 构建**，
+  不是应用代码的双许可。
 - 许可证全文：`licenses/FFmpeg-LGPL.txt`（LGPL-2.1）、`licenses/FFmpeg-GPL.txt`（GPL-2.0）、
   `licenses/Poppler.txt`（GPL-2.0+）。安装包内另附对应变体的许可证、第三方声明与源码获取说明
   （`src-tauri/resources/licenses/`）。

@@ -23,6 +23,17 @@ if (flavor !== "lgpl" && flavor !== "gpl") {
 
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 const cargo = process.platform === "win32" ? "cargo.exe" : "cargo";
+
+// 版本单一来源：构建前把 package.json 的 version 注入 tauri.conf.json / Cargo.toml，
+// 保证产物 --version、关于页与 tag 同源。注入失败即中止，不产出错版本包。
+{
+  const sync = spawnSync(process.execPath, [join(root, "scripts", "version-sync.mjs")], { stdio: "inherit" });
+  if (sync.status !== 0) {
+    console.error("版本注入失败，终止构建");
+    process.exit(sync.status ?? 1);
+  }
+}
+
 const featureArgs = flavor === "gpl" ? ["--features", "gpl"] : [];
 // flavor-report 属于 dev-tools 二进制，预检时需要显式启用（安装包本身不带它）。
 const preflightFeatures = flavor === "gpl" ? ["dev-tools,gpl"] : ["dev-tools"];

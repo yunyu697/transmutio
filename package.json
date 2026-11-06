@@ -1,7 +1,7 @@
 {
   "name": "formatforge",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0-alpha1",
   "type": "module",
   "workspaces": [
     "packages/*"
@@ -28,7 +28,10 @@
     "verify:ui": "node scripts/setup-ui-check.mjs",
     "verify:formats": "node scripts/formats-check.mjs",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
-    "check:ffmpeg-license": "node scripts/check-ffmpeg-license.mjs"
+    "check:ffmpeg-license": "node scripts/check-ffmpeg-license.mjs",
+    "version:sync": "node scripts/version-sync.mjs",
+    "version:check": "node scripts/check-version.mjs",
+    "version:test": "node scripts/version-rules-test.mjs"
   },
   "dependencies": {
     "@formatforge/design-tokens": "*",

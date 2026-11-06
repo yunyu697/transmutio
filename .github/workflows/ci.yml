@@ -27,6 +27,10 @@ jobs:
         run: npm run build
       - name: 格式清单静态断言（容器 ≥4 / 音频 ≥5 / 不兼容组合 / 探测提示）
         run: npm run verify:formats
+      - name: 版本规则自测（0.11.0 / alpha0 / alpha01 / tag 与产物不一致等反例必须被拦）
+        run: npm run version:test
+      - name: 版本一致性（package.json / tauri.conf.json / Cargo.toml）
+        run: npm run version:check
 
   # 无损检查：cargo fmt / clippy / 单测
   backend:

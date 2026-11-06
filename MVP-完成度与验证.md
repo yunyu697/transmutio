@@ -1199,6 +1199,44 @@ identifier（dark 反编译 `ShortcutProperty System.AppUserModel.ID`）、NSIS 
 
 ---
 
+## 4.20 许可落定与版本发布规则（第十轮，`1.0.0-alpha*` 起点）
+
+本轮不改功能，只把「许可」和「版本」两条工程规则定死，后续每个 alpha 都按这套规则发布。
+
+### 4.20.1 应用代码 MIT（与 FFmpeg/Poppler 许可分开）
+
+- 根目录新增 `LICENSE`（MIT），覆盖整个仓库（含所有子目录）；README 与 `LICENSING.md` 用两层表分开写：
+  ① 应用代码 = MIT；② FFmpeg / Poppler = 各自的 LGPL / GPL 路线（且安装包不含这两个二进制）。
+- 第三方许可文件（`licenses/`、`src-tauri/resources/licenses/`）保持原样，未改写。
+- 明确「LGPL 版 / GPL 版」只描述**所接受的 FFmpeg 构建**，不是应用代码双许可。
+
+### 4.20.2 版本单一来源与校验
+
+- 唯一手改处：`package.json` 的 `version`；`npm run version:sync`（`build:lgpl|gpl` 开头自动执行）
+  把它注入 `src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`、`package-lock.json`。
+- 产物自证：`Transmutio.exe --version` 输出 `产品名 版本 (变体)`，版本取自 `CARGO_PKG_VERSION`，
+  与关于页（`lib.rs` 的 package_info）同源。
+- 规则（`scripts/version-rules.mjs`）：除第一段外每段 ≤ 10；alpha 为 `alpha<N>`，N 为正整数、
+  无前导零、相对同基线已有 tag 单调递增；tag 必须等于 `v<version>`；可选 `--binary` 校验产物版本。
+
+| 反例 | 结果 |
+| --- | --- |
+| `0.11.0` | 拦截：minor 段 11 超过上限 10 |
+| `0.2.0-alpha0` | 拦截：alpha 序号必须为正整数且不带前导零 |
+| `0.2.0-alpha01` | 拦截：同上（前导零） |
+| tag `v1.0.0-alpha2` 对版本 `1.0.0-alpha1` | 拦截：tag 与版本不一致 |
+| 产物报 `1.0.0-alpha0`、文件为 `1.0.0-alpha1` | 拦截：产物版本与版本文件不一致 |
+
+- 自测：`npm run version:test` 18 项全过；`npm run version:check` 接进 CI frontend job（连同 `version:test`）。
+- 版本基线：旧 `v0.1.0` 保持为历史不回改；此后从 `1.0.0-alpha1` 起，每块 +1，全部完工发 `1.0.0`。
+
+### 4.20.3 本轮产物
+
+四包按新版本重出（见本轮交付报告），文件名带 `1.0.0-alpha1`；Release 标 prerelease，
+正文写明本阶段内容、已知限制、未签名、alpha 不建议日常使用。
+
+---
+
 ## 5. 应用级链路（`scripts/app-e2e.mjs`）与已知问题
 
 该脚本启动真实 Tauri 应用，经 WebView2 CDP 调用命令完成全链路。
@@ -1263,10 +1301,12 @@ identifier（dark 反编译 `ShortcutProperty System.AppUserModel.ID`）、NSIS 
 
 ---
 
-## 8. 许可（LGPL 默认 + GPL 变体）
+## 8. 许可（应用代码 MIT + FFmpeg/Poppler 各自路线）
 
+- **应用代码：MIT**（根目录 `LICENSE`，覆盖整个仓库，含所有子目录）。
 - 两个变体：`Transmutio`（默认，仅 LGPL 构建）与 `Transmutio GPL`（编译期固定
-  `allowGpl=true`，只接受 GPL 构建）；`nonfree` 两包都拒绝。
+  `allowGpl=true`，只接受 GPL 构建）；`nonfree` 两包都拒绝。这两个名称只描述**所接受的
+  FFmpeg 构建**，不代表应用代码采用 LGPL/GPL 双许可。
 - 两变体都不随包分发 FFmpeg 二进制，由用户自行获取并按引导页落位；安装包内附
   许可证全文、第三方声明与源码获取说明（`licenses/`），`npm run check:bundle` 会解包断言。
 - 本机开发用 gyan.dev GPL 构建**不随包分发**；分发前 `npm run check:ffmpeg-license` 会拦截。
