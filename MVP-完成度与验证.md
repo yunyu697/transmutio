@@ -13,6 +13,7 @@
 | 音频转码（6 格式） | 可用（MP3 / AAC→m4a / FLAC / WAV / OGG-Vorbis / Opus；含从视频提取音轨；采样率/声道；EBU R128 响度归一化） | **后台实测**（§4.12 六格式真实转码） |
 | 图片批量转换 / 缩放 / 质量 | 可用（JPG/PNG/WebP/BMP/TIFF + 最长边缩放 + 质量） | **后台实测** |
 | 图片 EXIF 元数据写入 | 可用（描述/作者/版权/软件/拍摄时间/厂商/型号/镜头/方向，只写副本，写完回读） | **真实 JPEG 实测**（§4.24） |
+| 更新器（检查 / 下载 / 校验 / 安装） | 可用（多镜像回退、断点续传、启动清理、状态持久化）；**更新签名公钥未配置 → 安装 fail-closed** | **真实 GitHub API + 真实下载实测**（§4.26）；安装路径未执行 |
 | 任务中心（4 槽并发、进度、取消、重试、打开目录、任务日志） | 可用 | **真实核心链路 11/11**（§4.1）；UI 交互未在窗口验收 |
 | 任务诊断日志（每任务完整 stderr 落盘 + 任务中心打开） | 可用 | **真实核心链路**（失败任务日志断言，§4.1） |
 | 文件安全（不覆盖、临时文件、原子发布、默认不删源） | 可用 | **单元测试 + 真实核心验证** |
@@ -1129,9 +1130,9 @@ identifier（dark 反编译 `ShortcutProperty System.AppUserModel.ID`）、NSIS 
 | 加固 | 双变体（LGPL/GPL）×（MSI/NSIS） | 已实现 | 每轮重出四包 |
 | 加固 | Git 私有仓库 + CI（frontend/backend/ui-headless） | 已实现 | `.github/workflows/ci.yml` |
 | 加固 | Release workflow（tag v*，声明不含 FFmpeg） | 已实现 | `release.yml` |
-| 加固 | 更新通道（latest.json / 密钥分离 / 灰度回滚） | **部分** | `UPDATER.md` 仅方案，未启用 |
+| 加固 | 更新通道（GitHub API 清单 / 多镜像 / 断点续传 / 签名校验 / 状态持久化） | **已实装** | §4.26；签名密钥未生成，安装 fail-closed |
 | 队列① | CI 收尾至绿 | 已实现 | 全部提交均以 `gh run view` 复核 |
-| 队列② | 更新通道骨架 | **部分** | 方案 + 接口，未接真实密钥 |
+| 队列② | 更新通道骨架 | **已实装** | §4.26；`packages/updater` 占位已被 Rust 实现取代 |
 | 队列③ | 变速（0.25–4.0，atempo 链，保持音高） | 已实现 | §4.14；并入 `video-mp4` / 音频任务 |
 | 队列④ | 水印（图片 + 视频，九宫格/缩放/透明度/旋转） | 已实现（限 `image` / `video-mp4`） | §4.15；GIF/合并/混流不提供，BMP/TIFF 未验证 |
 | 队列⑤ | 字幕（内嵌 mov_text/copy；烧录 subtitles/libass） | 已实现（烧录与变速互斥） | §4.16；无 libass 时灰显 |
@@ -1142,8 +1143,8 @@ identifier（dark 反编译 `ShortcutProperty System.AppUserModel.ID`）、NSIS 
 | 队列⑦ | 视频音量（相对增益 / 静音）与视频分割（按时间点，copy/encode） | 已实现（音量见 §4.19；分割仅按时间点切） | 视频 › 视频音量（面板内分组）、视频分割 |
 | 队列⑧ | 图片转 GIF（多图 palettegen/paletteuse 两遍） | 已实现（多图 palettegen/paletteuse） | 图片 › 图片转 GIF |
 | 队列⑨ | EXIF 元数据写入（副本写入 + 回读校验） | 已实现（见 §4.24） | 图片 › EXIF 元数据写入 |
-| 未实现 | AVIF 编码 | 未实现 | 不在图片格式清单（JPG/PNG/WebP/BMP/TIFF） |
-| 未实现 | 更新通道实装（密钥 / 签名 / 灰度） | 未实现 | 待用户拍板后再做 |
+| 队列⑩ | AVIF 编码（ravif，纯 Rust） | 已实现（见 §4.25） | 图片 › 图片转 AVIF |
+| 队列⑪ | 更新器（检查 / 下载 / 校验 / 安装） | 已实现（见 §4.26）；签名公钥未配置 → 安装 fail-closed | 设置 › 诊断与更新 |
 
 ---
 
@@ -1438,6 +1439,53 @@ docker run --rm --shm-size=1g -v "$PWD/samples/release-alpha3:/p" ubuntu:22.04 s
 - 只做「转 AVIF」，不提供 AVIF 解码/转换回其它格式的入口（`image` 未启用 AVIF 解码特性）。
 - 编码速度/体积随 rav1e 参数变化；未做与 libaom/svt-av1 的横向质量对比。
 - 动图 GIF 只取首帧（静图编码），不在本项范围内。
+
+---
+
+## 4.26 更新器（第十四轮，alpha6）
+
+### 4.26.1 实现
+
+- 后端 `src-tauri/src/updater.rs`：检查 / 下载 / 校验 / 安装全部在 Rust 内完成，不依赖 Tauri
+  updater 插件（因为需要「多镜像回退 + 仅下载 + 已下载保留安装」等自定义交互）。
+- 清单来源：GitHub Releases API（`size` + `digest` 直接来自 API；缺失时回退同一 Release 的
+  `SHA256SUMS`），镜像为「加速前缀 + 官方 URL」。
+- 回退顺序：用户所选镜像 → GitHub 官方 → 其余镜像；每个来源的失败原因（HTTP 状态 / 限流 /
+  超时 / 哈希失败 / 签名失败）逐条返回给 UI。
+- 下载：临时文件 `.transmutio-update-<资产名>.part`，`Range` 断点续传，每源 2 次重试；
+  失败或换源立即删除临时文件与 `.sig`；**大小 + SHA-256（+ 配置公钥时的 minisign）任一失败都
+  不落盘**，安装前再校验一次。
+- 状态持久化：`<appData>/updates/pending.json` 记录已下载包；即使随后检查显示「已是最新」，
+  「安装」按钮仍保留；启动时清理 `.part` 残留与过期 pending。
+- 平台能力：Windows = 检查 + 安装（NSIS `/S`，退出后由安装器重启）；macOS = 检查 + 下载
+  （打开 DMG）；Linux AppImage = 检查 + 安装（替换后重启）；Linux deb = 检查 + 下载。
+- 签名：沿用 minisign；公钥为空时 **fail-closed**（不提供「跳过校验」）。Authenticode 与
+  minisign 是两套体系，前者仍未启用。
+- 发布流水线新增可选签名步骤：配置 `TAURI_SIGNING_PRIVATE_KEY` 后为安装包生成 `.sig` 附件；
+  未配置时跳过，不伪造签名。
+
+### 4.26.2 实测（真实 GitHub API + 真实下载）
+
+| 检查 | 结果 |
+| --- | --- |
+| 单元测试（`cargo test updater::`） | **6/6 通过**：版本比较（alpha9 < alpha10、正式版 > 预发布）、镜像顺序、变体/平台资产过滤、`SHA256SUMS` 解析、**minisign 公开测试向量验签通过/篡改拒绝**、草稿与同版本过滤 |
+| 真实检查（基线 `1.0.0-alpha3`） | **available=true**，命中 `1.0.0-alpha4`，`Transmutio_1.0.0-alpha4_x64-setup.exe`，2,426,314 字节；GitHub 官方 **1,406 ms** |
+| 镜像优先与失败回退 | `--mirror=ghfast`：ghfast **993 ms 失败**（HTTP 403 限流）→ 自动换 GitHub 官方 **1,334 ms 成功**；两条失败/成功原因均记录 |
+| 真实下载 + 哈希 | 官方与 ghfast 两次独立下载均得到 **2,426,314 字节**，SHA-256 `e2f5fba5318fcae1fe06f763ef3ff8123115a26aeb4a06a091e1451c938c8a14`，与 API `digest` 完全一致 |
+| 签名 fail-closed | 公钥为空 → `verify_signature` 返回 `未配置更新签名公钥（src-tauri/updater.pub），按设计拒绝安装`；下载保留但 `installable=false` |
+| 全量 `cargo test` | **152 passed / 0 failed**（EXIF 6 + AVIF 6 + 更新器 6 + 原有 134） |
+| 前端 | `tsc --noEmit` + `vite build` 通过 |
+
+真跑命令：`cargo run --features dev-tools --bin updater-check -- 1.0.0-alpha3 [--mirror=ghfast] [--download]`。
+
+### 4.26.3 已知限制（如实）
+
+- **安装动作未真实执行**：没有签名公钥与 `.sig` 附件，按设计停在校验拒绝；Windows 安装器
+  启动、退出、重启这条链只到代码与文案层，未在真机走通。
+- 设置页交互**未在可见窗口点过**（无 GUI 会话），只验证后端真实网络/下载与前端构建。
+- macOS / Linux 的更新流程未在真机跑过；Linux AppImage 自替换只在文档中标注。
+- GitHub API 未认证时限流 60 次/小时；镜像可分担但可能同样被限流。
+- 仅支持升版本；不提供降级/回滚按钮（安装包保留策略见 UPDATER.md）。
 
 ---
 

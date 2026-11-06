@@ -556,6 +556,108 @@ export interface ImportSummary {
   detail: string;
 }
 
+// ---------------------------------------------------------------- 更新器
+
+export interface UpdateMirror {
+  id: string;
+  label: string;
+  prefix: string;
+  official: boolean;
+}
+
+export interface UpdateSourceAttempt {
+  id: string;
+  label: string;
+  ok: boolean;
+  elapsedMs: number;
+  error: string | null;
+}
+
+export interface UpdateCandidate {
+  version: string;
+  tag: string;
+  notes: string;
+  publishedAt: string;
+  assetName: string;
+  assetSize: number;
+  assetSha256: string | null;
+  assetUrl: string;
+  sumsUrl: string | null;
+  signatureUrl: string | null;
+  sourceId: string;
+  sourceLabel: string;
+}
+
+export interface UpdateCheckResult {
+  currentVersion: string;
+  channel: string;
+  platform: string;
+  arch: string;
+  available: boolean;
+  candidate: UpdateCandidate | null;
+  attempts: UpdateSourceAttempt[];
+  /** install = 下载 → 校验 → 启动安装；download-only = 只下载，安装交给系统/包管理器 */
+  installMode: "install" | "download-only";
+  installModeLabel: string;
+  signatureConfigured: boolean;
+  signatureNote: string;
+  homepage: string;
+}
+
+export interface UpdaterInfo {
+  currentVersion: string;
+  channel: string;
+  platform: string;
+  arch: string;
+  homepage: string;
+  mirrors: UpdateMirror[];
+  installMode: "install" | "download-only";
+  installModeLabel: string;
+  signatureConfigured: boolean;
+  signatureNote: string;
+}
+
+export interface PendingUpdate {
+  version: string;
+  tag: string;
+  assetName: string;
+  path: string;
+  size: number;
+  sha256: string;
+  sourceId: string;
+  sourceLabel: string;
+  signatureVerified: boolean;
+  installable: boolean;
+  installBlockReason: string | null;
+  downloadedAt: number;
+}
+
+export interface UpdateDownloadResult {
+  pending: PendingUpdate;
+  attempts: UpdateSourceAttempt[];
+  signatureVerified: boolean;
+  installable: boolean;
+  installBlockReason: string | null;
+}
+
+export interface UpdateInstallResult {
+  launched: boolean;
+  method: string;
+  message: string;
+}
+
+export interface UpdateProgress {
+  phase: "download" | "retry" | "done" | string;
+  sourceId: string;
+  sourceLabel: string;
+  sourceIndex: number;
+  sourceTotal: number;
+  received: number;
+  total: number;
+  percent: number;
+  message: string;
+}
+
 export const api = {
   flavorInfo: () => invoke<FlavorInfo>("flavor_info"),
   migrationNotice: () => invoke<MigrationNotice | null>("migration_notice"),
@@ -608,4 +710,22 @@ export const api = {
     invoke<ExifWriteResult[]>("write_exif", { files, fields, outputDir: outputDir ?? null }),
   encodeAvif: (files: string[], params: AvifParams, outputDir?: string) =>
     invoke<AvifResult[]>("encode_avif", { files, params, outputDir: outputDir ?? null }),
+  updateInfo: () => invoke<UpdaterInfo>("update_info"),
+  updateCheck: (preferred?: string) =>
+    invoke<UpdateCheckResult>("update_check", { preferred: preferred ?? null }),
+  updatePending: () => invoke<PendingUpdate | null>("update_pending"),
+  updateDownload: (candidate: UpdateCandidate, preferred?: string) =>
+    invoke<UpdateDownloadResult>("update_download", {
+      version: candidate.version,
+      tag: candidate.tag,
+      assetName: candidate.assetName,
+      assetSize: candidate.assetSize,
+      assetSha256: candidate.assetSha256,
+      assetUrl: candidate.assetUrl,
+      sumsUrl: candidate.sumsUrl,
+      signatureUrl: candidate.signatureUrl,
+      preferred: preferred ?? null,
+    }),
+  updateInstall: () => invoke<UpdateInstallResult>("update_install"),
+  openHomepage: () => invoke<void>("open_homepage"),
 };

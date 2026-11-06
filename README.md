@@ -33,12 +33,13 @@ GPU 能力矩阵与实测/文档/待验证标注见 [GPU-能力矩阵.md](GPU-�
 - 文档：PDF 合并、拆分（每页 / 页码范围，内置 lopdf，零外部依赖）、PDF 转图片（PNG / JPG + DPI，需外部 pdftoppm）
 - 配置：面板参数 + 输出策略的预设导入 / 导出（版本与字段严格校验，不含路径与凭据）
 - 任务：4 槽并发、暂停 / 继续、命名模板、冲突策略、自动重试（仅 hw-unavailable / 临时 IO）
+- 更新：检查 / 下载 / 校验（GitHub 官方 + 加速镜像按序回退、断点续传、启动清理）；
+  Windows 为「检查 + 安装」，macOS 与 Linux deb 如实标为「检查 + 下载」
 
 保留入口但**明确标注「未实现」**，点击只提示、不执行任何假转换：
 
 - 文档：文档转 PDF、Office 互转
 - 光驱 / DVD / ISO、工具集（改名、校验、信息、截图等）
-- 更新器实装（接口与方案已就绪，未接真实发布通道）
 
 ### 格式清单与探测的关系
 
@@ -309,7 +310,7 @@ npm run check:bundle                                                    # 解包
   **只在本地或自托管 runner 执行**，GitHub 默认 runner 不跑。
 - 本地等价：`cargo fmt --check`、`cargo clippy`、`cargo test`、`npm run build`、`verify:formats`、`panel-persist`。
 
-更新通道方案见 [UPDATER.md](UPDATER.md)（本轮**只出方案，未生成密钥、未启用**）。
+更新通道方案见 [UPDATER.md](UPDATER.md)（已实装；密钥未生成，安装 fail-closed）。
 
 ## 测试与验证
 
@@ -413,7 +414,8 @@ formatforge/
 - 引导页：UI 层（headless + mock）与真实 LGPL 落位已验证；**未在真实窗口内点击**（禁止 GUI），
   「复制损坏 → 复核回滚」分支与 macOS/Linux 落位未验证。
 - macOS / Apple Silicon 的 VideoToolbox 能力、并发上限、B 帧/10bit 行为：按文档实现，待真机验证。
-- 自动更新仅有接口与占位，没有真实更新端点与签名密钥。
+- 自动更新已实装（多镜像回退、断点续传、minisign 校验、安装后重启）；但
+  **更新签名公钥未配置**（`src-tauri/updater.pub` 为空），安装按 fail-closed 拒绝，不会跳过校验。
 - Windows/macOS 签名脚本已写好但本机无证书，未实际签名。
 
 ### 当前未实现项（如实列出，入口置灰）

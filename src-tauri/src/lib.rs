@@ -17,6 +17,7 @@ pub mod probe;
 mod setup;
 pub mod setup_check;
 pub mod tools;
+pub mod updater;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -395,6 +396,8 @@ pub fn run() {
                 let info = tools::resolve(&boot_handle, None);
                 *boot_state.tools.lock().await = Some(info);
                 let _ = boot_handle.emit("tools:ready", ());
+                // 清理中断的更新下载临时文件与过期 pending。
+                updater::startup_cleanup(&boot_handle);
             });
             tauri::async_runtime::spawn(jobs::start_scheduler(
                 jobs::Ctx::new(
@@ -448,7 +451,13 @@ pub fn run() {
             setup::install_ffmpeg_files,
             download::tools_download_plan,
             download::download_tool,
-            download::cancel_tool_download
+            download::cancel_tool_download,
+            updater::update_info,
+            updater::update_check,
+            updater::update_pending,
+            updater::update_download,
+            updater::update_install,
+            updater::open_homepage
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

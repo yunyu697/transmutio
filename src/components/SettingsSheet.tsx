@@ -3,7 +3,7 @@ import { api, type Capabilities, type FlavorInfo, type LegacyImportInfo, type To
 import type { Settings } from "../lib/settings";
 import { Icon } from "./Icon";
 import { Field, Group, Segmented, SwitchRow } from "../panels/shared";
-import { updater } from "../lib/updater";
+import { UpdatePanel } from "./UpdatePanel";
 import { applyPreset, collectPreset } from "../lib/presetPrefs";
 
 export function SettingsSheet({
@@ -41,8 +41,6 @@ export function SettingsSheet({
     void api.legacyImportInfo().then(setLegacy).catch(() => setLegacy(null));
   }, [open]);
   if (!open) return null;
-
-  const updateState = updater.getState();
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
@@ -365,39 +363,21 @@ export function SettingsSheet({
           </Group>
 
           <Group title="诊断与更新" icon="info">
-            <div style={{ display: "flex", gap: 6 }}>
-              <button
-                className="btn"
-                onClick={async () => {
-                  try {
-                    const path = await onExportDiagnostics();
-                    toast(`诊断日志已保存：${path}`, "ok");
-                  } catch (error) {
-                    toast(`保存诊断日志失败：${error instanceof Error ? error.message : String(error)}`, "error");
-                  }
-                }}
-              >
-                导出诊断日志
-              </button>
-              <button
-                className="btn"
-                onClick={async () => {
-                  await updater.check();
-                  toast(updater.getState().phase === "error" ? "自动更新未启用（尚未配置更新端点）" : "已检查更新", "info");
-                }}
-              >
-                检查更新
-              </button>
-            </div>
-            <div className="kv">
-              <span>更新状态</span>
-              <b>
-                {updateState.phase === "error" ? updateState.message : updateState.phase === "checking" ? "检查中…" : "未启用"}
-              </b>
-            </div>
-            <div className="note">
-              自动更新需要签名密钥与更新端点；第一版仅预留接口（<code>UpdaterAdapter</code>），未接入真实下载与安装。
-            </div>
+            <UpdatePanel toast={toast} />
+            <button
+              className="btn"
+              style={{ marginTop: 8 }}
+              onClick={async () => {
+                try {
+                  const path = await onExportDiagnostics();
+                  toast(`诊断日志已保存：${path}`, "ok");
+                } catch (error) {
+                  toast(`保存诊断日志失败：${error instanceof Error ? error.message : String(error)}`, "error");
+                }
+              }}
+            >
+              导出诊断日志
+            </button>
             {legacy?.available ? (
               <>
                 <div className="note">

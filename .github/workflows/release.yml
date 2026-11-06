@@ -123,6 +123,21 @@ jobs:
         run: |
           mkdir -p dist-flat
           find dist-release -type f \( -name '*.msi' -o -name '*.exe' -o -name '*.dmg' -o -name '*.deb' -o -name '*.AppImage' \) -exec mv -t dist-flat {} +
+      - name: 可选：minisign 签名安装包（配置了私钥 secret 才执行）
+        # 与 Authenticode 是两套体系：这里只产出更新器要校验的 .sig 附件。
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        if: env.TAURI_SIGNING_PRIVATE_KEY != ''
+        shell: bash
+        run: |
+          shopt -s nullglob
+          for f in dist-flat/*.msi dist-flat/*.exe dist-flat/*.dmg dist-flat/*.deb dist-flat/*.AppImage; do
+            echo "signing $f"
+            npx --yes @tauri-apps/cli@2 signer sign \
+              -f "$TAURI_SIGNING_PRIVATE_KEY" \
+              -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" "$f"
+          done
       - name: 合并三平台 SHA256SUMS（文件名按 GitHub 资产名归一）
         run: node scripts/release-checksums.mjs --flat dist-flat --normalize-names dist-release/SHA256SUMS
       - name: 确认本版本 Release 说明存在
@@ -139,5 +154,6 @@ jobs:
             dist-flat/*.dmg
             dist-flat/*.deb
             dist-flat/*.AppImage
+            dist-flat/*.sig
             dist-release/SHA256SUMS
           fail_on_unmatched_files: true
