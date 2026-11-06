@@ -1358,8 +1358,8 @@ docker run --rm --shm-size=1g -v "$PWD/samples/release-alpha3:/p" ubuntu:22.04 s
 
 | 平台 | 真实转码 |
 | --- | --- |
-| Linux（ubuntu-22.04） | RUN_410_PLACEHOLDER |
-| macOS（macos-latest） | RUN_411_PLACEHOLDER |
+| Linux（ubuntu-22.04，apt 安装的系统 ffmpeg） | **30 / 31 通过**，唯一失败项是「关机仅构造命令」断言按 Windows 写法（`shutdown /s /t 60`）比对 Linux 的 `shutdown -h +1`；已按平台修正断言，后续运行应为 31/31 |
+| macOS（macos-latest，aarch64，Homebrew ffmpeg 9.0.2） | **30 / 31 通过**，失败项同上（同一断言问题，非功能失败）；旋转 720x1280、9:16 裁剪 404x720、响度 -47.1→-15.5 dB、合并/混流/GIF/EXIF 自动校正均通过 |
 
 ### 4.23.4 仍未做（如实标注）
 
@@ -1404,6 +1404,40 @@ docker run --rm --shm-size=1g -v "$PWD/samples/release-alpha3:/p" ubuntu:22.04 s
   HEIC / AVIF / JXL 的写入走底层库，**没有真实样本验证**。
 - 只支持写入，不提供批量读取/清除已有元数据的界面。
 - 方向只写标签，不改像素；需要按方向转像素仍走图片转换面板的「自动校正」。
+
+---
+
+## 4.25 AVIF 编码（第十四轮，alpha5）
+
+### 4.25.1 为什么不用 FFmpeg
+
+内置 BtbN 构建的编码器清单实测包含 `libaom-av1` / `librav1e` / `libsvtav1`（AV1 编码器齐全），
+但 **FFmpeg 没有 AVIF 封装器**：`ffmpeg -muxers` 里没有 avif，`-f avif` 不存在，无法产出 `.avif` 静图。
+因此改用 `ravif`（rav1e 之上的纯 Rust AVIF 编码库）直接编码：
+- 代价：多编译 `rav1e`（无 asm 特性，避免 Windows 需要 NASM），CI 三平台构建时间上升；
+- 收益：不依赖外部二进制、不受 FFmpeg 构建变体影响（LGPL/GPL 都能用）。
+
+### 4.25.2 实现
+
+- 后端 `src-tauri/src/avif.rs`：`image` 解码（JPG / PNG / WebP / BMP / TIFF / GIF）→ `ravif` 编码。
+- 面板：图片 › **图片转 AVIF**（质量 1–100、速度 1–10、输出目录）。
+- 约束：只写副本；目标已存在拒绝；写临时文件后改名；**校验 ftyp/avif 容器签名**后才算成功；
+  失败删除半成品；参数越界在编码前拒绝。
+
+### 4.25.3 实测
+
+| 检查 | 结果 |
+| --- | --- |
+| 单元测试（`cargo test avif::`） | **6/6 通过**（真实 PNG→AVIF、拒绝未知输入、质量越界、速度越界、冲突命名、签名校验） |
+| 真实 JPEG（p2-check `avif-encode`） | **PASS**：源 **2023 字节未改动**；输出 **574 字节**（640×480，**ffprobe 独立解码确认**）；压缩比 28.4% |
+| 全量 `cargo test` | **146 passed / 0 failed**（EXIF 6 + AVIF 6 + 原有 134） |
+
+### 4.25.4 已知限制
+
+- 面板交互未在真实窗口点过（与 §4.24.3 同因）。
+- 只做「转 AVIF」，不提供 AVIF 解码/转换回其它格式的入口（`image` 未启用 AVIF 解码特性）。
+- 编码速度/体积随 rav1e 参数变化；未做与 libaom/svt-av1 的横向质量对比。
+- 动图 GIF 只取首帧（静图编码），不在本项范围内。
 
 ---
 

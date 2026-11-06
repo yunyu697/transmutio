@@ -2,6 +2,7 @@ pub mod after;
 pub mod args;
 pub mod compress;
 pub mod containers;
+pub mod avif;
 pub mod download;
 pub mod exif_write;
 pub mod flavor;
@@ -224,6 +225,20 @@ async fn open_job_log(app: AppHandle, id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn encode_avif(
+    files: Vec<String>,
+    params: avif::AvifParams,
+    output_dir: Option<String>,
+) -> Result<Vec<avif::AvifResult>, String> {
+    tokio::task::spawn_blocking(move || {
+        let dir = output_dir.as_deref().map(std::path::Path::new);
+        avif::encode_batch(&files, &params, dir)
+    })
+    .await
+    .map_err(|e| format!("AVIF 编码任务失败：{e}"))
+}
+
+#[tauri::command]
 async fn write_exif(
     files: Vec<String>,
     fields: exif_write::ExifFields,
@@ -421,6 +436,7 @@ pub fn run() {
             open_job_folder,
             open_job_log,
             write_exif,
+            encode_avif,
             default_output_dir,
             app_info,
             flavor_info,

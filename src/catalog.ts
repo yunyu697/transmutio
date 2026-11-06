@@ -6,6 +6,7 @@ export type PanelKind =
   | "frames"
   | "collage"
   | "exif"
+  | "avif"
   | "pdf";
 
 export interface MethodDef {
@@ -83,6 +84,7 @@ export const sections: SectionDef[] = [
       m("image", "image-collage", "图片拼图", "网格布局、间距、底色、单元尺寸", "grid", true, "collage"),
       m("image", "image-gif", "图片转 GIF", "多帧合成与延时控制", "gif", true, "image"),
       m("image", "image-exif", "EXIF 元数据写入", "描述 / 作者 / 版权 / 拍摄时间 / 方向；只写副本", "info", true, "exif"),
+      m("image", "image-avif", "图片转 AVIF", "质量与速度可调；纯 Rust 编码，不依赖 FFmpeg", "image", true, "avif"),
     ],
   },
   {

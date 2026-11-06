@@ -15,7 +15,7 @@ import { SetupWizard } from "./components/SetupWizard";
 import { VideoPanel } from "./panels/VideoPanel";
 import { AudioPanel } from "./panels/AudioPanel";
 import { ImagePanel } from "./panels/ImagePanel";
-import { CollagePanel, ExifPanel, FramesPanel, PdfPanel, SequencePanel } from "./panels/AdvancedPanels";
+import { AvifPanel, CollagePanel, ExifPanel, FramesPanel, PdfPanel, SequencePanel } from "./panels/AdvancedPanels";
 import { Icon } from "./components/Icon";
 
 type ToastKind = "ok" | "error" | "info";
@@ -267,6 +267,7 @@ export default function App() {
     if (activeMethod.panel === "frames") return <FramesPanel methodId={activeMethod.id} {...common} />;
     if (activeMethod.panel === "collage") return <CollagePanel methodId={activeMethod.id} {...common} />;
     if (activeMethod.panel === "exif") return <ExifPanel methodId={activeMethod.id} {...common} />;
+    if (activeMethod.panel === "avif") return <AvifPanel methodId={activeMethod.id} {...common} />;
     if (activeMethod.panel === "pdf")
       return (
         <PdfPanel

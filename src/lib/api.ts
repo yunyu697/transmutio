@@ -442,6 +442,21 @@ export interface ToolsManualEntry {
   reason: string;
 }
 
+export interface AvifParams {
+  quality: number;
+  speed: number;
+}
+
+export interface AvifResult {
+  src: string;
+  output?: string | null;
+  width: number;
+  height: number;
+  bytes: number;
+  ok: boolean;
+  message?: string | null;
+}
+
 export interface ExifFields {
   description?: string;
   artist?: string;
@@ -591,4 +606,6 @@ export const api = {
   cancelToolDownload: () => invoke<void>("cancel_tool_download"),
   writeExif: (files: string[], fields: ExifFields, outputDir?: string) =>
     invoke<ExifWriteResult[]>("write_exif", { files, fields, outputDir: outputDir ?? null }),
+  encodeAvif: (files: string[], params: AvifParams, outputDir?: string) =>
+    invoke<AvifResult[]>("encode_avif", { files, params, outputDir: outputDir ?? null }),
 };

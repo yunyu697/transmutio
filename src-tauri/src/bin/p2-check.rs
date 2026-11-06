@@ -4,7 +4,7 @@
 //! 运行：设置 FFMPEG_PATH / FFPROBE_PATH（可选 PDFTOPPM_PATH），
 //! `cargo run --features dev-tools --bin p2-check`。
 
-use formatforge_lib::{args, compress, containers, exif_write, pdf, pdf_tools, preset};
+use formatforge_lib::{args, avif, compress, containers, exif_write, pdf, pdf_tools, preset};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -1336,6 +1336,58 @@ fn exif_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report) {
     );
 }
 
+/// 真实 JPEG → AVIF：产物用 ffprobe（独立解码器）核对尺寸，源文件字节不变。
+fn avif_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report) {
+    let name = "avif-encode";
+    let src = dir.join("avif-src.jpg");
+    if let Err(e) = ffmpeg_color(ffmpeg, &src, "640x480", "0x3366CC") {
+        return report.fail(name, format!("生成真实 JPEG 失败：{e}"));
+    }
+    let src_bytes = match std::fs::read(&src) {
+        Ok(b) => b,
+        Err(e) => return report.fail(name, format!("读取源文件失败：{e}")),
+    };
+    let params = avif::AvifParams {
+        quality: 70,
+        speed: 8,
+    };
+    let (out, w, h, bytes) = match avif::encode_one(&src, dir, &params) {
+        Ok(v) => v,
+        Err(e) => return report.fail(name, format!("编码失败：{e}")),
+    };
+    if (w, h) != (640, 480) {
+        return report.fail(name, format!("输入尺寸异常：{w}x{h}"));
+    }
+    let dims = match probe(ffprobe, &out) {
+        Ok(d) => d,
+        Err(e) => return report.fail(name, format!("ffprobe 读取 AVIF 失败：{e}")),
+    };
+    if dims.width != 640 || dims.height != 480 {
+        return report.fail(
+            name,
+            format!("解码尺寸不一致：{}x{}（期望 640x480）", dims.width, dims.height),
+        );
+    }
+    let data = std::fs::read(&out).unwrap_or_default();
+    if !avif::looks_like_avif(&data) {
+        return report.fail(name, "产物缺少 ftyp/avif 签名".into());
+    }
+    if std::fs::read(&src).unwrap_or_default() != src_bytes {
+        return report.fail(name, "源文件被修改（应只写副本）".into());
+    }
+    report.pass(
+        name,
+        format!(
+            "源 {} 字节未改动；输出 {} 字节（{}x{}，ffprobe 解码确认）；压缩比 {:.1}%",
+            src_bytes.len(),
+            bytes,
+            dims.width,
+            dims.height,
+            100.0 * bytes as f64 / src_bytes.len() as f64
+        ),
+    );
+}
+
 fn main() {
     if let Err(message) = run_all() {
         eprintln!("P2 CHECK FAILED: {message}");
@@ -1409,6 +1461,9 @@ fn run_all() -> Result<(), String> {
     }
     if keep("exif") {
         exif_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
+    }
+    if keep("avif") {
+        avif_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
     }
     if keep("subtitle") {
         subtitle_matrix(&ffmpeg, &ffprobe, &dir, &mut report);

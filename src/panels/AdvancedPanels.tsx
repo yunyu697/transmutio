@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { formatBytes } from "@formatforge/design-tokens";
-import { api, type CollageParams, type ExifFields, type ExifWriteResult, type FramesParams, type Job, type PdfToolsInfo, type SeqParams } from "../lib/api";
+import { api, type AvifParams, type AvifResult, type CollageParams, type ExifFields, type ExifWriteResult, type FramesParams, type Job, type PdfToolsInfo, type SeqParams } from "../lib/api";
 import { loadPanelPrefs, savePanelPrefs } from "../lib/panelPrefs";
 import { DropZone, Field, FileTable, Group, OutputNaming, Segmented, SwitchRow, useMediaFiles, type NamingPrefs } from "./shared";
 import { Icon } from "../components/Icon";
@@ -793,6 +793,107 @@ export function ExifPanel({ outputDir, onChangeOutputDir, toast, onBack }: Commo
         <div style={{ fontSize: 10.5, color: "var(--ff-fg3)" }}>{files.length} 张 · 只写副本</div>
         <button className="btn primary" onClick={start} disabled={running || !files.length}>
           <Icon name="play" size={14} />{running ? "正在写入…" : "写入 EXIF"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const DEFAULT_AVIF: AvifParams = { quality: 70, speed: 6 };
+
+/** AVIF 编码（纯 Rust ravif，不依赖 FFmpeg 的 avif muxer）。 */
+export function AvifPanel({ outputDir, onChangeOutputDir, toast, onBack }: CommonProps) {
+  const { files, busy, notice, pick, remove, clear } = useMediaFiles("image");
+  const [prefs, setPrefs] = useState<AvifParams>(() => loadPanelPrefs("avif:prefs", DEFAULT_AVIF));
+  const [running, setRunning] = useState(false);
+  const [results, setResults] = useState<AvifResult[] | null>(null);
+  useEffect(() => savePanelPrefs("avif:prefs", prefs), [prefs]);
+
+  const start = async () => {
+    if (!files.length) return toast("请先添加图片", "error");
+    const paths = files.filter((file) => !file.error).map((file) => file.path);
+    setRunning(true);
+    setResults(null);
+    try {
+      const encoded = await api.encodeAvif(paths, prefs, outputDir.trim() || undefined);
+      setResults(encoded);
+      const ok = encoded.filter((item) => item.ok).length;
+      toast(`编码完成：${ok}/${encoded.length} 成功`, ok === encoded.length ? "ok" : "error");
+    } catch (error) {
+      toast(`编码失败：${error instanceof Error ? error.message : String(error)}`, "error");
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="workbench">
+      <div className="wb-main">
+        <div className="wb-head">
+          <button className="btn small ghost" onClick={onBack}>← 方法列表</button>
+          <div><h1>图片转 AVIF</h1><p>纯 Rust 编码 · 只写副本 · 输出校验 ftyp/avif 签名</p></div>
+          <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
+            <Icon name="plus" size={14} />{busy ? "读取中…" : "添加图片"}
+          </button>
+        </div>
+        <DropZone kind="image" busy={busy} onPick={pick} />
+        {notice ? <div className="note warn" style={{ margin: "10px 20px 0" }}>{notice}</div> : null}
+        <FileTable files={files} onRemove={remove} onClear={clear} />
+        {results ? (
+          <div style={{ padding: "0 20px 16px" }}>
+            {results.map((item) => (
+              <div key={item.src} className={`note ${item.ok ? "" : "warn"}`} style={{ marginTop: 8 }}>
+                <b>{item.ok ? "OK" : "FAIL"}</b> · {item.src}
+                {item.ok ? <div className="sub">{item.width}×{item.height} · {formatBytes(item.bytes)}</div> : null}
+                {item.output ? <div className="sub">→ {item.output}</div> : null}
+                {item.message ? <div className="sub">{item.message}</div> : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      <aside className="inspector">
+        <div className="inspector-head"><Icon name="image" size={15} /><b>编码参数</b><span className="sub">速度越大越快、体积更大</span></div>
+        <div className="inspector-body">
+          <Group title="质量" icon="sparkle">
+            <Field label={`质量 ${prefs.quality}`}>
+              <input
+                className="input"
+                type="range"
+                min={1}
+                max={100}
+                value={prefs.quality}
+                onChange={(event) => setPrefs((prev) => ({ ...prev, quality: Number(event.target.value) }))}
+              />
+            </Field>
+            <div className="note">1–100，越大越接近原图；70 左右适合网页图片。</div>
+          </Group>
+          <Group title="速度" icon="speed">
+            <Field label={`速度 ${prefs.speed}`}>
+              <input
+                className="input"
+                type="range"
+                min={1}
+                max={10}
+                value={prefs.speed}
+                onChange={(event) => setPrefs((prev) => ({ ...prev, speed: Number(event.target.value) }))}
+              />
+            </Field>
+            <div className="note">1 最慢但压缩率最高，10 最快；批量大图建议 8。</div>
+          </Group>
+          <Group title="说明" icon="info">
+            <div className="note">
+              FFmpeg 的 AV1 编码器存在，但没有 AVIF 封装器（命令行没有对应的输出格式），因此这里用
+              ravif（纯 Rust）直接编码，不依赖外部二进制。输入支持 JPG / PNG / WebP / BMP / TIFF / GIF。
+            </div>
+          </Group>
+        </div>
+      </aside>
+      <div className="bottombar">
+        <OutDirBar outputDir={outputDir} onChangeOutputDir={onChangeOutputDir} />
+        <div style={{ fontSize: 10.5, color: "var(--ff-fg3)" }}>{files.length} 张 · 只写副本</div>
+        <button className="btn primary" onClick={start} disabled={running || !files.length}>
+          <Icon name="play" size={14} />{running ? "正在编码…" : "编码 AVIF"}
         </button>
       </div>
     </div>
