@@ -13,6 +13,7 @@
         "minHeight": 680,
         "center": true,
         "theme": "Dark",
+        "backgroundColor": "#0A0E14",
         "dragDropEnabled": true
       }
     ]
@@ -43,9 +44,9 @@
         "componentGroupRefs": [
           "TransmutioLegacyGuard"
         ],
-        "version": "1.0.0.7"
+        "version": "1.0.0.8"
       }
     }
   },
-  "version": "1.0.0-alpha7"
+  "version": "1.0.0-alpha8"
 }

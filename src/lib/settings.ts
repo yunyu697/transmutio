@@ -1,7 +1,8 @@
 import { createSettingsStore } from "@formatforge/settings";
 import { createI18n, mergeCatalogs, baseCatalogs, type MessageCatalogs } from "@formatforge/i18n";
 import type { ThemeMode } from "@formatforge/design-tokens";
-import { applyTheme } from "@formatforge/design-tokens";
+import { applyTheme, themes } from "@formatforge/design-tokens";
+import { invoke } from "@tauri-apps/api/core";
 import { createNamespacedStorage } from "./storage";
 
 export interface Settings {
@@ -122,4 +123,11 @@ export const settingsStore = createSettingsStore<Settings>({
 
 export function syncTheme(theme: ThemeMode): void {
   applyTheme(theme);
+  // 只有 Tauri 内需要同步原生标题栏；浏览器预览与无头测试没有 __TAURI_INTERNALS__。
+  if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) return;
+  const { bg, bg2 } = themes[theme].colors;
+  // bg = 页面底色；bg2 = 顶栏渐变起点，用作标题栏颜色，避免内容区与标题栏出现色差线。
+  void invoke("set_window_chrome", { theme, bg, caption: bg2 }).catch(() => {
+    /* 平台不支持标题栏配色时静默回退到 light/dark 标题栏，不影响使用 */
+  });
 }

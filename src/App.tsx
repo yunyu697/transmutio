@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { applyTheme } from "@formatforge/design-tokens";
 import { createTaskQueue } from "@formatforge/task-queue";
 import { api, type Capabilities, type FlavorInfo, type Job, type PdfToolsInfo, type ToolsInfo } from "./lib/api";
 import { settingsStore, syncTheme, type Settings } from "./lib/settings";
@@ -65,10 +64,9 @@ export default function App() {
     setSettings(settingsStore.get());
   }, []);
 
-  // 主题与设置同步
+  // 主题与设置同步（syncTheme 内部同时处理 CSS 变量与原生标题栏）
   useEffect(() => {
     syncTheme(settings.theme);
-    applyTheme(settings.theme);
   }, [settings.theme]);
 
   useEffect(() => {

@@ -18,6 +18,7 @@ mod setup;
 pub mod setup_check;
 pub mod tools;
 pub mod updater;
+pub mod window_chrome;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -457,7 +458,8 @@ pub fn run() {
             updater::update_pending,
             updater::update_download,
             updater::update_install,
-            updater::open_homepage
+            updater::open_homepage,
+            window_chrome::set_window_chrome
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

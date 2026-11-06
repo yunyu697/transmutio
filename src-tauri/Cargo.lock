@@ -1400,7 +1400,7 @@ dependencies = [
 
 [[package]]
 name = "formatforge"
-version = "1.0.0-alpha6"
+version = "1.0.0-alpha7"
 dependencies = [
  "base64 0.22.1",
  "fs2",
@@ -1418,6 +1418,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tokio",
  "ureq",
+ "windows-sys 0.61.2",
  "zip",
 ]
 
