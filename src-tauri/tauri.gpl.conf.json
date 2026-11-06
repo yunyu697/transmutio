@@ -43,9 +43,9 @@
         "componentGroupRefs": [
           "TransmutioLegacyGuard"
         ],
-        "version": "1.0.0.3"
+        "version": "1.0.0.4"
       }
     }
   },
-  "version": "1.0.0-alpha3"
+  "version": "1.0.0-alpha4"
 }

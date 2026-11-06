@@ -77,6 +77,25 @@ jobs:
           node scripts/check-version.mjs --tag "$GITHUB_REF_NAME" --skip-alpha-sequence --binary "$GBIN"
       - name: 生成 SHA256SUMS
         run: node scripts/release-checksums.mjs
+      # 真实转码冒烟：不启窗口，直接驱动与应用同一份任务核心 + 系统 ffmpeg。
+      # 失败不阻断出包（安装包本身已由上面的构建与 --version 校验把关），但结果会进日志与制品。
+      - name: 安装 ffmpeg（macOS）
+        if: matrix.platform == 'macos'
+        run: command -v ffmpeg >/dev/null || brew install ffmpeg
+      - name: 真实转码冒烟（Linux / macOS，无窗口）
+        if: matrix.platform != 'windows'
+        continue-on-error: true
+        shell: bash
+        run: |
+          ffmpeg -version | head -1
+          cargo run --manifest-path src-tauri/Cargo.toml --features dev-tools --bin headless-check -- "samples/core-e2e-${{ matrix.platform }}.json"
+      - name: 上传真实转码报告
+        if: always() && matrix.platform != 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-e2e-${{ matrix.platform }}-report
+          path: samples/core-e2e-${{ matrix.platform }}.json
+          if-no-files-found: warn
       - name: 上传本平台产物
         uses: actions/upload-artifact@v4
         with:

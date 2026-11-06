@@ -54,6 +54,16 @@ jobs:
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --features dev-tools
       - name: 单元测试（124 条：容器矩阵 / 变速 / 水印 / 字幕 / 图片压缩 / 音量 / 分割 / GIF 等）
         run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: 无窗口真实转码（Linux 实跑：真实 ffmpeg + 真实文件系统，不启窗口）
+        run: |
+          ffmpeg -version | head -1
+          cargo run --manifest-path src-tauri/Cargo.toml --features dev-tools --bin headless-check -- samples/core-e2e-linux.json
+      - name: 上传无窗口转码报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-e2e-linux-report
+          path: samples/core-e2e-linux.json
 
   # 无头 UI：面板持久化 + localStorage 前缀迁移（需要浏览器，不需要 FFmpeg）
   ui-headless:

@@ -18,7 +18,7 @@
 | 首次启动 FFmpeg 引导 | 可用（校验 → 落位 → 持久化 → 用落位后的二进制转码） | **UI 层（headless）39/39** + **真实落位 12/12**（§4.2） |
 | GPL 双变体（LGPL 默认 + GPL 变体） | 可用（编译期注入、独立身份/数据目录/通道、真实 x264 转码、合规物进包） | **构建层 2 套产物 + 逻辑层 7/7 + 真实转码 + 解包检查**（§4.3） |
 | GPU 能力探测与自动降级 | 可用 | Windows **实测**；macOS/Linux **按文档、待真机** |
-| macOS / Linux 运行 | 代码就绪、未构建运行 | **未验证** |
+| macOS / Linux 运行 | 构建可用；Linux deb 可安装、窗口可创建；macOS 仅构建 + 无窗口转码 | **Linux 容器实测**（§4.23.2）；**macOS 无真机**，窗口渲染未验 |
 | 签名与分发流程 | 脚本与占位就绪、未实际签名 | **未执行** |
 
 工程可构建：`npm run build:lgpl` / `npm run build:gpl` 各产出一套安装包（见 §4.3）；
@@ -1317,6 +1317,57 @@ identifier（dark 反编译 `ShortcutProperty System.AppUserModel.ID`）、NSIS 
 
 ---
 
+## 4.23 macOS / Linux 构建与最小实跑（第十三轮，alpha4）
+
+### 4.23.1 构建产物（CI 三平台，alpha3 实测）
+
+| 平台 | 产物 | 字节 |
+| --- | --- | --- |
+| macOS（aarch64） | `Transmutio_1.0.0-alpha3_aarch64.dmg` | 3,074,689 |
+| macOS（aarch64，GPL） | `Transmutio.GPL_1.0.0-alpha3_aarch64.dmg` | 3,072,210 |
+| Linux（amd64） | `Transmutio_1.0.0-alpha3_amd64.deb` | 3,637,654 |
+| Linux（amd64，GPL） | `Transmutio.GPL_1.0.0-alpha3_amd64.deb` | 3,636,310 |
+| Linux（amd64） | `Transmutio_1.0.0-alpha3_amd64.AppImage` | 82,086,392 |
+| Linux（amd64，GPL） | `Transmutio.GPL_1.0.0-alpha3_amd64.AppImage` | 82,082,296 |
+
+### 4.23.2 Linux 实跑（Docker `ubuntu:22.04`，安装 alpha3 deb）
+
+命令（脚本在 `samples/release-alpha3/linux-smoke.sh`，不进版本库）：
+
+```sh
+docker run --rm --shm-size=1g -v "$PWD/samples/release-alpha3:/p" ubuntu:22.04 sh /p/linux-smoke.sh
+```
+
+| 项目 | 实测结果 |
+| --- | --- |
+| 安装 | `dpkg -i Transmutio_1.0.0-alpha3_amd64.deb` 成功；依赖 `libwebkit2gtk-4.1-0` / `libgtk-3-0` / `libayatana-appindicator3-1` 由 apt 补齐 |
+| 版本 | `Transmutio 1.0.0-alpha3 (lgpl)`（与包名、tag 一致） |
+| 动态库 | `ldd` 缺失条目 **0** |
+| 窗口 | Xvfb `1280x800x24` 下 X11 窗口树出现 `"Transmutio" 1400x880`，7s 后进程仍存活 → `WINDOW_OK` |
+
+层级说明：容器内只证明**二进制可执行、窗口能被创建并存活**；没有真实桌面会话，
+**未证明**窗口内容完整渲染、WebView 交互与拖拽等行为（那需要可见窗口，属于前台 GUI 操作）。
+
+### 4.23.3 真实转码（CI 无窗口链路，Linux / macOS）
+
+`release.yml` 的 build job 在 `ubuntu-22.04` 与 `macos-latest` 上执行
+`headless-check`（与 §4.1 同一份任务核心 + runner 自带/安装的真实 ffmpeg），
+报告作为 artifact 上传；失败不阻断出包，但结果如实记录（见本轮 run 结论）。
+
+| 平台 | 真实转码 |
+| --- | --- |
+| Linux（ubuntu-22.04） | RUN_410_PLACEHOLDER |
+| macOS（macos-latest） | RUN_411_PLACEHOLDER |
+
+### 4.23.4 仍未做（如实标注）
+
+- **macOS 真机窗口不可验**：本机无 Apple 设备；CI 只跑无窗口链路与构建。Gatekeeper 的
+  实际拦截与放行流程未在真机走过，只在 README「未签名构建的安装与首次运行」写明步骤。
+- **Linux 真实桌面未跑**：只有容器 + Xvfb，没有 X11/Wayland 实机桌面。
+- **签名/公证仍未执行**：见 §8 与 README；不因「能安装」而声称已解决签名问题。
+
+---
+
 ## 5. 应用级链路（`scripts/app-e2e.mjs`）与已知问题
 
 该脚本启动真实 Tauri 应用，经 WebView2 CDP 调用命令完成全链路。
@@ -1405,8 +1456,11 @@ identifier（dark 反编译 `ShortcutProperty System.AppUserModel.ID`）、NSIS 
 4. **GPL 双变体**：构建层与逻辑层已通过；仍未验证：真实用户机器的共存/升级路径、
    安装包签名与公证、GPL 源码要约与「不随包分发二进制」措辞的**法律审查（需法律确认）**、
    Linux/macOS 安装包合规物。
-5. **macOS / Apple Silicon**：全部硬件与打包结论按文档实现，待真机。
-6. **Linux**：VAAPI 设备/权限/`hwupload` 已按文档接入，未在 Linux 编译运行；多 render 节点选择未实现。
+5. **macOS / Apple Silicon**：安装包已由 CI 构建（DMG），无窗口真实转码见 §4.23.3；
+   **真机窗口、Gatekeeper 放行与硬件编码结论仍待真机**（本机无 Apple 设备）。
+6. **Linux**：已在 `ubuntu-22.04` CI 构建 deb/AppImage，并在容器内实测安装、`--version`、
+   `ldd` 缺失 0、Xvfb 窗口创建与存活（§4.23.2）；**真实桌面（X11/Wayland 实机）未跑**，
+   VAAPI 设备/权限/`hwupload` 仍按文档接入、未在真实 GPU 上实测，多 render 节点选择未实现。
 7. **图片编码器**未逐项试编，缺 libwebp 时任务失败并给出原因（不会静默成功）。
 8. **`hw-memory` / `invalid-params` 错误分类**：规则已写，未构造真实故障逐条复现。
 9. **自动更新**：只有接口与 Null 实现，无端点与密钥；两个变体的更新通道字段已区分（`transmutio-lgpl-stable` / `transmutio-gpl-stable`）。

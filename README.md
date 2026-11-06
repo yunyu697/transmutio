@@ -238,6 +238,22 @@ npm run check:ffmpeg-license
 
 完整的变体矩阵与合规物说明见 [LICENSING.md](LICENSING.md)。
 
+## 未签名构建的安装与首次运行
+
+当前所有安装包**都没有代码签名**（无 Authenticode、无 Apple Developer ID、无公证）。系统会因此
+给出警告，这是**真实存在、尚未解决**的限制，下面的步骤只是让系统放行，不等于问题已修复。
+
+| 平台 | 现象 | 放行方式（自担风险） |
+| --- | --- | --- |
+| Windows | SmartScreen「Windows 已保护你的电脑 / 未知发布者」 | 「更多信息」→「仍要运行」；MSI 可先在文件属性里勾选「解除锁定」 |
+| macOS | Gatekeeper「无法打开，因为 Apple 无法验证」「已损坏，无法打开」 | 在 Finder 里**右键 → 打开 → 再点打开**；或 系统设置 → 隐私与安全性 → 「仍要打开」；必要时 `xattr -dr com.apple.quarantine /Applications/Transmutio.app` |
+| Linux（deb） | `apt install ./Transmutio_*.deb` 提示包未签名 | 用 `sudo dpkg -i Transmutio_*.deb` 安装；缺少运行时库时按提示补 `libwebkit2gtk-4.1-0`、`libgtk-3-0` |
+| Linux（AppImage） | 双击无反应 / 提示 FUSE | `chmod +x Transmutio_*.AppImage` 后运行；无 FUSE 时用 `--appimage-extract-and-run` |
+
+macOS 上没有「设置一次就永久不警告」的官方做法；每次更新安装包后都可能重新触发。如果
+安装后应用能启动但**所有转换都失败**，先确认 FFmpeg 是否可用（见下文引导页），再检查
+是否被 Gatekeeper 拦住了 sidecar 二进制（签名链路不完整时的典型表现）。
+
 ## 开发与构建
 
 按项目约定，**构建与验证一律后台执行并写日志**（见 [CONTRIBUTING.md](CONTRIBUTING.md)）：
