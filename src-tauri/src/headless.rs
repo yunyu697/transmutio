@@ -229,6 +229,37 @@ fn make_source_sized(
     run_ffmpeg(ffmpeg, &args)
 }
 
+fn make_source_bitrate(
+    ffmpeg: &str,
+    path: &Path,
+    seconds: u32,
+    kbps: u32,
+) -> Result<(), String> {
+    let mut args = vec![
+        "-hide_banner".into(),
+        "-loglevel".into(),
+        "error".into(),
+        "-y".into(),
+        "-f".into(),
+        "lavfi".into(),
+        "-i".into(),
+        format!("testsrc2=size=1280x720:rate=30:duration={seconds}"),
+    ];
+    args.extend(video_codec_args(ffmpeg));
+    args.extend([
+        "-b:v".into(),
+        format!("{kbps}k"),
+        "-maxrate".into(),
+        format!("{kbps}k"),
+        "-bufsize".into(),
+        format!("{}k", kbps * 2),
+        "-pix_fmt".into(),
+        "yuv420p".into(),
+        path.to_string_lossy().to_string(),
+    ]);
+    run_ffmpeg(ffmpeg, &args)
+}
+
 fn make_audio_wav(ffmpeg: &str, path: &Path, seconds: u32) -> Result<(), String> {
     let args = vec![
         "-hide_banner".into(),
@@ -1211,6 +1242,81 @@ pub async fn run_checks(report_path: &str) -> i32 {
                         "文字水印：缺字体明确报错",
                         "缺字体竟然入队成功（会静默失败）".into(),
                     ),
+                }
+            }
+        }
+
+        // 0.5) 视频「保持原始码率」：真实源码率探测 → 回填 -b:v → 产物 ffprobe 复核
+        let br_src = workspace.join("bitrate-src-1200k.mp4");
+        let out_br = workspace.join("out-bitrate");
+        let _ = std::fs::create_dir_all(&out_br);
+        match make_source_bitrate(&ffmpeg_path, &br_src, 8, 1200) {
+            Err(e) => fail(
+                &mut results,
+                "视频保持原始码率：真实回填与产物复核",
+                format!("生成固定码率样片失败：{e}"),
+            ),
+            Ok(_) => {
+                let src_info =
+                    crate::probe::probe_media(&probe_bin, &br_src.to_string_lossy()).await;
+                let src_kbps = src_info.video_bitrate.unwrap_or(0) / 1000;
+                if src_kbps < 800 {
+                    fail(
+                        &mut results,
+                        "视频保持原始码率：真实回填与产物复核",
+                        format!("样片源码率探测异常：{src_kbps} kbps（期望约 1200）"),
+                    );
+                } else {
+                    let mut params = video_params(false);
+                    params["rateMode"] = json!("source");
+                    params["resolution"] = json!("source");
+                    let spec = JobSpec {
+                        kind: "video-mp4".into(),
+                        input: br_src.to_string_lossy().to_string(),
+                        inputs: Vec::new(),
+                        output_dir: out_br.to_string_lossy().to_string(),
+                        output_stem: Some("保持原始码率".into()),
+                        name_template: None,
+                        conflict: None,
+                        params,
+                    };
+                    match run_one(&ctx, spec, 180).await {
+                        Ok(job) if job.status == "done" => {
+                            let info =
+                                crate::probe::probe_media(&probe_bin, &job.output).await;
+                            let out_kbps = info.video_bitrate.unwrap_or(0) / 1000;
+                            let low = src_kbps * 7 / 10;
+                            let high = src_kbps * 3 / 2;
+                            if out_kbps >= low && out_kbps <= high {
+                                pass(
+                                    &mut results,
+                                    "视频保持原始码率：真实回填与产物复核",
+                                    format!(
+                                        "源 {src_kbps} kbps → 输出 {out_kbps} kbps（±30% 内）；输出={}",
+                                        job.output
+                                    ),
+                                );
+                            } else {
+                                fail(
+                                    &mut results,
+                                    "视频保持原始码率：真实回填与产物复核",
+                                    format!(
+                                        "源 {src_kbps} kbps → 输出 {out_kbps} kbps，超出 [{low},{high}]"
+                                    ),
+                                );
+                            }
+                        }
+                        Ok(job) => fail(
+                            &mut results,
+                            "视频保持原始码率：真实回填与产物复核",
+                            format!("任务未完成：status={} message={:?}", job.status, job.message),
+                        ),
+                        Err(e) => fail(
+                            &mut results,
+                            "视频保持原始码率：真实回填与产物复核",
+                            format!("任务失败：{e}"),
+                        ),
+                    }
                 }
             }
         }
