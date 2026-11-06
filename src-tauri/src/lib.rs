@@ -2,6 +2,7 @@ pub mod after;
 pub mod args;
 pub mod compress;
 pub mod containers;
+pub mod download;
 pub mod flavor;
 pub mod flavor_check;
 pub mod headless;
@@ -412,7 +413,10 @@ pub fn run() {
             import_legacy_data,
             save_diagnostics,
             setup::inspect_ffmpeg_file,
-            setup::install_ffmpeg_files
+            setup::install_ffmpeg_files,
+            download::tools_download_plan,
+            download::download_tool,
+            download::cancel_tool_download
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

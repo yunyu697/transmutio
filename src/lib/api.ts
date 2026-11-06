@@ -412,6 +412,68 @@ export interface FfToolInspection {
   notes: string[];
 }
 
+/** 内置下载清单里的一个来源（官方直连或第三方镜像）。 */
+export interface PlanSource {
+  sourceId: string;
+  label: string;
+  url: string;
+  mirror: boolean;
+}
+
+/** 当前平台/变体可自动下载的一个包；校验和来自内置清单。 */
+export interface PlanEntry {
+  packageId: string;
+  kind: "ffmpeg" | "poppler";
+  version: string;
+  buildLabel: string;
+  file: string;
+  size: number;
+  sha256: string;
+  sources: PlanSource[];
+}
+
+/** 没有可固定校验和的发布包时给出手动方案（不会伪造可下载项）。 */
+export interface ToolsManualEntry {
+  kind: string;
+  platform: string;
+  flavor: string;
+  label: string;
+  url: string;
+  reason: string;
+}
+
+export interface ToolsPlan {
+  platform: string;
+  arch: string;
+  flavor: string;
+  entries: PlanEntry[];
+  manual: ToolsManualEntry[];
+  notes: string[];
+}
+
+export interface ToolsDownloadProgress {
+  kind: string;
+  packageId: string;
+  phase: "checking" | "download" | "verify" | "extract" | "land" | "done" | "retry";
+  sourceId: string;
+  sourceLabel: string;
+  sourceIndex: number;
+  sourceTotal: number;
+  attempt: number;
+  received: number;
+  total: number;
+  message: string;
+}
+
+export interface LandedTool {
+  kind: string;
+  dir: string;
+  version: string;
+  archiveSha256: string;
+  tools: ToolsInfo | null;
+  pdf: PdfToolsInfo | null;
+}
+
 export interface AppInfo {
   version: string;
   platform: string;
@@ -504,4 +566,8 @@ export const api = {
       expectedSha256: args.expectedSha256 ?? null,
       allowGpl: args.allowGpl,
     }),
+  toolsPlan: () => invoke<ToolsPlan>("tools_download_plan"),
+  downloadTool: (packageId: string, sourceId?: string) =>
+    invoke<LandedTool>("download_tool", { packageId, sourceId: sourceId ?? null }),
+  cancelToolDownload: () => invoke<void>("cancel_tool_download"),
 };

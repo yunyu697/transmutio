@@ -13,7 +13,7 @@ FFmpeg 以 sidecar 子进程运行。本仓库是独立工程，与「菲菲更�
 | 图片批量转换 / 缩放 | ✅ 已跑通：PNG→JPG、WebP、4K→最长边 1280（不拉伸） |
 | 任务中心 | ✅ 4 槽并发、进度、取消杀子进程、失败重试、打开输出目录；无窗口核心链路 7/7 实测 |
 | 用户文件安全 | ✅ 不覆盖（硬链接原子发布）、临时文件、取消清理；删除源文件未实现（默认关闭） |
-| 首次启动引导 | ✅ 缺失或 GPL/nonfree 时展示；校验版本/构建配置/SHA-256 后落位应用数据目录；**不静默下载**；UI 层 headless 26/26 + 真实 LGPL 落位 10/10（见文档 §4.2） |
+| 首次启动引导 | ✅ 缺失或 GPL/nonfree 时展示；可选「按内置清单下载」（官方源 + 镜像回退 + 内置 SHA-256 校验 + 断点续传），也可手动选文件；UI 层 headless 26/26 + 真实 LGPL 落位 10/10（见文档 §4.2、§4.22） |
 | 默认许可路线 | ✅ 仅 LGPL 放行；GPL/nonfree 默认禁用，仅开发开关 |
 | macOS / Apple Silicon | ⚠️ **按文档实现、待真机验证**（本机无 Apple 设备，未实测） |
 | Linux | ⚠️ **按文档实现、待真机验证**（未在 Linux 上构建运行） |
@@ -118,7 +118,27 @@ GPU 能力矩阵与实测/文档/待验证标注见 [GPU-能力矩阵.md](GPU-�
 ## FFmpeg 准备（必须）
 
 默认包不放 ffmpeg。首次启动若找不到 FFmpeg、或找到的是 GPL/nonfree 构建，应用会进入
-**首次启动引导页**：
+**首次启动引导页**，提供两条路径（都需你**手动点击**，不会后台静默下载）：
+
+### A. 让应用按内置清单下载（可选）
+
+- 清单（`src-tauri/resources/tools-manifest.json`）随二进制编译进应用，里面是**官方发布的
+  版本号、文件名、字节数与 SHA-256**；镜像只替换传输通道。
+- 来源顺序：官方 GitHub Release → 多个第三方加速镜像；失败会自动按顺序回退，界面实时显示
+  当前来源、第几次尝试与已下载字节。
+- **任何来源的文件落盘前都必须匹配内置 SHA-256**：镜像给的文件一律不采信；不匹配会删除
+  临时文件并换下一个来源，全部失败则给出逐项可读原因（断网 / 超时 / HTTP 状态 / 哈希不符）。
+- 许可变体严格对应：LGPL 包只下载 LGPL 构建，GPL 包只下载 GPL 构建；落位后再读一次
+  `ffmpeg --version` 与构建配置，不匹配则回滚。
+- 支持断点续传（`Range`，服务器不支持时自动从头）与每来源最多 3 次重试；下载前先检查
+  磁盘剩余空间，不足直接拒绝并给出数字。
+- 落位到 `<应用数据目录>/tools/ffmpeg-<版本>/`，随后重新探测能力表。
+
+当前内置清单的可自动下载包：**Windows x64** 的 FFmpeg LGPL / GPL（BtbN 固定构建）与
+Poppler（`pdftoppm`）。**macOS / Linux 没有可固定 SHA-256 的官方发布包**，因此不提供自动
+下载，引导页会给出可读原因与手动/包管理器方案（不会伪造一个跑不通的下载项）。
+
+### B. 手动选择本地文件
 
 1. 引导页给出可配置的 LGPL 下载源（默认 FFmpeg 官方下载页，链接用系统浏览器打开）
 2. 选择已下载的 `ffmpeg` 可执行文件，应用读取版本、构建配置、编码器列表与 SHA-256
@@ -167,8 +187,12 @@ npm run check:ffmpeg-license
 3. 环境变量 `TRANSMUTIO_PDF_TOOLS`（目录列表）
 4. 系统 `PATH`
 
-仓库与安装包**不分发** Poppler。需要该功能时请自行安装 Poppler for Windows
-（如 `poppler-xx.xx.x` 便携包，解压后把 `Library\bin` 配进 `PDFTOPPM_PATH` 或设置页），
+仓库与安装包**不分发** Poppler。Windows 上可在「PDF 转图片」面板点
+**自动下载 Poppler**：走同一份内置清单（固定版本 + 内置 SHA-256 + 镜像回退），校验通过后
+解压到 `<应用数据目录>/tools/poppler-<版本>/Library/bin/`，并自动写入设置页的 PDF 工具目录；
+校验失败会拒绝落位并给出原因。macOS / Linux 没有可固定校验和的包，面板会给出
+`brew install poppler` / `apt install poppler-utils` 的说明（不会伪造下载项）。
+也可以手动安装 Poppler for Windows（便携包解压后把 `Library\bin` 配进 `PDFTOPPM_PATH` 或设置页），
 或用 `scoop install poppler` / `choco install poppler`。合并与拆分不受影响。
 
 ## 选哪个变体：LGPL 还是 GPL

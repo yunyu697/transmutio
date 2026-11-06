@@ -30,7 +30,8 @@ jobs:
       - name: 版本规则自测（0.11.0 / alpha0 / alpha01 / tag 与产物不一致等反例必须被拦）
         run: npm run version:test
       - name: 版本一致性（package.json / tauri.conf.json / Cargo.toml）
-        run: npm run version:check
+        # main 上的浅克隆没有历史 tag，alpha 单调性交给 release 工作流（fetch-depth: 0）校验。
+        run: npm run version:check -- --skip-alpha-sequence
 
   # 无损检查：cargo fmt / clippy / 单测
   backend:

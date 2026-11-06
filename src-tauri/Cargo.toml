@@ -1,7 +1,7 @@
 [package]
 name = "formatforge"
 default-run = "formatforge"
-version = "1.0.0-alpha2"
+version = "1.0.0-alpha3"
 description = "Transmutio · 跨平台多媒体转换"
 authors = ["Transmutio"]
 edition = "2021"
@@ -44,6 +44,11 @@ name = "p2-check"
 path = "src/bin/p2-check.rs"
 required-features = ["dev-tools"]
 
+[[bin]]
+name = "tools-check"
+path = "src/bin/tools-check.rs"
+required-features = ["dev-tools"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -56,6 +61,10 @@ serde_json = "1"
 sha2 = "0.10"
 tokio = { version = "1", features = ["process", "sync", "time", "io-util", "macros", "rt-multi-thread"] }
 lopdf = "0.47.0"
+# 首次启动可选下载：纯 Rust TLS（不依赖系统 OpenSSL）、zip 解压、磁盘剩余空间探测。
+ureq = { version = "2.12", default-features = false, features = ["tls"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+fs2 = "0.4"
 
 [profile.release]
 panic = "abort"

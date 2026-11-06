@@ -1,0 +1,139 @@
+{
+  "schema": 1,
+  "generatedAt": "2026-11-06",
+  "note": "所有 sha256 取自上游官方发布（GitHub Release API 的 digest 字段），随二进制编译进应用（include_str!），运行时不可替换。镜像只替换传输通道，校验和始终以本文件为准；镜像给的文件一律不采信。仓库与安装包都不分发这些二进制。",
+  "sources": [
+    {
+      "id": "official",
+      "label": "官方发布（直连 GitHub）",
+      "base": null
+    },
+    {
+      "id": "ghfast",
+      "label": "镜像 ghfast.top（第三方加速）",
+      "base": "https://ghfast.top/"
+    },
+    {
+      "id": "ghproxy",
+      "label": "镜像 ghproxy.net（第三方加速）",
+      "base": "https://ghproxy.net/"
+    },
+    {
+      "id": "ghproxycom",
+      "label": "镜像 gh-proxy.com（第三方加速）",
+      "base": "https://gh-proxy.com/"
+    }
+  ],
+  "packages": [
+    {
+      "id": "ffmpeg-windows-x64-lgpl",
+      "kind": "ffmpeg",
+      "platform": "windows",
+      "arch": "x86_64",
+      "flavor": "lgpl",
+      "version": "N-128433-gdb8537d8cc",
+      "buildLabel": "LGPL 构建（BtbN，不含 x264 / x265）",
+      "archive": "zip",
+      "file": "ffmpeg-N-128433-gdb8537d8cc-win64-lgpl.zip",
+      "size": 175646783,
+      "sha256": "0c813ecf72481a5ee39480423551e4bea230d8249b7d1d2130c7c8b2d61c4c44",
+      "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-11-05-12-48/ffmpeg-N-128433-gdb8537d8cc-win64-lgpl.zip",
+      "extract": [
+        { "marker": "/bin/ffmpeg.exe", "to": "ffmpeg.exe" },
+        { "marker": "/bin/ffprobe.exe", "to": "ffprobe.exe" }
+      ],
+      "extractTrees": [],
+      "land": "ffmpeg"
+    },
+    {
+      "id": "ffmpeg-windows-x64-gpl",
+      "kind": "ffmpeg",
+      "platform": "windows",
+      "arch": "x86_64",
+      "flavor": "gpl",
+      "version": "N-128433-gdb8537d8cc",
+      "buildLabel": "GPL 构建（BtbN，含 x264 / x265）",
+      "archive": "zip",
+      "file": "ffmpeg-N-128433-gdb8537d8cc-win64-gpl.zip",
+      "size": 202051903,
+      "sha256": "6e20a5744f9863883484af1cb5dca91e7e01d9af43b58d97fce7344e34393702",
+      "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-11-05-12-48/ffmpeg-N-128433-gdb8537d8cc-win64-gpl.zip",
+      "extract": [
+        { "marker": "/bin/ffmpeg.exe", "to": "ffmpeg.exe" },
+        { "marker": "/bin/ffprobe.exe", "to": "ffprobe.exe" }
+      ],
+      "extractTrees": [],
+      "land": "ffmpeg"
+    },
+    {
+      "id": "poppler-windows-x64",
+      "kind": "poppler",
+      "platform": "windows",
+      "arch": "x86_64",
+      "flavor": "any",
+      "version": "26.09.0-0",
+      "buildLabel": "Poppler for Windows（GPL-2.0+，外部工具）",
+      "archive": "zip",
+      "file": "Release-26.09.0-0.zip",
+      "size": 43709956,
+      "sha256": "7a6f256a0ddf7536182246a5733331bf4677cbcc34f4663774947ad34556c8d0",
+      "url": "https://github.com/oschwartz10612/poppler-windows/releases/download/v26.09.0-0/Release-26.09.0-0.zip",
+      "extract": [],
+      "extractTrees": [
+        { "marker": "Library/bin/", "to": "Library/bin" },
+        { "marker": "Library/share/poppler/", "to": "Library/share/poppler" }
+      ],
+      "land": "poppler"
+    }
+  ],
+  "manual": [
+    {
+      "kind": "ffmpeg",
+      "platform": "macos",
+      "flavor": "lgpl",
+      "label": "macOS：手动选择 LGPL 构建",
+      "url": "https://ffmpeg.org/download.html#build-mac",
+      "reason": "内置清单没有可固定 SHA-256 的 macOS LGPL 发布包，因此不提供自动下载。请从 ffmpeg.org 的 macOS 链接或自建 --disable-gpl 构建，下载后在引导页手动选择；应用仍会校验版本、构建配置与哈希。"
+    },
+    {
+      "kind": "ffmpeg",
+      "platform": "macos",
+      "flavor": "gpl",
+      "label": "macOS：Homebrew / 手动选择 GPL 构建",
+      "url": "https://ffmpeg.org/download.html#build-mac",
+      "reason": "内置清单没有可固定 SHA-256 的 macOS GPL 发布包，因此不提供自动下载。可执行 brew install ffmpeg（通常是 GPL 构建，应用会自动在 PATH 中找到），或手动选择已下载的可执行文件。"
+    },
+    {
+      "kind": "ffmpeg",
+      "platform": "linux",
+      "flavor": "lgpl",
+      "label": "Linux：手动选择 LGPL 构建",
+      "url": "https://ffmpeg.org/download.html#build-linux",
+      "reason": "内置清单没有可固定 SHA-256 的 Linux LGPL 发布包，因此不提供自动下载。发行版仓库里的 ffmpeg 通常启用 GPL（含 x264/x265），LGPL 版会拒绝；请手动选择自备的 LGPL 构建。"
+    },
+    {
+      "kind": "ffmpeg",
+      "platform": "linux",
+      "flavor": "gpl",
+      "label": "Linux：使用发行版 ffmpeg 或手动选择",
+      "url": "https://ffmpeg.org/download.html#build-linux",
+      "reason": "内置清单没有可固定 SHA-256 的 Linux GPL 发布包，因此不提供自动下载。可直接用发行版仓库安装（apt/dnf install ffmpeg），连同 ffprobe；应用会在 PATH 中找到并校验构建配置。"
+    },
+    {
+      "kind": "poppler",
+      "platform": "macos",
+      "flavor": "any",
+      "label": "macOS：brew install poppler",
+      "url": "https://poppler.freedesktop.org/",
+      "reason": "内置清单没有可固定 SHA-256 的 macOS Poppler 发布包，因此不提供自动下载。可执行 brew install poppler，应用会在 PATH 中找到 pdftoppm。"
+    },
+    {
+      "kind": "poppler",
+      "platform": "linux",
+      "flavor": "any",
+      "label": "Linux：apt install poppler-utils",
+      "url": "https://poppler.freedesktop.org/",
+      "reason": "内置清单没有可固定 SHA-256 的 Linux Poppler 发布包，因此不提供自动下载。可执行 apt install poppler-utils（或发行版对应包），应用会在 PATH 中找到 pdftoppm。"
+    }
+  ]
+}

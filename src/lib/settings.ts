@@ -12,6 +12,10 @@ export interface Settings {
   ffmpegPath: string;
   /** 首次引导页展示的下载源（空则用内置官方页面） */
   ffmpegSourceUrl: string;
+  /** 内置下载器使用的来源 id；空 = 官方优先、失败按清单顺序回退 */
+  ffmpegDownloadSource: string;
+  /** Poppler 落位目录（自动下载后写入；空 = 只按环境变量 / PATH 查找） */
+  pdfToolsDir: string;
   allowGplEncoders: boolean;
   taskCenterOpen: boolean;
   lastSection: string;
@@ -99,6 +103,8 @@ export const settingsStore = createSettingsStore<Settings>({
     outputDir: "",
     ffmpegPath: "",
     ffmpegSourceUrl: "",
+    ffmpegDownloadSource: "",
+    pdfToolsDir: "",
     allowGplEncoders: false,
     taskCenterOpen: true,
     lastSection: "video",

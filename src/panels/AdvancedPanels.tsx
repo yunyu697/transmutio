@@ -424,7 +424,12 @@ export function PdfPanel({
   onBack,
   pdfTools,
   onRedetectPdfTools,
-}: CommonProps & { pdfTools: PdfToolsInfo | null; onRedetectPdfTools?: () => Promise<PdfToolsInfo | null> }) {
+  onDownloadPoppler,
+}: CommonProps & {
+  pdfTools: PdfToolsInfo | null;
+  onRedetectPdfTools?: () => Promise<PdfToolsInfo | null>;
+  onDownloadPoppler?: () => Promise<void>;
+}) {
   const [paths, setPaths] = useState<string[]>([]);
   const [mode, setMode] = useState<"per-page" | "ranges">(
     () => loadPanelPrefs<{ mode: "per-page" | "ranges" }>("pdf:mode", { mode: "per-page" }).mode,
@@ -448,6 +453,18 @@ export function PdfPanel({
   const isSplit = methodId === "pdf-split";
   const isImage = methodId === "pdf-image";
   const toolMissing = isImage && pdfTools && !pdfTools.available;
+
+  const [downloadPopplerBusy, setDownloadPopplerBusy] = useState(false);
+
+  const downloadingPoppler = async () => {
+    if (!onDownloadPoppler) return;
+    setDownloadPopplerBusy(true);
+    try {
+      await onDownloadPoppler();
+    } finally {
+      setDownloadPopplerBusy(false);
+    }
+  };
 
   const redetect = async () => {
     if (!onRedetectPdfTools) return;
@@ -545,6 +562,16 @@ export function PdfPanel({
             >
               {redetecting ? "检测中…" : "重新检测"}
             </button>
+            {onDownloadPoppler ? (
+              <button
+                className="btn small"
+                style={{ marginTop: 8, marginLeft: 8 }}
+                onClick={() => void downloadingPoppler()}
+                disabled={downloadPopplerBusy}
+              >
+                {downloadPopplerBusy ? "下载中…" : "自动下载 Poppler（按内置 SHA-256 校验）"}
+              </button>
+            ) : null}
           </div>
         ) : null}
         <div style={{ padding: "14px 20px" }}>

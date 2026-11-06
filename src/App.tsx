@@ -147,19 +147,41 @@ export default function App() {
 
   // PDF 外部渲染器检测：缺失时入口仍可进入，面板内说明如何配置并支持重新检测。
   useEffect(() => {
-    void api.pdfToolsStatus().then(setPdfTools).catch(() => setPdfTools(null));
-  }, []);
+    void api
+      .pdfToolsStatus(settings.pdfToolsDir || undefined)
+      .then(setPdfTools)
+      .catch(() => setPdfTools(null));
+  }, [settings.pdfToolsDir]);
 
   const redetectPdfTools = useCallback(async () => {
     try {
-      const next = await api.pdfToolsStatus();
+      const next = await api.pdfToolsStatus(settings.pdfToolsDir || undefined);
       setPdfTools(next);
       return next;
     } catch {
       setPdfTools(null);
       return null;
     }
-  }, []);
+  }, [settings.pdfToolsDir]);
+
+  // 可选下载 Poppler（内置清单 + 哈希校验；当前只有 Windows 有可固定校验和的包）。
+  const downloadPoppler = useCallback(async () => {
+    try {
+      const plan = await api.toolsPlan();
+      const entry = plan.entries.find((item) => item.kind === "poppler");
+      if (!entry) {
+        const manual = plan.manual.find((item) => item.kind === "poppler");
+        throw new Error(manual?.reason ?? "当前平台没有内置的可下载 Poppler 包");
+      }
+      const landed = await api.downloadTool(entry.packageId);
+      if (!landed.pdf) throw new Error("下载完成但没有返回 Poppler 信息");
+      patchSettings({ pdfToolsDir: landed.dir });
+      setPdfTools(landed.pdf);
+      toast(`Poppler 已下载并按内置 SHA-256 校验（${landed.version}）`, "ok");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), "error");
+    }
+  }, [patchSettings, toast]);
 
   useEffect(() => {
     void bootTools(settingsStore.get().ffmpegPath, false);
@@ -244,7 +266,16 @@ export default function App() {
     if (activeMethod.panel === "sequence") return <SequencePanel methodId={activeMethod.id} {...common} />;
     if (activeMethod.panel === "frames") return <FramesPanel methodId={activeMethod.id} {...common} />;
     if (activeMethod.panel === "collage") return <CollagePanel methodId={activeMethod.id} {...common} />;
-    if (activeMethod.panel === "pdf") return <PdfPanel methodId={activeMethod.id} pdfTools={pdfTools} onRedetectPdfTools={redetectPdfTools} {...common} />;
+    if (activeMethod.panel === "pdf")
+      return (
+        <PdfPanel
+          methodId={activeMethod.id}
+          pdfTools={pdfTools}
+          onRedetectPdfTools={redetectPdfTools}
+          onDownloadPoppler={downloadPoppler}
+          {...common}
+        />
+      );
     return null;
   };
 

@@ -1,5 +1,13 @@
-import { useState } from "react";
-import { api, type FfToolInspection, type FlavorInfo, type ToolsInfo } from "../lib/api";
+import { useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import {
+  api,
+  type FfToolInspection,
+  type FlavorInfo,
+  type ToolsDownloadProgress,
+  type ToolsPlan,
+  type ToolsInfo,
+} from "../lib/api";
 import { formatBytes } from "@formatforge/design-tokens";
 import type { Settings } from "../lib/settings";
 import { Icon } from "./Icon";
@@ -36,6 +44,65 @@ export function SetupWizard({
   const [expectedHash, setExpectedHash] = useState("");
   const [busy, setBusy] = useState<"pick" | "inspect" | "install" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 内置下载器：清单来自后端（编译期内置），进度经事件推送。
+  const [plan, setPlan] = useState<ToolsPlan | null>(null);
+  const [dlSource, setDlSource] = useState(settings.ffmpegDownloadSource);
+  const [dlProgress, setDlProgress] = useState<ToolsDownloadProgress | null>(null);
+  const [dlBusy, setDlBusy] = useState(false);
+  const [dlError, setDlError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void api
+      .toolsPlan()
+      .then(setPlan)
+      .catch((e) => setDlError(`读取内置下载清单失败：${e instanceof Error ? e.message : String(e)}`));
+  }, []);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    void listen<ToolsDownloadProgress>("tools-download-progress", (event) => {
+      setDlProgress(event.payload);
+    })
+      .then((fn) => {
+        if (disposed) fn();
+        else unlisten = fn;
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  const ffmpegEntry = plan?.entries.find((entry) => entry.kind === "ffmpeg") ?? null;
+  const manualFfmpeg = plan?.manual.find((entry) => entry.kind === "ffmpeg") ?? null;
+
+  const downloadFfmpeg = async () => {
+    if (!ffmpegEntry || dlBusy) return;
+    setDlBusy(true);
+    setDlError(null);
+    setDlProgress(null);
+    try {
+      const landed = await api.downloadTool(ffmpegEntry.packageId, dlSource || undefined);
+      if (!landed.tools) throw new Error("下载完成但没有返回工具信息");
+      toast(`已下载并校验 ${landed.version}，落位到 ${landed.dir}`, "ok");
+      setInspection(null);
+      onInstalled(landed.tools);
+    } catch (e) {
+      setDlError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDlBusy(false);
+    }
+  };
+
+  const cancelDownload = async () => {
+    try {
+      await api.cancelToolDownload();
+    } catch (e) {
+      setDlError(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   const isGplVariant = flavor?.id === "gpl";
   const effectiveAllowGpl = Boolean(isGplVariant || settings.allowGplEncoders);
@@ -45,6 +112,15 @@ export function SetupWizard({
     try {
       const { openUrl } = await import("@tauri-apps/plugin-opener");
       await openUrl(sourceUrl);
+    } catch (e) {
+      setError(`打开下载页失败：${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  const openPage = async (url: string) => {
+    try {
+      const { openUrl } = await import("@tauri-apps/plugin-opener");
+      await openUrl(url);
     } catch (e) {
       setError(`打开下载页失败：${e instanceof Error ? e.message : String(e)}`);
     }
@@ -150,10 +226,76 @@ export function SetupWizard({
                       ? "，但包含 GPL/nonfree 组件，LGPL 版不接受。如需 x264/x265，请改用 GPL 版。"
                       : ""
                 }`
-              : "未找到可用的 ffmpeg / ffprobe。下面的步骤不会自动联网下载。"}
+              : "未找到可用的 ffmpeg / ffprobe。可以让应用按内置清单下载并校验，或手动选择本地文件。"}
         </div>
 
         <ol className="setup-steps">
+          <li>
+            <b>{isGplVariant ? "自动下载 GPL 构建（可选）" : "自动下载 LGPL 构建（可选）"}</b>
+            <p>
+              只从内置清单里登记的包下载：官方发布 + 多个加速镜像，失败按顺序回退并显示当前来源。
+              无论哪个来源，落盘前都按<b>内置 SHA-256</b> 校验，镜像给的文件一律不采信；
+              校验不通过会直接拒绝，不会留下半个文件。
+            </p>
+            {ffmpegEntry ? (
+              <>
+                <div className="setup-row">
+                  <select
+                    className="input"
+                    value={dlSource}
+                    disabled={dlBusy}
+                    onChange={(e) => {
+                      setDlSource(e.target.value);
+                      onPatch({ ffmpegDownloadSource: e.target.value });
+                    }}
+                  >
+                    <option value="">自动：官方优先，失败按顺序回退</option>
+                    {ffmpegEntry.sources.map((source) => (
+                      <option key={source.sourceId} value={source.sourceId}>
+                        {source.label}
+                        {source.mirror ? "（镜像，仍需哈希匹配）" : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <button className="btn accent2" onClick={() => void downloadFfmpeg()} disabled={dlBusy}>
+                    {dlBusy ? "下载中…" : `下载 ${ffmpegEntry.version}`}
+                  </button>
+                  {dlBusy ? (
+                    <button className="btn ghost" onClick={() => void cancelDownload()}>
+                      取消
+                    </button>
+                  ) : null}
+                </div>
+                <p className="setup-meta">
+                  {ffmpegEntry.buildLabel} · {formatBytes(ffmpegEntry.size)} · SHA-256{" "}
+                  {ffmpegEntry.sha256.slice(0, 12)}…
+                </p>
+                {dlProgress ? (
+                  <p className="setup-meta">
+                    {dlProgress.sourceLabel ? `[${dlProgress.sourceLabel}] ` : ""}
+                    {dlProgress.message}
+                    {dlProgress.total > 0
+                      ? ` · ${Math.min(100, Math.round((dlProgress.received / dlProgress.total) * 100))}%`
+                      : ""}
+                  </p>
+                ) : null}
+                {dlError ? <div className="note danger">{dlError}</div> : null}
+              </>
+            ) : (
+              <>
+                <div className="note">
+                  {manualFfmpeg?.reason ??
+                    (plan ? "当前平台没有内置的可下载包。" : "正在读取内置下载清单…")}
+                </div>
+                {manualFfmpeg ? (
+                  <button className="btn" onClick={() => void openPage(manualFfmpeg.url)}>
+                    打开下载页
+                  </button>
+                ) : null}
+              </>
+            )}
+          </li>
+
           <li>
             <b>{isGplVariant ? "获取 GPL 构建" : "获取 LGPL 构建"}</b>
             <p>
