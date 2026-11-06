@@ -125,7 +125,7 @@ const pkgVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).
 // 跳过 rpm；版本号本身保持不变，产物 `--version` 与 tag 仍严格一致。
 if (process.platform === "linux" && /-alpha\d+$/.test(pkgVersion)) {
   const merged = flavor === "gpl" ? JSON.parse(readFileSync(join(root, overlayPath), "utf8")) : {};
-  merged.targets = ["deb", "appimage"];
+  merged.bundle = { ...(merged.bundle || {}), targets: ["deb", "appimage"] };
   const linuxConfig = join(root, "samples", "linux-bundle-version.json");
   mkdirSync(join(root, "samples"), { recursive: true });
   writeFileSync(linuxConfig, JSON.stringify(merged, null, 2), "utf8");
