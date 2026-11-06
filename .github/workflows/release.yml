@@ -1,10 +1,8 @@
-name: Release（不含 FFmpeg 的安装包）
+name: Release（CI 出包，三平台）
 
-# 触发：推送 v* 标签（如 v0.1.0）。
-# 约束：GitHub runner 上没有本项目本地使用的 FFmpeg / Poppler 便携二进制，
-# 因此产出的 MSI / NSIS 是「不含 FFmpeg 的版本」——首次启动由引导页让用户选择
-# 本机 FFmpeg 或使用公开下载源。release 说明必须写明这一点，不得声称与本地
-# 带 FFmpeg 的包一致。CI 也不打包任何未授权的第三方二进制。
+# 唯一发布路径：推送 v* 标签即由 CI 构建三平台安装包、生成 SHA256SUMS 并创建 Release。
+# 不再手工上传同名附件（手工 Release 与工作流并存会出现两个 Release 或附件被覆盖）。
+# 安装包不包含 FFmpeg / Poppler 二进制；正文必须如实写「未签名」。
 on:
   push:
     tags: ["v*"]
@@ -12,9 +10,37 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  # 版本闸门：tag 必须等于版本文件，段位 ≤10，alpha 序号单调递增且不带前导零。
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: 版本规则自测（反例必须被拦）
+        run: node scripts/version-rules-test.mjs
+      - name: tag 与版本文件一致
+        run: node scripts/check-version.mjs --tag "$GITHUB_REF_NAME"
+
   build:
-    runs-on: windows-latest
+    needs: guard
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+          - os: macos-latest
+            platform: macos
+          - os: ubuntu-22.04
+            platform: linux
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -23,41 +49,68 @@ jobs:
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        if: matrix.platform != 'macos'
         with:
           workspaces: src-tauri -> target
-      - run: npm ci
-      - name: 构建 LGPL 变体（MSI + NSIS）
-        run: npm run build:lgpl
-      - name: 构建 GPL 变体（MSI + NSIS）
-        run: npm run build:gpl
-      - name: 记录「不含 FFmpeg」声明
+      - name: 安装 Linux 系统依赖
+        if: matrix.platform == 'linux'
         run: |
-          echo "### 说明" >> $env:GITHUB_STEP_SUMMARY
-          echo "此 Release 的安装包**不包含 FFmpeg / Poppler**（GitHub runner 无本项目本地便携二进制）。" >> $env:GITHUB_STEP_SUMMARY
-          echo "首次启动需在引导页选择本机 FFmpeg，或使用设置页的公开下载源。" >> $env:GITHUB_STEP_SUMMARY
-      - name: 上传安装包
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libfuse2
+      - run: npm ci
+      - name: 构建 LGPL 变体
+        run: npm run build:lgpl
+      - name: 构建 GPL 变体
+        run: npm run build:gpl
+      - name: 校验产物 --version 与 tag 一致
+        shell: bash
+        run: |
+          case "${{ matrix.platform }}" in
+            windows) BIN="src-tauri/target/release/Transmutio.exe"; GBIN="src-tauri/target/release/Transmutio GPL.exe" ;;
+            *) BIN="src-tauri/target/release/Transmutio"; GBIN="src-tauri/target/release/Transmutio GPL" ;;
+          esac
+          node scripts/check-version.mjs --tag "$GITHUB_REF_NAME" --binary "$BIN"
+          node scripts/check-version.mjs --tag "$GITHUB_REF_NAME" --binary "$GBIN"
+      - name: 生成 SHA256SUMS
+        run: node scripts/release-checksums.mjs
+      - name: 上传本平台产物
         uses: actions/upload-artifact@v4
         with:
-          name: transmutio-installers
+          name: installers-${{ matrix.platform }}
           path: |
-            dist-artifacts/lgpl/*.msi
-            dist-artifacts/lgpl/*.exe
-            dist-artifacts/gpl/*.msi
-            dist-artifacts/gpl/*.exe
+            dist-artifacts/lgpl/*
+            dist-artifacts/gpl/*
+            dist-artifacts/SHA256SUMS
           if-no-files-found: error
-      - name: 创建 GitHub Release（草稿）
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist-release
+          merge-multiple: true
+      - name: 合并三平台 SHA256SUMS（文件名按 GitHub 资产名归一）
+        run: node scripts/release-checksums.mjs --flat dist-release --normalize-names dist-release/SHA256SUMS
+      - name: 确认本版本 Release 说明存在
+        run: test -f "release-notes/${GITHUB_REF_NAME}.md" || { echo "缺少 release-notes/${GITHUB_REF_NAME}.md"; exit 1; }
+      - name: 创建 / 更新 Release
         uses: softprops/action-gh-release@v2
         with:
-          draft: true
-          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-alpha') }}
+          name: Transmutio ${{ github.ref_name }}
+          body_path: release-notes/${{ github.ref_name }}.md
           files: |
-            dist-artifacts/lgpl/*.msi
-            dist-artifacts/lgpl/*.exe
-            dist-artifacts/gpl/*.msi
-            dist-artifacts/gpl/*.exe
-          body: |
-            > **本 Release 不含 FFmpeg / Poppler 二进制**，与本地「带 FFmpeg」的验证包不同。
-            > 首次启动请在引导页选择本机 FFmpeg，或在设置页使用公开下载源。
-
-            - LGPL 变体：默认包，仅允许 LGPL 兼容编码器（libopenh264 / libvpx / SVT-AV1 / AOMedia / aac / libmp3lame / flac / vorbis / opus）
-            - GPL 变体：允许 x264 / x265 等 GPL 编码器（FFmpeg 构建来源与许可见 README）
+            dist-release/*.msi
+            dist-release/*.exe
+            dist-release/*.dmg
+            dist-release/*.deb
+            dist-release/*.rpm
+            dist-release/*.AppImage
+            dist-release/SHA256SUMS
+          fail_on_unmatched_files: true

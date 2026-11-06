@@ -1237,6 +1237,38 @@ identifier（dark 反编译 `ShortcutProperty System.AppUserModel.ID`）、NSIS 
 
 ---
 
+## 4.21 发布路径收口：CI 三平台出包（第十一轮，alpha2）
+
+本轮把「手工 Release」与「workflow 自动建 Release」两条路径合并为一条：**以 CI 产物为准，不再手工上传同名附件**。
+
+### 4.21.1 `release.yml` 改动
+
+- 触发：仍为 `push` tag `v*`；`concurrency` 串行、不取消（同 tag 重复推送不会并发覆盖）。
+- `guard` 作业（ubuntu）：先跑 `version-rules-test`，再跑 `check-version --tag $GITHUB_REF_NAME`
+  —— tag、版本文件、alpha 序号任一不一致就不进入构建。
+- `build` 矩阵：`windows-latest` / `macos-latest` / `ubuntu-22.04`；每平台构建 LGPL + GPL 两个变体，
+  Linux 预装 `webkit2gtk-4.1 / appindicator / rsvg / patchelf / libfuse2`。
+- 每平台构建后再用产物 `--version` 与 tag 复核（Windows exe / macOS、Linux 可执行文件各读一次）。
+- 附件：MSI、NSIS setup、DMG、deb、rpm、AppImage，外加上传 artifact 时各自生成的 `SHA256SUMS`。
+- `release` 作业：下载三平台 artifact（`merge-multiple`）→ `release-checksums.mjs --flat --normalize-names`
+  合并为一份 `SHA256SUMS`（文件名按 GitHub 资产名，空格→点）→ `softprops/action-gh-release` 创建/更新 Release。
+  `prerelease` 由 tag 是否含 `-alpha` 决定，`body_path` 读取仓库内 `release-notes/<tag>.md`。
+- **不改历史**：`v0.1.0` 与 `v1.0.0-alpha1` 的既有 Release 保留，后者为手工发布（当时 workflow 仍停用）。
+
+### 4.21.2 文案与合规
+
+- Release 正文固定包含：alpha 不建议日常使用、安装包**未签名**（SmartScreen / Gatekeeper 的后果、
+  macOS 需手动放行）、安装包**不含 FFmpeg / Poppler** 与源码地址、两变体只是所接受的 FFmpeg 构建路线、
+  仍未实现清单。
+- 版本说明随代码走：`release-notes/v1.0.0-alpha2.md` 与 tag 一一对应，发布前由 CI 断言文件存在。
+
+### 4.21.3 收口状态
+
+- alpha2 由 CI 产出：Windows / macOS / Linux 三平台 + 两个变体；本机不再手工构建与上传。
+- 本轮尚未验证：macOS / Linux 窗口启动与一次真实转码（下一轮单独做，属最小实跑验证）。
+
+---
+
 ## 5. 应用级链路（`scripts/app-e2e.mjs`）与已知问题
 
 该脚本启动真实 Tauri 应用，经 WebView2 CDP 调用命令完成全链路。

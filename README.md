@@ -264,7 +264,7 @@ npm run check:bundle                                                    # 解包
 | 工作流 | 触发 | 内容 |
 | --- | --- | --- |
 | `ci.yml` | `push` 到 `main` + `pull_request` | 前端 `npm ci` → 类型检查/构建 → `verify:formats`；后端 `cargo fmt --check`（阻断）→ `cargo clippy`（仅暴露警告）→ `cargo test`；无头 UI 在 `windows-latest` 跑 `panel-persist`（需浏览器，不需要 FFmpeg） |
-| `release.yml` | 推送 `v*` 标签 | Windows runner 构建 LGPL + GPL 的 MSI/NSIS 并上传 Release（草稿）。**产物不含 FFmpeg/Poppler**，Release 说明会显式声明，不假装与本地带 FFmpeg 的包一致 |
+| `release.yml` | 推送 `v*` 标签 | **唯一发布路径**：先跑版本闸门（tag / 版本文件 / alpha 序号），再由 `windows-latest` / `macos-latest` / `ubuntu-22.04` 三平台各构建 LGPL + GPL 变体，产物（MSI/NSIS、DMG、deb/rpm/AppImage）自动汇总 `SHA256SUMS` 并创建 Release。**产物不含 FFmpeg/Poppler**，正文写明未签名与 alpha 不建议日常使用。不再手工上传附件 |
 
 - `verify:core` / `verify:setup` / `verify:flavor:*` / `p2-check` 依赖真实 FFmpeg（部分还需 Poppler），
   **只在本地或自托管 runner 执行**，GitHub 默认 runner 不跑。
