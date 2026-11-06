@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { api, type Capabilities, type FlavorInfo, type LegacyImportInfo, type ToolsInfo } from "../lib/api";
+import { useState } from "react";
+import { api, type Capabilities, type FlavorInfo, type ToolsInfo } from "../lib/api";
 import type { Settings } from "../lib/settings";
 import { Icon } from "./Icon";
 import { Field, Group, Segmented, SwitchRow } from "../panels/shared";
@@ -34,12 +34,6 @@ export function SettingsSheet({
   toast: (text: string, kind?: "ok" | "error" | "info") => void;
 }) {
   const [ffmpegPath, setFfmpegPath] = useState(settings.ffmpegPath);
-  const [legacy, setLegacy] = useState<LegacyImportInfo | null>(null);
-  const [importing, setImporting] = useState(false);
-  useEffect(() => {
-    if (!open) return;
-    void api.legacyImportInfo().then(setLegacy).catch(() => setLegacy(null));
-  }, [open]);
   if (!open) return null;
 
   return (
@@ -378,33 +372,6 @@ export function SettingsSheet({
             >
               导出诊断日志
             </button>
-            {legacy?.available ? (
-              <>
-                <div className="note">
-                  检测到旧版 FormatForge 数据：<code>{legacy.oldApp}</code>
-                  {legacy.pending ? "（已暂存旧版设置，下次启动生效）" : "。新版与旧版目录不会自动合并。"}
-                </div>
-                <button
-                  className="btn"
-                  disabled={importing}
-                  onClick={async () => {
-                    if (!window.confirm("导入前会整份备份当前数据。设置与面板参数将在下次启动生效。继续？")) return;
-                    setImporting(true);
-                    try {
-                      const summary = await api.importLegacyData();
-                      toast(summary.detail, "ok");
-                      setLegacy(await api.legacyImportInfo());
-                    } catch (error) {
-                      toast(`导入失败：${error instanceof Error ? error.message : String(error)}`, "error");
-                    } finally {
-                      setImporting(false);
-                    }
-                  }}
-                >
-                  {importing ? "导入中…" : "从旧版导入数据"}
-                </button>
-              </>
-            ) : null}
           </Group>
 
           <Group title="关于" icon="info">

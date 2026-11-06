@@ -1109,21 +1109,6 @@ select {
   word-break: break-all;
 }
 
-/* ---------- 旧版数据迁移提示 ---------- */
-.migration-banner {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--ff-line-strong);
-  background: color-mix(in srgb, var(--ff-accent) 12%, var(--ff-bg2));
-  color: var(--ff-fg);
-  font-size: 12px;
-}
-.migration-banner span {
-  flex: 1;
-}
-
 /* ---------- Toast ---------- */
 .toasts {
   position: fixed;

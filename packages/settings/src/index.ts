@@ -44,7 +44,7 @@ export function createMemoryStorage(initial?: Record<string, string>): StorageAd
   };
 }
 
-export function createLocalStorageAdapter(prefix = "formatforge:"): StorageAdapter {
+export function createLocalStorageAdapter(prefix = "transmutio:"): StorageAdapter {
   return {
     getItem: (key) => {
       try {

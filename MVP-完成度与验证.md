@@ -370,7 +370,7 @@ comctl32 6.0 的 activation context，加载器改用 System32 的 5.82，`TaskD
 | 暂停 / 继续 | **队列级暂停**：暂停后不再调度新任务，正在运行的任务继续跑完；恢复后继续调度。理由：Windows 无 SIGSTOP，`NtSuspendProcess` 属未文档化 API，挂起 ffmpeg 子进程有句柄/管道死锁风险，收益不值得 | `src-tauri/src/jobs.rs`、`src-tauri/src/lib.rs`、`src/components/TaskCenter.tsx` |
 | 命名模板 + 冲突策略 | `{name}` / `{date}` / `{index}` / `{ext}` 占位符；非法字符清理；冲突策略 `suffix`（默认，生成「文件名 (1).ext」）/ `skip`（不入队、不产生文件）/ `overwrite`（仅显式选择；旧文件先备份再落位，成功删备份、失败回滚，失败即报错不静默改名） | `src-tauri/src/jobs.rs`、`src/panels/shared.tsx` |
 | 完成后动作 | `open-folder` 走 Tauri opener（测试注入回调记录，不开窗）；`shutdown` **只构造命令**（Windows `shutdown /s /t 60`），且必须同时满足设置项与 `FORMATFORGE_ALLOW_SHUTDOWN=1` 才执行，测试绝不真关机 | `src-tauri/src/after.rs`、`src-tauri/src/lib.rs` |
-| 面板参数持久化 | 视频/音频/图片面板参数与命名策略写入 `localStorage`（`formatforge:panel:*`）；缺省合并、损坏回落、隐私模式静默降级 | `src/lib/panelPrefs.ts`、`src/panels/*.tsx` |
+| 面板参数持久化 | 视频/音频/图片面板参数与命名策略写入 `localStorage`（`transmutio:panel:*`）；缺省合并、损坏回落、隐私模式静默降级；旧前缀 `formatforge:*` 不读取、不迁移、不删除 | `src/lib/panelPrefs.ts`、`src/panels/*.tsx` |
 
 > 进度条：多步任务（合并/转码链）把每一步进度映射到总进度区间，避免回跳。
 
@@ -478,12 +478,12 @@ identifier（dark 反编译 `ShortcutProperty System.AppUserModel.ID`）、NSIS 
 
 | 位置 | 保留理由 |
 | --- | --- |
-| localStorage 前缀 `formatforge:`（`src/lib/settings.ts`） | 旧版设置键名；改名后继续读同一前缀，等价于迁移面板参数，清空会丢失用户设置 |
+| localStorage 前缀 `transmutio:`（`src/lib/storage.ts`） | 只读写 `transmutio:*`；旧版 `formatforge:*` 残留键不读取、不迁移、不删除 |
 | `FORMATFORGE_ALLOW_SHUTDOWN` / `FORMATFORGE_ALLOW_GUI_E2E` | 已有自动化脚本与既有文档在用；改变量名会静默失效（安全闸门失效比名字一致更危险） |
 | npm scope `@formatforge/*`（`packages/*`） | 工作区内部包名，不进安装包、不出现在用户可见处；改 scope 需全仓引用同步，无收益 |
 | Cargo package / crate / lib 名 `formatforge`、`formatforge_lib` | 编译期标识：改包名会牵动 `main.rs`、4 个 dev-tools bin、`build.rs`、验证脚本与增量缓存；用户不可见。**安装包内的可执行文件名已改**为 `Transmutio.exe` / `Transmutio GPL.exe`（`mainBinaryName`），`formatforge.exe` 现在只出现在 `cargo build` 的调试产物里 |
 | `FF_FLAVOR` 环境变量、`ff-` 临时文件前缀 | 构建期注入 / 文件系统临时名，用户不可见 |
-| 旧 identifier `app.formatforge.desktop*` | 迁移与旧版拦截的**唯一锚点**，删掉就无法找到旧数据/旧安装 |
+| 旧 identifier `app.formatforge.desktop*` | 旧版并存拦截的**唯一锚点**，删掉就无法检测旧安装 |
 | 旧 UpgradeCode `{68CDE348…}` / `{D0BEF367…}` | MSI `Upgrade(OnlyDetect)` 的检测目标 |
 | 历史文档与验证报告中的 FormatForge | 记录既有事实，不构成用户可见文案 |
 
@@ -491,28 +491,12 @@ identifier（dark 反编译 `ShortcutProperty System.AppUserModel.ID`）、NSIS 
 快捷方式、ARP、安装目录、更新通道）已全部为 Transmutio：由前端 build + headless UI 脚本
 （`setup-ui-check.mjs` / `panel-persist-check.mjs`）与 `check:bundle` 双向核对。
 
-## 4.9 数据迁移与旧版并存拦截
+## 4.9 旧版数据迁移（已移除）与旧版并存拦截
 
-### 迁移实现（`src-tauri/src/migration.rs`，启动期 `main.rs` 先于 WebView2 初始化调用）
-
-流程：新目录不存在且旧目录存在 → 同卷临时目录 `.transmutio-migrate-<stamp>` 复制
-（保留空目录、拒绝 symlink）→ 比对文件数/目录数/字节数/目录结构/逐文件 SHA-256 →
-原子 `rename` 落位 → 写 `migration.json` + `migration.log` + `migrated-from.txt`。
-失败路径（复制中途失败 / 校验不一致）只删临时目录，旧目录不动、新目录不留半套。
-两目录并存时**不合并**；设置页「从旧版导入数据」= 整份备份当前 appdata →
-合并旧 appdata → 旧 WebView2 复制到 `EBWebView.legacy-import` 暂存 → 下次启动原子换入
-（当前 `EBWebView` 备份为 `EBWebView.import-bak-<stamp>`）。
-
-单测（`cargo test` 37/37 中的 6 条，全部通过）：
-
-| 单测 | 断言要点 |
-| --- | --- |
-| `migrate_tree_copies_and_verifies_while_keeping_source` | 真实写入 `settings.json`（主题/并发）+ tools 文件 + 空目录 → 迁移 → 新目录读回、旧目录字节数不变。本产品无撤销历史（转换任务不提供 undo）；localStorage 设置/面板参数的等价覆盖见最后一条 |
-| `second_run_is_idempotent_and_keeps_source` | 再跑一次不覆盖、不重复迁移 |
-| `copy_failure_leaves_old_untouched_and_no_new_dir` | 注入复制失败 → 旧目录完整、新目录不存在 |
-| `verification_failure_cleans_temp_and_leaves_no_new_dir` | 注入字节/哈希不一致 → 清临时目录、不落新目录 |
-| `variants_use_scoped_legacy_paths` | LGPL/GPL 各自映射到对应旧 identifier 目录 |
-| `manual_import_backs_up_and_defers_webview_swap` | 手动导入先备份、WebView2 只暂存不就地改 |
+> 迁移功能已整体移除：`src-tauri/src/migration.rs` 删除，前端 `storage.ts` 不再读取/写入/删除
+> `formatforge:*` 键，设置页「从旧版导入数据」入口与顶部迁移提示一并删除。
+> 新版只使用自己的数据目录与 `transmutio:*` 键；旧版残留数据保留在磁盘上，由用户自行处理。
+> 旧版并存拦截（下方）仍然保留，与数据迁移无关。
 
 ### 旧版并存拦截（NSIS 实测 / MSI 静态核验）
 
@@ -762,11 +746,11 @@ identifier（dark 反编译 `ShortcutProperty System.AppUserModel.ID`）、NSIS 
 1. ~~「音频转 AAC」卡片名与能力不符~~：**已修**（§4.13）——与 audio-mp3 合并为单张「音频转码」，默认 AAC。
 2. **输出扩展名可见性**：已给音频「编码格式」加了 `输出 .m4a` 标签；此前 `.m4a` 只藏在 tooltip。
 3. ~~PDF 转图片灰显~~：**已修**（§4.13）——入口保持可点，面板内给安装说明 + 「重新检测」。
-4. ~~`formatforge:*` localStorage 前缀~~：**已修**（§4.13）——启动时一次性迁移到 `transmutio:*`。
+4. ~~`formatforge:*` localStorage 前缀~~：**已处理**——alpha12 起移除前缀迁移，只读写 `transmutio:*`，旧前缀不读取、不迁移、不删除。
 5. 水印、字幕、图片压缩、Office 互转、光盘/ISO、工具集仍是**真未实现**（入口置灰提示）；变速已在 §4.14 落地，
    EXIF 写入已在 §4.24 落地。
 
-> 第 1/3/4 项在下一轮（§4.13）已落地；`localStorage` 前缀双写仅为旧版回滚兼容，一个版本周期后删除。
+> 第 1/3 项在下一轮（§4.13）已落地；第 4 项的迁移方案后被整体移除（见 §4.9）。
 
 ### 本轮未验证（需真机可见窗口，交由用户确认）
 
@@ -784,20 +768,19 @@ identifier（dark 反编译 `ShortcutProperty System.AppUserModel.ID`）、NSIS 
 | 项 | 改动 | 关键文件 |
 | --- | --- | --- |
 | 音频入口合并 | 删除重复的 `audio-mp3` 卡片，保留 `audio-aac` 卡片并改名「音频转码」，描述「MP3 / AAC(m4a) / FLAC / WAV / OGG / Opus，默认 AAC」；面板逻辑不变（默认 AAC） | `src/catalog.ts`、`src/lib/presetPrefs.ts`、`src/components/MethodGrid.tsx` |
-| localStorage 前缀迁移 | 新增 `src/lib/storage.ts`：启动时（模块加载）一次性把 `formatforge:*` 搬到 `transmutio:*`。顺序为「读旧 → 写新 → 读回校验 → 校验通过才删旧」，任一键失败保留旧键；标记键 `transmutio:storage-migration:v1` 保证幂等；新旧键冲突时不覆盖新值 | `src/lib/storage.ts`（新）、`src/lib/settings.ts`、`panelPrefs.ts`、`presetPrefs.ts` |
-| 旧版回滚兼容 | 读取自动回退旧前缀；写入在**一个版本周期内**双写旧前缀（`MIRROR_LEGACY`，含 `TODO(v0.2)` 到期删除），因此旧版回滚仍能读到配置 | `src/lib/storage.ts` |
+| localStorage 前缀 | ~~迁移到 `transmutio:*`~~ 已整体移除（alpha12）：`src/lib/storage.ts` 只读写 `transmutio:*`，旧 `formatforge:*` 键不读取、不迁移、不删除，也不再有迁移标记与双写 | `src/lib/storage.ts`、`src/lib/settings.ts`、`panelPrefs.ts`、`presetPrefs.ts` |
 | pdftoppm 缺失 | 「PDF 转图片」不再置灰：入口可点、进入面板后显示「缺 pdftoppm（Poppler）/ 设置页『PDF 工具目录』填 `Library\bin` / `PDFTOPPM_PATH=...\pdftoppm.exe` / 查找顺序 PDFTOPPM_PATH → 设置目录 → `TRANSMUTIO_PDF_TOOLS` → PATH」，并提供「重新检测」（调用 `pdf_tools_status` 刷新，无需改 Rust 查找逻辑） | `src/App.tsx`、`src/panels/AdvancedPanels.tsx` |
 
-迁移语义细节：已有新键且与旧值相同 → 只删旧键；不一致 → 保留旧键并计入 `conflicts`，绝不用旧值覆盖新值；
-`localStorage` 不可用（隐私模式）时整体静默跳过，不影响启动。
+> 历史说明：§4.13 当时实现的「读旧 → 写新 → 删旧 + 双写」方案已在 alpha12 整体删除，
+> 现行行为见 §4.9 与 `src/lib/storage.ts` 注释。
 
 ### 断言结果（后台，无窗口）
 
 | 验证 | 结果 | 新增覆盖 |
 | --- | --- | --- |
 | `cargo test` | **63 / 63** | 无回归（本轮未改 Rust） |
-| `npm run verify:formats` | **10 / 10**（原 7 + 3） | 卡片合并与旧名残留、PDF 缺工具六条文案、迁移模块常量 |
-| `node scripts/panel-persist-check.mjs` | **11 / 11**（原 9 + 2） | 前缀迁移：只注入旧键 → 新键存在且 JSON 等价、旧键删除、标记存在；reload 不重复迁移 |
+| `npm run verify:formats` | **10 / 10**（原 7 + 3） | 卡片合并与旧名残留、PDF 缺工具六条文案、存储只使用 `transmutio:*` 前缀 |
+| `node scripts/panel-persist-check.mjs` | **13 / 13**（原 9 + 4） | 旧前缀不读取：注入 `formatforge:*` 后冷启动，旧键原值保留、不写迁移标记、面板取默认值、启动与面板加载对旧前缀零访问；reload 仍不读不删 |
 | `npm run verify:core` | **31 / 31** | 无回归 |
 | `verify:flavor:lgpl` / `:gpl` | 各 **7 / 7** | 无回归 |
 | `npm run verify:setup` | **12 / 12** | 无回归 |
@@ -1126,7 +1109,7 @@ identifier（dark 反编译 `ShortcutProperty System.AppUserModel.ID`）、NSIS 
 | P2 | 预设导入 / 导出 | 已实现 | 设置页 |
 | P2 | 自动重试 | 已实现 | 任务中心失败卡片 |
 | 加固 | 视频 6 容器 / 音频 6 格式 + 不兼容组合拒绝 | 已实现 | §4.12 |
-| 加固 | `transmutio:*` 存储迁移、旧版回滚兼容 | 已实现 | §4.13 |
+| 加固 | 只读写 `transmutio:*`；旧前缀不读取、不迁移、不删除 | 已实现（alpha12 移除迁移） | §4.9 |
 | 加固 | 双变体（LGPL/GPL）×（MSI/NSIS） | 已实现 | 每轮重出四包 |
 | 加固 | Git 私有仓库 + CI（frontend/backend/ui-headless） | 已实现 | `.github/workflows/ci.yml` |
 | 加固 | Release workflow（tag v*，声明不含 FFmpeg） | 已实现 | `release.yml` |

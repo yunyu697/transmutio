@@ -9,7 +9,6 @@ pub mod flavor;
 pub mod flavor_check;
 pub mod headless;
 mod jobs;
-pub mod migration;
 pub mod pdf;
 pub mod pdf_tools;
 pub mod preset;
@@ -281,50 +280,6 @@ fn flavor_info() -> serde_json::Value {
 }
 
 #[tauri::command]
-fn migration_notice(app: AppHandle) -> Option<serde_json::Value> {
-    let dir = app.path().app_data_dir().ok()?;
-    let text = std::fs::read_to_string(dir.join(migration::MIGRATION_MARKER)).ok()?;
-    let record: migration::MigrationRecord = serde_json::from_str(&text).ok()?;
-    if !record.migrated {
-        return None;
-    }
-    Some(serde_json::json!({
-        "migrated": record.migrated,
-        "detail": record.detail,
-        "at": record.at,
-        "sources": record.sources,
-    }))
-}
-
-#[tauri::command]
-fn legacy_import_info() -> serde_json::Value {
-    match migration::current_paths(flavor::Flavor::current()) {
-        Some(paths) => serde_json::json!({
-            "available": paths.available(),
-            "oldApp": paths.old_app.to_string_lossy(),
-            "oldLocal": paths.old_local.to_string_lossy(),
-            "pending": paths.new_app.join(migration::IMPORT_PENDING_MARKER).is_file(),
-        }),
-        None => serde_json::json!({
-            "available": false,
-            "oldApp": "",
-            "oldLocal": "",
-            "pending": false,
-        }),
-    }
-}
-
-#[tauri::command]
-async fn import_legacy_data() -> Result<migration::ImportSummary, String> {
-    let current = flavor::Flavor::current();
-    let paths =
-        migration::current_paths(current).ok_or_else(|| "当前平台不支持目录迁移".to_string())?;
-    tokio::task::spawn_blocking(move || migration::import_legacy_data(current, &paths))
-        .await
-        .map_err(|e| format!("导入失败：{e}"))?
-}
-
-#[tauri::command]
 fn save_diagnostics(app: AppHandle, text: String) -> Result<String, String> {
     let dir = app
         .path()
@@ -444,9 +399,6 @@ pub fn run() {
             default_output_dir,
             app_info,
             flavor_info,
-            migration_notice,
-            legacy_import_info,
-            import_legacy_data,
             save_diagnostics,
             setup::inspect_ffmpeg_file,
             setup::install_ffmpeg_files,

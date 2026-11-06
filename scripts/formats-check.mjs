@@ -86,14 +86,15 @@ check(
   missingPdfTokens.length ? `缺少 ${missingPdfTokens.join(", ")}` : "pdftoppm/Poppler/PDF 工具目录/PDFTOPPM_PATH/TRANSMUTIO_PDF_TOOLS/重新检测 均在面板中",
 );
 
-// 存储前缀迁移模块。
+// 存储前缀：只读写 transmutio:*，不再迁移旧版 formatforge:*。
 const storageModule = readFileSync(join(root, "src/lib/storage.ts"), "utf8");
 check(
-  "存储前缀迁移模块存在",
-  storageModule.includes('LEGACY_PREFIX = "formatforge:"') &&
-    storageModule.includes('STORAGE_PREFIX = "transmutio:"') &&
-    storageModule.includes("MIGRATION_KEY"),
-  "src/lib/storage.ts 定义 LEGACY_PREFIX / STORAGE_PREFIX / MIGRATION_KEY",
+  "存储只使用 transmutio:* 前缀",
+  storageModule.includes('STORAGE_PREFIX = "transmutio:"') &&
+    !storageModule.includes("LEGACY_PREFIX") &&
+    !storageModule.includes("MIGRATION_KEY") &&
+    !storageModule.includes("migrateStoragePrefixes"),
+  "src/lib/storage.ts 只定义 STORAGE_PREFIX = \"transmutio:\"，未包含旧前缀迁移逻辑",
 );
 
 // 变速：范围常量集中在 speed.ts，两个面板使用同一套预设与「保持音高」开关；

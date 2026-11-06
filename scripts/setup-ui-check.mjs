@@ -297,7 +297,7 @@ async function scenarioMissing(browser, origin, results) {
 
   const customUrl = "https://example.org/ffmpeg-lgpl-builds";
   await sourceInput.fill(customUrl);
-  const stored = await page.evaluate(() => globalThis.localStorage.getItem("formatforge:settings") || "");
+  const stored = await page.evaluate(() => globalThis.localStorage.getItem("transmutio:settings") || "");
   add("下载源修改后持久化", stored.includes(customUrl), `localStorage 已写入自定义地址=${stored.includes(customUrl)}`);
 
   await page.locator(".setup-steps > li:nth-child(1) .setup-row button").click();

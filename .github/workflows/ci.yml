@@ -65,7 +65,7 @@ jobs:
           name: core-e2e-linux-report
           path: samples/core-e2e-linux.json
 
-  # 无头 UI：面板持久化 + localStorage 前缀迁移（需要浏览器，不需要 FFmpeg）
+  # 无头 UI：面板持久化 + 旧前缀不读取（需要浏览器，不需要 FFmpeg）
   ui-headless:
     runs-on: windows-latest
     steps:
@@ -76,7 +76,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - name: 面板持久化 / 前缀迁移（headless，无可见窗口）
+      - name: 面板持久化 / 旧前缀不读取（headless，无可见窗口）
         run: node scripts/panel-persist-check.mjs
 
   # 依赖真实 FFmpeg / Poppler 的用例（verify:core / p2-check / flavor 真实转码）

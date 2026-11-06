@@ -15,12 +15,7 @@ fn main() {
         return;
     }
 
-    // 必须在 Tauri/WebView2 初始化之前迁移：%LOCALAPPDATA% 下的 WebView2 目录
-    // 在窗口创建后就会被占用，届时无法原子替换。
-    let flavor = formatforge_lib::flavor::Flavor::current();
-    if let Some(paths) = formatforge_lib::migration::current_paths(flavor) {
-        let _ = formatforge_lib::migration::run_prelaunch(&paths);
-    }
+    // 不再迁移旧版 FormatForge 数据：只使用当前应用自己的数据目录。
     formatforge_lib::run()
 }
 

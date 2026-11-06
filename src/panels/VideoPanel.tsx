@@ -147,15 +147,24 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
         : rawMode === ""
           ? { ...loaded, rateMode: "bitrate" }
           : loaded;
+    // 音轨侧同理会读回 `default`：后端按 128 kbps 编码，界面必须显示同一值，
+    // 否则会显示旧的 320 kbps 却实际编码 128 kbps。
+    const rawAudioMode = (loaded as { audioRateMode?: string }).audioRateMode;
+    const audioNormalized: VideoParams =
+      rawAudioMode === "default"
+        ? { ...normalized, audioRateMode: "bitrate", audioBitrateKbps: 128 }
+        : rawAudioMode === ""
+          ? { ...normalized, audioRateMode: "bitrate" }
+          : normalized;
     return {
-      ...normalized,
-      watermark: normalizeWatermark(normalized.watermark),
-      subtitle: normalizeSubtitle(normalized.subtitle),
+      ...audioNormalized,
+      watermark: normalizeWatermark(audioNormalized.watermark),
+      subtitle: normalizeSubtitle(audioNormalized.subtitle),
       // 兼容旧版本持久化数据（当时还没有 volume / split 字段）。
-      volume: normalized.volume ?? { enabled: false, gainDb: 0, mute: false },
-      split: normalized.split ?? {
+      volume: audioNormalized.volume ?? { enabled: false, gainDb: 0, mute: false },
+      split: audioNormalized.split ?? {
         mode: "copy",
-        container: normalized.container ?? "mp4",
+        container: audioNormalized.container ?? "mp4",
         segmentIndex: 0,
         startSec: 0,
         endSec: 30,

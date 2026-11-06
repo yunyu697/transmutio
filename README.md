@@ -53,11 +53,8 @@ GPU 能力矩阵与实测/文档/待验证标注见 [GPU-能力矩阵.md](GPU-�
 
 ### 本地数据与升级
 
-- 设置与面板参数现使用 `transmutio:*` 键；启动时会把旧的 `formatforge:*`（设置 + 全部面板参数）
-  一次性迁移过来：**写入新键 → 读回校验 → 通过后才删旧键**，任一键失败保留旧键；标记键
-  `transmutio:storage-migration:v1` 保证只迁移一次。
-- 为兼容旧版回滚，一个版本周期内写入会**双写**旧前缀（`TODO` 已标注到期删除）；读取优先新键，
-  新键缺失时回退旧键。
+- 设置与面板参数只使用 `transmutio:*` 键。旧版 `formatforge:*` 残留键**不读取、不迁移、也不删除**：
+  留着无影响，主动删除用户数据没有必要。
 - 「PDF 转图片」入口常驻可点：缺 `pdftoppm` 时进入面板会给出 Poppler 安装路径（设置页
   「PDF 工具目录」或 `PDFTOPPM_PATH`）与「重新检测」按钮，查找顺序仍是
   `PDFTOPPM_PATH → 设置目录 → TRANSMUTIO_PDF_TOOLS → PATH`。
@@ -223,18 +220,13 @@ npm run check:ffmpeg-license
 
 ## 从 FormatForge（旧版）升级
 
-**旧版不会原地升级。必须先卸载旧版，再安装 Transmutio；卸载时不要删除应用数据。**
+**旧版不会原地升级。必须先卸载旧版，再安装 Transmutio。**
 
 - 旧版 `FormatForge` 与新版 `Transmutio` 的 `identifier`、产品名、安装目录、卸载注册表项全部不同，
   Windows 视为两个产品；允许并存但不支持并存。安装器会检测旧版（显示名 + 旧 MSI UpgradeCode），
   命中时提示先卸载并中止安装，不会写入半套文件。
-- 正确顺序：卸载旧版（保留应用数据）→ 安装 Transmutio → 首次启动自动迁移
-  `%APPDATA%\app.formatforge.desktop*` 与 `%LOCALAPPDATA%\app.formatforge.desktop*`（含 WebView2
-  的设置/面板参数）。迁移采用「同卷临时目录 → 校验文件数与字节数 + SHA-256 → 原子 rename → 旧目录保留」；
-  失败只清临时目录，旧目录不动、新目录不留半套。
-- 若两版目录已经并存（或迁移被跳过），可在新版「设置 → 诊断与更新 → 从旧版导入数据」手动导入；
-  导入前会对当前数据整份备份，WebView2 设置在下一次启动生效。
-- 迁移完成后旧目录仍保留，可确认无误后手动删除。
+- 正确顺序：卸载旧版 → 安装 Transmutio。新版**不读取、不迁移旧版设置与数据**，
+  首次启动即为默认设置；旧版数据目录保留在磁盘上，可自行确认后手动删除。
 
 完整的变体矩阵与合规物说明见 [LICENSING.md](LICENSING.md)。
 
@@ -318,8 +310,8 @@ npm run check:bundle                                                    # 解包
 npm run samples    # 生成真实样本库（中文/emoji/长路径/只读/0字节/损坏/120s/4K）
 npm run verify     # 参数配方层 + 真实 ffmpeg 转换（无 GUI，报告 23 PASS / 1 SKIP）
 npm run verify:core # 真实任务核心 + 真实 ffmpeg + 真实文件系统（无窗口，报告 31/31）
-npm run verify:formats # 静态断言：容器 ≥4 / 音频 ≥5 / 不兼容组合 / 探测提示 / 卡片与迁移（10/10）
-node scripts/panel-persist-check.mjs # 面板参数持久化 + localStorage 前缀迁移（headless，11/11）
+npm run verify:formats # 静态断言：容器 ≥4 / 音频 ≥5 / 不兼容组合 / 探测提示 / 卡片与存储前缀（10/10）
+node scripts/panel-persist-check.mjs # 面板参数持久化 + 旧前缀零访问（headless，13/13）
 npm run verify:ui   # 引导页 UI 层：headless Edge + mock 后端（LGPL / nonfree / GPL 三场景，39/39）
 npm run verify:setup # 真实 LGPL ffmpeg 的 inspect → 落位 → 两变体判定 → 拒绝分支 → 闭环转码（12/12）
 npm run verify:flavor:lgpl # LGPL 变体：编译期策略、隔离、拒绝 GPL 编码器（7/7）

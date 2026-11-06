@@ -545,28 +545,6 @@ export interface FlavorInfo {
   debug: boolean;
 }
 
-export interface MigrationNotice {
-  migrated: boolean;
-  detail: string;
-  at: number;
-  sources: string[];
-}
-
-export interface LegacyImportInfo {
-  available: boolean;
-  oldApp: string;
-  oldLocal: string;
-  pending: boolean;
-}
-
-export interface ImportSummary {
-  files: number;
-  bytes: number;
-  backupApp: string;
-  backupWebview: string | null;
-  detail: string;
-}
-
 // ---------------------------------------------------------------- 更新器
 
 export interface UpdateMirror {
@@ -671,9 +649,6 @@ export interface UpdateProgress {
 
 export const api = {
   flavorInfo: () => invoke<FlavorInfo>("flavor_info"),
-  migrationNotice: () => invoke<MigrationNotice | null>("migration_notice"),
-  legacyImportInfo: () => invoke<LegacyImportInfo>("legacy_import_info"),
-  importLegacyData: () => invoke<ImportSummary>("import_legacy_data"),
   resolveTools: (customFfmpeg?: string) =>
     invoke<ToolsInfo>("resolve_tools", { customFfmpeg: customFfmpeg ?? null }),
   probeCapabilities: (customFfmpeg: string | undefined, allowGpl: boolean, force: boolean) =>

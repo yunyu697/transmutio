@@ -42,7 +42,6 @@ export default function App() {
   const [pdfTools, setPdfTools] = useState<PdfToolsInfo | null>(null);
   const [probing, setProbing] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [migrationNotice, setMigrationNotice] = useState<string | null>(null);
   const toastSeq = useRef(0);
 
   const taskQueue = useMemo(() => createTaskQueue(createTauriTransport()), []);
@@ -100,18 +99,6 @@ export default function App() {
     const uninstall = crashReporter.install();
     logger.info("app boot", { platform: navigator.platform, language: navigator.language });
     return uninstall;
-  }, []);
-
-  // 旧版数据已迁移的一次性提示：关闭后写入 localStorage，不再重复弹出。
-  useEffect(() => {
-    const key = "transmutio:migration-notice-dismissed";
-    if (localStorage.getItem(key) === "1") return;
-    void api
-      .migrationNotice()
-      .then((info) => {
-        if (info?.migrated) setMigrationNotice(info.detail);
-      })
-      .catch(() => {});
   }, []);
 
   const bootTools = useCallback(
@@ -296,21 +283,6 @@ export default function App() {
         }}
         onOpenSettings={() => setSettingsOpen(true)}
       />
-
-      {migrationNotice ? (
-        <div className="migration-banner" role="status">
-          <span>{migrationNotice}</span>
-          <button
-            className="btn small ghost"
-            onClick={() => {
-              localStorage.setItem("transmutio:migration-notice-dismissed", "1");
-              setMigrationNotice(null);
-            }}
-          >
-            知道了
-          </button>
-        </div>
-      ) : null}
 
       <div className="body">
         {needsSetup ? (

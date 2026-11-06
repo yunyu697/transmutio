@@ -8,8 +8,9 @@
 >   （`Transmutio.exe` / `Transmutio GPL.exe`，由 `mainBinaryName` 控制）全部切换为 Transmutio；
 >   MSI 新 UpgradeCode：LGPL `{5C1F7A2E-8D34-5B96-A1E7-C4D2F908B365}`、GPL `{B7E4D190-3C62-5A8F-9D2B-E6F1047C8A53}`。
 > - 数据迁移（`src-tauri/src/migration.rs`）：同卷临时目录 → 文件数/目录数/字节数/逐文件 SHA-256 校验 →
->   原子 rename → 写 `migration.json` / `migration.log`；失败只清临时目录；两目录并存不合并，另有设置页
->   「从旧版导入数据」手动入口（导入前整份备份）。`cargo test` 37/37（含迁移 6 条单测）。
+>   原子 rename → 写 `migration.json` / `migration.log`；失败只清临时目录；另有设置页手动入口。
+>   **该迁移功能已在 1.0.0-alpha12 整体移除**（`migration.rs` 删除、设置页入口删除、前端旧键不读不迁移），
+>   下文相关章节仅作历史记录；旧版并存拦截仍然保留。
 > - 旧版并存拦截：NSIS 走 `NSIS_HOOK_PREINSTALL`（ARP 显示名前缀 + 旧 UpgradeCode 打包键），
 >   MSI 走 `Upgrade(OnlyDetect)` + `LaunchCondition`；`npm run verify:legacy-guard` 6/6 PASS
 >   （NSIS 为真机注册表实测，MSI 为数据库级静态核验）。
@@ -158,7 +159,7 @@
 
 | 字符串 | 位置 | 保留理由 |
 | --- | --- | --- |
-| `formatforge:settings`、`formatforge:panel:*` | 前端 localStorage 键 | 迁移 WebView2 目录后，保留键名即可让设置/面板参数原样恢复；改键名等于强制重置 |
+| ~~`formatforge:settings`、`formatforge:panel:*`~~ | 前端 localStorage 键 | **已废弃（alpha12）**：只读写 `transmutio:*`；旧前缀残留键不读取、不迁移、不删除 |
 | `FORMATFORGE_ALLOW_SHUTDOWN` | 关机动作环境变量 | **实际决定**：本轮不改名、不加 `TRANSMUTIO_ALLOW_SHUTDOWN` 别名。它是安全闸门，改主名会让既有脚本静默失效（关机动作从「需要显式开启」变成「永远关闭」或误开），旧名保留最稳。用户可见处只在设置页用来说明「需设置该变量」，属于开关名而非品牌名 |
 | `FORMATFORGE_ALLOW_GUI_E2E`（若仍在使用） | 验证脚本 | 同上，内部开关 |
 | `@formatforge/task-queue`、`@formatforge/design-tokens`、`@formatforge/settings`、`@formatforge/i18n`、`@formatforge/updater` | monorepo 包名 | 内部依赖名，不进用户界面；机械改名可另开一轮，避免和品牌改名混在一起 |
