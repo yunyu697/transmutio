@@ -100,9 +100,10 @@ jobs:
           path: dist-release
           merge-multiple: true
       - name: 展平产物目录（artifact 保留了 lgpl/gpl 子目录）
+        # 只搬安装包：installer.generated.nsi 两个变体同名，留在子目录里不参与发布。
         run: |
           mkdir -p dist-flat
-          find dist-release -type f ! -name 'SHA256SUMS' -exec mv -t dist-flat {} +
+          find dist-release -type f \( -name '*.msi' -o -name '*.exe' -o -name '*.dmg' -o -name '*.deb' -o -name '*.AppImage' \) -exec mv -t dist-flat {} +
       - name: 合并三平台 SHA256SUMS（文件名按 GitHub 资产名归一）
         run: node scripts/release-checksums.mjs --flat dist-flat --normalize-names dist-release/SHA256SUMS
       - name: 确认本版本 Release 说明存在
