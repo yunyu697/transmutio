@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { formatDuration } from "@formatforge/design-tokens";
 import { api, type GifParams, type Job, type MergeParams, type MuxParams } from "../lib/api";
-import { DropZone, Field, FileTable, Group, OutputNaming, Segmented, SwitchRow, useMediaFiles } from "./shared";
+import { AudioBitrateField, DropZone, Field, FileTable, Group, OutputNaming, QualityTierField, Segmented, SwitchRow, useMediaFiles } from "./shared";
 import { loadPanelPrefs, savePanelPrefs } from "../lib/panelPrefs";
 import { Icon } from "../components/Icon";
 
@@ -202,16 +202,7 @@ export function MergePanel({ methodId, outputDir, ffmpegReady, onChangeOutputDir
                   </select>
                 </Field>
               </div>
-              <Field label={`质量 ${params.quality}（数值越小越清晰）`}>
-                <input
-                  className="slider"
-                  type="range"
-                  min={16}
-                  max={34}
-                  value={params.quality}
-                  onChange={(e) => set("quality", Number(e.target.value))}
-                />
-              </Field>
+              <QualityTierField crf={params.quality} onChange={(crf) => set("quality", crf)} />
               <Field label="音轨">
                 <Segmented
                   value={params.audioMode}
@@ -254,7 +245,7 @@ export function MergePanel({ methodId, outputDir, ffmpegReady, onChangeOutputDir
 export function MuxPanel({ methodId, outputDir, ffmpegReady, onChangeOutputDir, onEnqueued, toast, onBack }: CompositePanelProps) {
   const video = useMediaFiles("video");
   const audio = useMediaFiles("audio");
-  const defaults: MuxParams = { mode: "replace", audioMode: "aac", audioBitrateKbps: 192 };
+  const defaults: MuxParams = { mode: "replace", audioMode: "aac", audioBitrateKbps: 192, audioRateMode: "bitrate" };
   const [params, setParams] = useState<MuxParams>(() => loadPanelPrefs(`video-${methodId}`, defaults));
   const [naming, setNaming] = useNaming(methodId);
   const [starting, setStarting] = useState(false);
@@ -365,14 +356,18 @@ export function MuxPanel({ methodId, outputDir, ffmpegReady, onChangeOutputDir, 
               />
             </Field>
             {params.audioMode === "aac" ? (
-              <Field label="音频码率">
-                <select className="select" value={params.audioBitrateKbps} onChange={(e) => set("audioBitrateKbps", Number(e.target.value))}>
-                  <option value={96}>96 kbps</option>
-                  <option value={128}>128 kbps</option>
-                  <option value={192}>192 kbps</option>
-                  <option value={256}>256 kbps</option>
-                </select>
-              </Field>
+              <AudioBitrateField
+                mode={params.audioRateMode ?? "bitrate"}
+                kbps={params.audioBitrateKbps}
+                allowSource={false}
+                onChange={(mode, kbps) =>
+                  setParams((prev) => ({
+                    ...prev,
+                    audioRateMode: mode === "source" || mode === "" ? "bitrate" : mode,
+                    audioBitrateKbps: kbps,
+                  }))
+                }
+              />
             ) : (
               <div className="note">
                 原样复制要求编码能被 MP4 直接容纳（AAC/MP3/AC3/Opus 等）；PCM、FLAC 等会被明确拒绝并提示改用 AAC。

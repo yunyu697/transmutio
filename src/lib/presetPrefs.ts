@@ -9,15 +9,15 @@ const PREFIX = "panel:";
 const FIELDS: Record<string, string[]> = {
   video: [
     "container", "codec", "encoder", "rateMode", "quality", "bitrateKbps", "resolution", "fps", "crop",
-    "rotation", "audioMode", "audioBitrateKbps", "hwDecode", "faststart",
+    "rotation", "audioMode", "audioBitrateKbps", "audioRateMode", "hwDecode", "faststart",
   ],
-  audio: ["format", "bitrateKbps", "sampleRate", "channels", "normalize"],
+  audio: ["format", "bitrateKbps", "rateMode", "sampleRate", "channels", "normalize"],
   image: [
     "format", "quality", "maxEdge", "rotation", "autoOrient", "cropMode", "cropRatio",
     "cropX", "cropY", "cropW", "cropH",
   ],
   merge: ["mode", "resolution", "fps", "audioMode", "codec", "quality", "bitrateKbps"],
-  mux: ["mode", "audioMode", "audioBitrateKbps"],
+  mux: ["mode", "audioMode", "audioBitrateKbps", "audioRateMode"],
   gif: ["fps", "width", "startSec", "durationSec", "optimize"],
   seq: ["fps", "startNumber", "sizeMode", "width", "height", "encoder", "quality", "bitrateKbps"],
   frames: ["fps", "width", "format", "quality"],

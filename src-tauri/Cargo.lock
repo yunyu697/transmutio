@@ -1400,7 +1400,7 @@ dependencies = [
 
 [[package]]
 name = "formatforge"
-version = "1.0.0-alpha7"
+version = "1.0.0-alpha9"
 dependencies = [
  "base64 0.22.1",
  "fs2",

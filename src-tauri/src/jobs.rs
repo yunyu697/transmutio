@@ -3484,6 +3484,22 @@ async fn run_job(ctx: Ctx, id: String) {
                         p.watermark.wm_height = dims.wm_height;
                     }
                     p.subtitle.base_height = subtitle_base_height.unwrap_or(0);
+                    // 「保持原始」码率需要源文件的真实码率：只在选中该模式时探测一次。
+                    if args::wants_source_rate(&p.rate_mode)
+                        || args::wants_source_rate(&p.audio_rate_mode)
+                    {
+                        if let Some(bin) = tools_snapshot
+                            .as_ref()
+                            .and_then(|t| t.ffprobe.as_ref())
+                            .map(|p| p.path.as_str())
+                        {
+                            let info = probe::probe_media(bin, &job.input).await;
+                            p.source_video_kbps =
+                                info.video_bitrate.map(|b| (b / 1000) as u32).unwrap_or(0);
+                            p.source_audio_kbps =
+                                info.audio_bitrate.map(|b| (b / 1000) as u32).unwrap_or(0);
+                        }
+                    }
                     if let Err(message) = args::validate_subtitle_burn(&p.subtitle, subtitle_burn) {
                         remove_temp_file(&temp).await;
                         set_job(&ctx, &id, |job| {
@@ -3540,8 +3556,20 @@ async fn run_job(ctx: Ctx, id: String) {
                     }
                 }
                 "audio-mp3" | "audio-aac" => {
-                    let p: args::AudioParams =
+                    let mut p: args::AudioParams =
                         serde_json::from_value(job.params.clone()).unwrap_or_default();
+                    // 「保持原始」音频码率：探测源音轨码率（视频源取第一条音轨）。
+                    if args::wants_source_rate(&p.rate_mode) {
+                        if let Some(bin) = tools_snapshot
+                            .as_ref()
+                            .and_then(|t| t.ffprobe.as_ref())
+                            .map(|p| p.path.as_str())
+                        {
+                            let info = probe::probe_media(bin, &job.input).await;
+                            p.source_kbps =
+                                info.audio_bitrate.map(|b| (b / 1000) as u32).unwrap_or(0);
+                        }
+                    }
                     args::build_audio(encoder, &job.input, temp.to_string_lossy().as_ref(), &p)
                 }
                 _ => {

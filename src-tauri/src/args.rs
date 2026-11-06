@@ -9,11 +9,25 @@ pub struct VideoParams {
     pub codec: String,
     /// auto | software | <encoder id>
     pub encoder: String,
-    /// quality | bitrate
+    /// quality | bitrate | source | default（空 = bitrate，兼容旧预设）
+    /// - quality：恒定质量，用 `-crf` 等质量参数；
+    /// - bitrate：目标码率，传 `-b:v`；
+    /// - source：保持原始，用探测到的源码率作为 `-b:v`（体积接近源）；
+    /// - default：默认，不传任何码控参数，交给编码器内置默认。
     pub rate_mode: String,
     /// 18..30（越小越清晰）
     pub quality: u32,
     pub bitrate_kbps: u32,
+    /// 音频码控方式：bitrate | source | default（空 = bitrate）。
+    /// 「保持原始」用探测到的源音轨码率；「默认」不传 `-b:a`。
+    #[serde(default)]
+    pub audio_rate_mode: String,
+    /// 源视频码率（kbps），由后端探测回填，仅 `rate_mode=source` 使用。
+    #[serde(skip)]
+    pub source_video_kbps: u32,
+    /// 源音轨码率（kbps），由后端探测回填，仅 `audio_rate_mode=source` 使用。
+    #[serde(skip)]
+    pub source_audio_kbps: u32,
     /// source | 2160 | 1440 | 1080 | 720 | 480
     pub resolution: String,
     /// source | 30 | 60
@@ -102,6 +116,13 @@ pub struct AudioParams {
     /// mp3 | aac
     pub format: String,
     pub bitrate_kbps: u32,
+    /// bitrate | source | default（空 = bitrate，兼容旧预设）。
+    /// 「保持原始」用探测到的源码率；「默认」不传 `-b:a`（编码器内置默认）。
+    #[serde(default)]
+    pub rate_mode: String,
+    /// 源码率（kbps），由后端探测回填，仅 `rate_mode=source` 使用。
+    #[serde(skip)]
+    pub source_kbps: u32,
     /// source | 44100 | 48000
     pub sample_rate: String,
     /// source | mono | stereo
@@ -372,6 +393,9 @@ pub struct MuxParams {
     /// aac | copy
     pub audio_mode: String,
     pub audio_bitrate_kbps: u32,
+    /// bitrate | default（空 = bitrate）；换轨场景不提供「保持原始」。
+    #[serde(default)]
+    pub audio_rate_mode: String,
 }
 
 /// 视频转 GIF。`optimize` 走 palettegen/paletteuse 两阶段（单次进程内完成），
@@ -439,15 +463,43 @@ fn vt_quality(q: u32) -> u32 {
     (100i64 - (q as i64 - 14) * 4).clamp(30, 90) as u32
 }
 
+/// 码控方式归一化：兼容旧预设/旧持久化数据里可能出现的别名。
+/// 历史文案「与源相同」与内部取值 `same` / `original` / `copy` / `keep` 一律映射到
+/// `source`（现行界面文案「保持原始」），保证旧预设读回后语义不变。
+fn rate_mode_of(raw: &str) -> &str {
+    match raw {
+        "" => "bitrate",
+        "same" | "original" | "copy" | "keep" | "与源相同" => "source",
+        other => other,
+    }
+}
+
+/// 供 jobs 探测源码率前判断：显式写成 source（含旧别名）时返回 true。
+pub fn wants_source_rate(raw: &str) -> bool {
+    rate_mode_of(raw) == "source"
+}
+
 /// 不同编码器的码控参数差异很大，必须按厂商分别映射，不能统一塞 -crf。
 fn rate_args(encoder: &str, p: &VideoParams) -> Vec<String> {
     let quality = p.quality.clamp(14, 40);
-    let kbps = if p.bitrate_kbps > 0 {
+    let mode = rate_mode_of(&p.rate_mode);
+    // 「默认」：完全不传码控参数，由编码器按内置默认决定
+    // （x264 / x265 缺省 CRF 23，硬件编码器缺省码率由驱动决定）。
+    if mode == "default" {
+        return Vec::new();
+    }
+    // 「保持原始」：用探测到的源视频码率作为目标码率；探测不到时退回不传码控参数。
+    if mode == "source" && p.source_video_kbps == 0 {
+        return Vec::new();
+    }
+    let bitrate_mode = mode == "bitrate" || mode == "source";
+    let kbps = if mode == "source" {
+        p.source_video_kbps
+    } else if p.bitrate_kbps > 0 {
         p.bitrate_kbps
     } else {
         4200
     };
-    let bitrate_mode = p.rate_mode == "bitrate";
     let target_h = p.resolution.parse::<u32>().unwrap_or(1080);
     let hint = quality_bitrate_hint(target_h);
 
@@ -1809,7 +1861,11 @@ pub fn build_video(
                 args.push("-an".into());
             }
             _ => {
-                let kbps = if p.audio_bitrate_kbps > 0 {
+                let audio_rate = rate_mode_of(&p.audio_rate_mode);
+                // 保持原始：用探测到的源音轨码率；默认：不传 `-b:a`，由编码器决定。
+                let kbps = if audio_rate == "source" {
+                    p.source_audio_kbps
+                } else if p.audio_bitrate_kbps > 0 {
                     p.audio_bitrate_kbps
                 } else {
                     192
@@ -1827,8 +1883,16 @@ pub fn build_video(
                 }
                 args.push("-c:a".into());
                 args.push(audio.into());
-                args.push("-b:a".into());
-                args.push(format!("{kbps}k"));
+                let write_bitrate = match audio_rate {
+                    "default" => false,
+                    // 源码率探测不到时不传码率参数（等价编码器默认），不要硬编码一个假值。
+                    "source" => p.source_audio_kbps > 0,
+                    _ => true,
+                };
+                if write_bitrate {
+                    args.push("-b:a".into());
+                    args.push(format!("{kbps}k"));
+                }
             }
         }
     }
@@ -1874,7 +1938,10 @@ pub fn audio_encoder(p: &AudioParams) -> &'static str {
 }
 
 pub fn build_audio(encoder: &str, input: &str, output: &str, p: &AudioParams) -> Vec<String> {
-    let kbps = if p.bitrate_kbps > 0 {
+    let mode = rate_mode_of(&p.rate_mode);
+    let kbps = if mode == "source" {
+        p.source_kbps
+    } else if p.bitrate_kbps > 0 {
         p.bitrate_kbps
     } else {
         192
@@ -1898,7 +1965,13 @@ pub fn build_audio(encoder: &str, input: &str, output: &str, p: &AudioParams) ->
         encoder.into(),
     ];
     // FLAC / WAV 是无损格式，`-b:a` 对它们无意义（部分构建会直接报错）。
-    if lossy {
+    // 「默认」不传 `-b:a`；「保持原始」在源码率探测不到时同样不传（不硬编码假值）。
+    let write_bitrate = match mode {
+        "default" => false,
+        "source" => p.source_kbps > 0,
+        _ => true,
+    };
+    if lossy && write_bitrate {
         args.push("-b:a".into());
         args.push(format!("{kbps}k"));
     }
@@ -2466,8 +2539,11 @@ pub fn build_mux(
         };
         args.push("-c:a".into());
         args.push("aac".into());
-        args.push("-b:a".into());
-        args.push(format!("{kbps}k"));
+        // 「默认」不传 `-b:a`，由 AAC 编码器内置默认码率决定。
+        if rate_mode_of(&p.audio_rate_mode) != "default" {
+            args.push("-b:a".into());
+            args.push(format!("{kbps}k"));
+        }
     }
     if let Some(duration) = video_duration.filter(|d| *d > 0.0) {
         args.push("-t".into());
@@ -2665,6 +2741,9 @@ mod tests {
             subtitle: SubtitleParams::default(),
             volume: VolumeParams::default(),
             split: SplitParams::default(),
+            audio_rate_mode: "bitrate".into(),
+            source_video_kbps: 0,
+            source_audio_kbps: 0,
         }
     }
 
@@ -2675,6 +2754,67 @@ mod tests {
 
     fn count_flag(args: &[String], flag: &str) -> usize {
         args.iter().filter(|a| a.as_str() == flag).count()
+    }
+
+    #[test]
+    fn default_rate_mode_omits_all_rate_flags() {
+        let mut p = video_params();
+        p.rate_mode = "default".into();
+        p.audio_mode = "aac".into();
+        p.audio_rate_mode = "default".into();
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
+        assert!(args.iter().all(|a| a != "-crf" && a != "-b:v"), "默认模式不应传码控参数：{args:?}");
+        assert!(args.iter().all(|a| a != "-b:a"), "默认音频不应传 -b:a：{args:?}");
+    }
+
+    #[test]
+    fn keep_original_uses_probed_source_bitrate() {
+        let mut p = video_params();
+        p.rate_mode = "source".into();
+        p.source_video_kbps = 5000;
+        p.source_audio_kbps = 128;
+        p.audio_mode = "aac".into();
+        p.audio_rate_mode = "source".into();
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
+        let pos = args.iter().position(|a| a == "-b:v").expect("应传 -b:v");
+        assert_eq!(args[pos + 1], "5000k");
+        let apos = args.iter().position(|a| a == "-b:a").expect("应传 -b:a");
+        assert_eq!(args[apos + 1], "128k");
+    }
+
+    #[test]
+    fn keep_original_without_probe_falls_back_to_encoder_default() {
+        let mut p = video_params();
+        p.rate_mode = "source".into();
+        p.source_video_kbps = 0;
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
+        assert!(args.iter().all(|a| a != "-b:v" && a != "-crf"), "探测不到源码率时不应硬编码：{args:?}");
+    }
+
+    #[test]
+    fn legacy_same_alias_still_maps_to_keep_original() {
+        for legacy in ["same", "original", "copy", "keep", "与源相同"] {
+            let mut p = video_params();
+            p.rate_mode = legacy.into();
+            p.source_video_kbps = 4200;
+            let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
+            let pos = args.iter().position(|a| a == "-b:v").unwrap_or_else(|| panic!("{legacy} 未映射为保持原始"));
+            assert_eq!(args[pos + 1], "4200k", "{legacy}");
+        }
+    }
+
+    #[test]
+    fn audio_default_and_source_semantics_differ() {
+        let mut p = video_params();
+        p.audio_mode = "aac".into();
+        p.audio_rate_mode = "default".into();
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
+        assert!(args.iter().all(|a| a != "-b:a"), "默认音频不传码率");
+        p.audio_rate_mode = "source".into();
+        p.source_audio_kbps = 96;
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
+        let pos = args.iter().position(|a| a == "-b:a").expect("保持原始应传 -b:a");
+        assert_eq!(args[pos + 1], "96k");
     }
 
     #[test]
@@ -2815,6 +2955,7 @@ mod tests {
             speed: 1.5,
             keep_pitch: true,
             volume: VolumeParams::default(),
+            ..Default::default()
         };
         let args = build_audio("libmp3lame", "in.wav", "out.mp3", &p);
         assert_eq!(count_flag(&args, "-af"), 1);
@@ -2893,6 +3034,7 @@ mod tests {
             speed: 1.0,
             keep_pitch: true,
             volume: VolumeParams::default(),
+            ..Default::default()
         };
         let args = build_audio("libmp3lame", "in.wav", "out.mp3", &p);
         let pos = args.iter().position(|a| a == "-af").expect("应插入 -af");
@@ -3020,6 +3162,7 @@ mod tests {
             mode: "replace".into(),
             audio_mode: "aac".into(),
             audio_bitrate_kbps: 192,
+            ..Default::default()
         };
         let args = build_mux("v.mp4", "a.wav", "out.mp4", &replace, Some(3.0));
         let maps: Vec<&String> = args
@@ -4006,6 +4149,7 @@ mod tests {
                 gain_db: 6.0,
                 mute: false,
             },
+            ..Default::default()
         };
         let err = validate_audio_volume(&p).unwrap_err();
         assert!(err.contains("音量增益与响度归一化不能同时开启"), "{err}");
@@ -4029,6 +4173,7 @@ mod tests {
                 gain_db: 6.0,
                 mute: false,
             },
+            ..Default::default()
         };
         let args = build_audio("libmp3lame", "in.wav", "out.mp3", &p);
         assert_eq!(count_flag(&args, "-af"), 1);

@@ -1204,8 +1204,32 @@ pub async fn update_install(app: AppHandle) -> Result<InstallResult, String> {
     #[cfg(windows)]
     {
         use std::process::Command;
+        // MSI（wix）包与 NSIS 的重启能力不同：msiexec 静默安装后不会拉起应用。
+        // 这里如实告知「请手动打开」，不假装自动重启；NSIS 分支才走自动重启链路。
+        if path.extension().and_then(|e| e.to_str()) == Some("msi") {
+            let mut cmd = Command::new("msiexec");
+            // /i 安装；/qn 完全静默（无 UI）；/norestart 不触发系统重启。
+            cmd.arg("/i").arg(&path).arg("/qn").arg("/norestart");
+            cmd.spawn().map_err(|e| format!("启动 MSI 安装失败：{e}"))?;
+            let handle = app.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(900));
+                handle.exit(0);
+            });
+            return Ok(InstallResult {
+                launched: true,
+                method: "msi-silent".into(),
+                message: "MSI 安装器已启动，应用即将退出；安装完成后请手动打开 Transmutio".into(),
+            });
+        }
         let mut cmd = Command::new(&path);
-        cmd.arg("/S");
+        // NSIS 参数：
+        // - /S 完全静默安装（无界面、无交互）；
+        // - /R 安装成功后重启应用。Tauri 的 NSIS 模板只在 `$PassiveMode = 1` 或静默模式
+        //   （Silent）下解析 `/R`（见 installer.nsi 的 `.onInstSuccess`），用
+        //   `nsis_tauri_utils::RunAsUser` 以当前用户身份拉起新版本。只传 `/S` 时安装器
+        //   完成就退出、不重启——这正是「安装后没有自动重启」的根因。
+        cmd.arg("/S").arg("/R");
         cmd.spawn().map_err(|e| format!("启动安装器失败：{e}"))?;
         let handle = app.clone();
         std::thread::spawn(move || {

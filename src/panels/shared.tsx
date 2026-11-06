@@ -4,6 +4,16 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { formatBytes, formatDuration } from "@formatforge/design-tokens";
 import { api, type MediaInfo } from "../lib/api";
 import { Icon } from "../components/Icon";
+import {
+  AUDIO_BITRATE_TIERS,
+  CRF_MAX,
+  CRF_MIN,
+  CRF_TIERS,
+  VIDEO_BITRATE_TIERS,
+  tierForCrf,
+  tierForKbps,
+  type BitrateTier,
+} from "../lib/rateTiers";
 
 export type FileKind = "video" | "audio" | "image";
 
@@ -233,6 +243,196 @@ export function Segmented<T extends string>({
         </button>
       ))}
     </div>
+  );
+}
+
+/**
+ * 恒定质量档位控件：默认只显示「档位名 + 一句人话说明」，
+ * CRF 数字收进「高级」展开区。内部仍以 CRF 数值保存与传递。
+ */
+export function QualityTierField({
+  crf,
+  onChange,
+  label = "画质档位",
+}: {
+  crf: number;
+  onChange: (crf: number) => void;
+  label?: string;
+}) {
+  const tier = tierForCrf(crf);
+  return (
+    <>
+      <Field label={label}>
+        <select
+          className="select"
+          value={tier.id}
+          onChange={(event) => {
+            const next = CRF_TIERS.find((item) => item.id === event.target.value);
+            if (next) onChange(next.defaultCrf);
+          }}
+        >
+          {CRF_TIERS.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <div className="note">{tier.hint}</div>
+      <details className="advanced">
+        <summary>高级：手动微调 CRF</summary>
+        <div className="advanced-body">
+          <input
+            className="input"
+            type="number"
+            min={CRF_MIN}
+            max={CRF_MAX}
+            value={crf}
+            onChange={(event) => {
+              const next = Number(event.target.value);
+              if (Number.isFinite(next) && next > 0) {
+                onChange(Math.min(CRF_MAX, Math.max(CRF_MIN, Math.round(next))));
+              }
+            }}
+          />
+          <span className="note">
+            当前档位「{tier.name}」对应 CRF {tier.min}–{tier.max}；数值越小越清晰、体积越大。
+          </span>
+        </div>
+      </details>
+    </>
+  );
+}
+
+/** 目标码率档位：口语化标签，kbps 数字只在「高级」展开后出现。 */
+export function VideoBitrateField({
+  kbps,
+  onChange,
+}: {
+  kbps: number;
+  onChange: (kbps: number) => void;
+}) {
+  const tier = tierForKbps(VIDEO_BITRATE_TIERS, kbps);
+  return (
+    <>
+      <Field label="目标码率档位">
+        <select
+          className="select"
+          value={tier?.id ?? "custom"}
+          onChange={(event) => {
+            const next = VIDEO_BITRATE_TIERS.find((item) => item.id === event.target.value);
+            if (next) onChange(next.kbps);
+          }}
+        >
+          {VIDEO_BITRATE_TIERS.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name}
+            </option>
+          ))}
+          {tier ? null : <option value="custom">自定义（见高级）</option>}
+        </select>
+      </Field>
+      <details className="advanced">
+        <summary>高级：手动填写目标码率</summary>
+        <div className="advanced-body">
+          <input
+            className="input"
+            type="number"
+            min={300}
+            step={100}
+            value={kbps}
+            onChange={(event) => onChange(Math.max(300, Number(event.target.value) || 0))}
+          />
+          <span className="note">单位 kbps；当前目标 {kbps} kbps。</span>
+        </div>
+      </details>
+    </>
+  );
+}
+
+export type AudioRateMode = "default" | "source" | "bitrate" | "";
+
+const audioModeOf = (mode: AudioRateMode): AudioRateMode => (mode === "default" || mode === "source" ? mode : "bitrate");
+
+/**
+ * 音频码率控件：三种语义必须分开写清——
+ * 默认 = 不传 `-b:a`，由编码器内置默认决定，体积不保证接近源；
+ * 保持原始 = 用源音轨码率做目标，输出体积接近源；
+ * 固定档位 = 传选定 kbps。
+ */
+export function AudioBitrateField({
+  mode,
+  kbps,
+  onChange,
+  tiers = AUDIO_BITRATE_TIERS,
+  allowSource = true,
+}: {
+  mode: AudioRateMode;
+  kbps: number;
+  onChange: (mode: AudioRateMode, kbps: number) => void;
+  tiers?: BitrateTier[];
+  /** 换轨等场景源码率不属于同一路流，可关闭「保持原始」。 */
+  allowSource?: boolean;
+}) {
+  const current = allowSource ? audioModeOf(mode) : audioModeOf(mode) === "source" ? "bitrate" : audioModeOf(mode);
+  const tier = tierForKbps(tiers, kbps);
+  const value = current === "default" ? "default" : current === "source" ? "source" : (tier?.id ?? "custom");
+  const hint =
+    value === "default"
+      ? "默认：不指定码率，由音频编码器按内置默认质量决定，不保证与源体积相近。"
+      : value === "source"
+        ? "保持原始：沿用源文件的音频码率，输出体积接近源。"
+        : "固定档位：按所选档位编码，体积可预期。";
+  return (
+    <>
+      <Field label="音频码率">
+        <select
+          className="select"
+          value={value}
+          onChange={(event) => {
+            const next = event.target.value;
+            if (next === "default" || next === "source") {
+              onChange(next, kbps);
+              return;
+            }
+            const picked = tiers.find((item) => item.id === next);
+            if (picked) onChange("bitrate", picked.kbps);
+          }}
+        >
+          <option value="default">默认</option>
+          {allowSource ? <option value="source">保持原始</option> : null}
+          {tiers.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name}
+            </option>
+          ))}
+          {current === "bitrate" && !tier ? <option value="custom">自定义（见高级）</option> : null}
+        </select>
+      </Field>
+      <div className="note">{hint}</div>
+      <details className="advanced">
+        <summary>高级：手动填写音频码率</summary>
+        <div className="advanced-body">
+          <input
+            className="input"
+            type="number"
+            min={32}
+            step={8}
+            value={kbps}
+            disabled={current !== "bitrate"}
+            onChange={(event) => {
+              const next = Math.max(32, Number(event.target.value) || 0);
+              onChange("bitrate", next);
+            }}
+          />
+          <span className="note">
+            {current === "bitrate"
+              ? `单位 kbps；当前 ${kbps} kbps。`
+              : "当前不是固定码率模式，输入框不可编辑。"}
+          </span>
+        </div>
+      </details>
+    </>
   );
 }
 

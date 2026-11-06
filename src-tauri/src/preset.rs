@@ -113,12 +113,14 @@ fn validate_panel(panel: &Value, name: &str) -> Result<(), String> {
             "rotation",
             "audioMode",
             "audioBitrateKbps",
+            "audioRateMode",
             "hwDecode",
             "faststart",
         ],
         "audio" => &[
             "format",
             "bitrateKbps",
+            "rateMode",
             "sampleRate",
             "channels",
             "normalize",
@@ -145,7 +147,7 @@ fn validate_panel(panel: &Value, name: &str) -> Result<(), String> {
             "quality",
             "bitrateKbps",
         ],
-        "mux" => &["mode", "audioMode", "audioBitrateKbps"],
+        "mux" => &["mode", "audioMode", "audioBitrateKbps", "audioRateMode"],
         "gif" => &["fps", "width", "startSec", "durationSec", "optimize"],
         "seq" => &[
             "fps",

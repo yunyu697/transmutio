@@ -1323,3 +1323,33 @@ select {
   font-size: 10.5px;
   color: var(--ff-fg3);
 }
+
+/* 档位控件的「高级」折叠区：未展开时不出现裸 CRF / kbps 数字。 */
+.advanced {
+  border: 1px dashed var(--ff-line);
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin-top: 2px;
+}
+.advanced summary {
+  cursor: pointer;
+  font-size: 11.5px;
+  color: var(--ff-fg2);
+  user-select: none;
+}
+.advanced summary::marker {
+  color: var(--ff-fg3);
+}
+.advanced-body {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding-top: 8px;
+}
+.advanced-body .input {
+  width: 96px;
+}
+.advanced-body .note {
+  flex: 1;
+  margin: 0;
+}

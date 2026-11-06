@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { formatBytes, formatDuration } from "@formatforge/design-tokens";
 import { api, type AudioParams, type Capabilities, type Job } from "../lib/api";
-import { DropZone, Field, FileTable, Group, OutputNaming, Segmented, SwitchRow, useMediaFiles, type NamingPrefs } from "./shared";
+import { AudioBitrateField, DropZone, Field, FileTable, Group, OutputNaming, Segmented, SwitchRow, useMediaFiles, type NamingPrefs } from "./shared";
 import { loadPanelPrefs, savePanelPrefs } from "../lib/panelPrefs";
 import {
   AUDIO_FORMATS,
@@ -15,6 +15,7 @@ import { SPEED_MAX, SPEED_MIN, SPEED_PRESETS, SPEED_STEP, speedLabel } from "../
 const DEFAULT_PARAMS: AudioParams = {
   format: "mp3",
   bitrateKbps: 192,
+  rateMode: "bitrate",
   sampleRate: "source",
   channels: "source",
   normalize: false,
@@ -79,9 +80,18 @@ export function AudioPanel({
     const rawDuration = files.reduce((sum, file) => sum + (file.durationSec ?? 0), 0);
     if (!rawDuration || !lossy) return null;
     const duration = rawDuration / (params.speed || 1);
-    const bytes = (params.bitrateKbps * 1000 * duration) / 8;
+    // 「保持原始」按第一条文件的源音轨码率估算，「默认」按 AAC 内置默认 128 kbps 估算。
+    const first = files[0];
+    const sourceKbps = Math.round((first?.audioBitrate ?? 0) / 1000);
+    const kbps =
+      params.rateMode === "source" && sourceKbps > 0
+        ? sourceKbps
+        : params.rateMode === "default"
+          ? 128
+          : params.bitrateKbps;
+    const bytes = (kbps * 1000 * duration) / 8;
     return { bytes, duration };
-  }, [files, params.bitrateKbps, params.speed, lossy]);
+  }, [files, params.rateMode, params.bitrateKbps, params.speed, lossy]);
 
   const start = async () => {
     if (!files.length) {
@@ -182,19 +192,17 @@ export function AudioPanel({
               />
             </Field>
             {lossy ? (
-              <Field label="码率">
-                <select
-                  className="select"
-                  value={params.bitrateKbps}
-                  onChange={(event) => set("bitrateKbps", Number(event.target.value))}
-                >
-                  {[64, 96, 128, 160, 192, 256, 320].map((value) => (
-                    <option key={value} value={value}>
-                      {value} kbps
-                    </option>
-                  ))}
-                </select>
-              </Field>
+              <AudioBitrateField
+                mode={params.rateMode ?? "bitrate"}
+                kbps={params.bitrateKbps}
+                onChange={(mode, kbps) =>
+                  setParams((prev) => ({
+                    ...prev,
+                    rateMode: mode === "" ? "bitrate" : mode,
+                    bitrateKbps: kbps,
+                  }))
+                }
+              />
             ) : (
               <div className="note">{formatSpec.label} 为无损格式，不使用码率参数，输出大小由源决定。</div>
             )}

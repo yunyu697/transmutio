@@ -868,6 +868,10 @@ pub struct MediaInfo {
     pub audio_codec: Option<String>,
     pub pix_fmt: Option<String>,
     pub bitrate: Option<u64>,
+    /// 首条视频流码率（bps，ffprobe stream.bit_rate；部分容器缺失）
+    pub video_bitrate: Option<u64>,
+    /// 首条音频流码率（bps，ffprobe stream.bit_rate；部分容器缺失）
+    pub audio_bitrate: Option<u64>,
     pub fps: Option<f64>,
     pub sample_rate: Option<u32>,
     pub channels: Option<u32>,
@@ -970,6 +974,12 @@ pub async fn probe_media(ffprobe: &str, path: &str) -> MediaInfo {
                     continue;
                 }
                 has_video = true;
+                if info.video_bitrate.is_none() {
+                    info.video_bitrate = stream
+                        .get("bit_rate")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| s.parse::<u64>().ok());
+                }
                 if info.video_codec.is_none() {
                     info.video_codec = stream
                         .get("codec_name")
@@ -1007,6 +1017,12 @@ pub async fn probe_media(ffprobe: &str, path: &str) -> MediaInfo {
             }
             "audio" => {
                 has_audio = true;
+                if info.audio_bitrate.is_none() {
+                    info.audio_bitrate = stream
+                        .get("bit_rate")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| s.parse::<u64>().ok());
+                }
                 if info.audio_codec.is_none() {
                     info.audio_codec = stream
                         .get("codec_name")
@@ -1023,6 +1039,14 @@ pub async fn probe_media(ffprobe: &str, path: &str) -> MediaInfo {
                 }
             }
             _ => {}
+        }
+    }
+
+    // 部分容器（如 WebM / TS）不给流级 bit_rate，用「总码率 - 音频码率」估算视频码率，
+    // 用于「保持原始」码率；估算不到就保持 None，由编码端退回不传码率参数。
+    if info.video_bitrate.is_none() {
+        if let (Some(total), Some(audio)) = (info.bitrate, info.audio_bitrate) {
+            info.video_bitrate = total.checked_sub(audio);
         }
     }
 

@@ -866,6 +866,7 @@ fn volume_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report)
                 gain_db: gain,
                 mute: false,
             },
+            ..Default::default()
         };
         let argv = args::build_audio(
             "pcm_s16le",
@@ -2299,6 +2300,7 @@ fn speed_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report) 
             subtitle: args::SubtitleParams::default(),
             volume: args::VolumeParams::default(),
             split: args::SplitParams::default(),
+            ..Default::default()
         };
         let argv = match args::build_video(
             "libopenh264",
@@ -2548,6 +2550,7 @@ fn watermark_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Repo
         subtitle: args::SubtitleParams::default(),
         volume: args::VolumeParams::default(),
         split: args::SplitParams::default(),
+        ..Default::default()
     };
     for container in ["mp4", "mkv"] {
         let label = format!("{name}-video-{container}");
@@ -2853,6 +2856,7 @@ fn subtitle_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Repor
         subtitle,
         volume: args::VolumeParams::default(),
         split: args::SplitParams::default(),
+        ..Default::default()
     };
 
     // mp4 内嵌：必须转码 mov_text，language 与 default disposition 写入容器。
