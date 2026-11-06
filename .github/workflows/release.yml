@@ -114,7 +114,6 @@ jobs:
             dist-release/*.exe
             dist-release/*.dmg
             dist-release/*.deb
-            dist-release/*.rpm
             dist-release/*.AppImage
             dist-release/SHA256SUMS
           fail_on_unmatched_files: true

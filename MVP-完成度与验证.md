@@ -1249,7 +1249,8 @@ identifier（dark 反编译 `ShortcutProperty System.AppUserModel.ID`）、NSIS 
 - `build` 矩阵：`windows-latest` / `macos-latest` / `ubuntu-22.04`；每平台构建 LGPL + GPL 两个变体，
   Linux 预装 `webkit2gtk-4.1 / appindicator / rsvg / patchelf / libfuse2`。
 - 每平台构建后再用产物 `--version` 与 tag 复核（Windows exe / macOS、Linux 可执行文件各读一次）。
-- 附件：MSI、NSIS setup、DMG、deb、rpm、AppImage，外加上传 artifact 时各自生成的 `SHA256SUMS`。
+- 附件：MSI、NSIS setup、DMG、deb、AppImage，外加上传 artifact 时各自生成的 `SHA256SUMS`。
+  Linux 不产出 rpm：RPM 版本号不接受 semver 的 `-alphaN`，与 Tauri「配置版本必须是 semver」冲突，属已知取舍。
 - `release` 作业：下载三平台 artifact（`merge-multiple`）→ `release-checksums.mjs --flat --normalize-names`
   合并为一份 `SHA256SUMS`（文件名按 GitHub 资产名，空格→点）→ `softprops/action-gh-release` 创建/更新 Release。
   `prerelease` 由 tag 是否含 `-alpha` 决定，`body_path` 读取仓库内 `release-notes/<tag>.md`。

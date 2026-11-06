@@ -119,17 +119,18 @@ rmSync(bundleDir, { recursive: true, force: true });
 const tauriArgs = ["run", "tauri", "--", "build", ...featureArgs];
 /** 传给 Tauri CLI 的配置 overlay（可合并成一份）。 */
 let configPaths = flavor === "gpl" ? [overlayPath] : [];
-// Debian / RPM 的版本号不允许 '-'；alpha 预发布改为 '~alphaN'（Debian 语义里 `~` 排在同版本正式版之前）。
-// 仅影响 Linux 安装包的打包元数据；产物 `--version` 仍取 Cargo 的 1.0.0-alphaN，与 tag 一致。
 const pkgVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
+// Debian / RPM 对版本号字符集的限制互相冲突（RPM 只接受 alnum/._+~^%，不接受 `-alpha2`；
+// 而 Tauri 又要求配置里的 version 必须是 semver）。因此 Linux 只产出 deb + AppImage，
+// 跳过 rpm；版本号本身保持不变，产物 `--version` 与 tag 仍严格一致。
 if (process.platform === "linux" && /-alpha\d+$/.test(pkgVersion)) {
   const merged = flavor === "gpl" ? JSON.parse(readFileSync(join(root, overlayPath), "utf8")) : {};
-  merged.version = pkgVersion.replace(/-alpha(\d+)$/, "~alpha$1");
+  merged.targets = ["deb", "appimage"];
   const linuxConfig = join(root, "samples", "linux-bundle-version.json");
   mkdirSync(join(root, "samples"), { recursive: true });
   writeFileSync(linuxConfig, JSON.stringify(merged, null, 2), "utf8");
   configPaths = [linuxConfig];
-  console.log(`[build] Linux 打包版本使用 ${merged.version}（Debian/RPM 不允许 '-'）`);
+  console.log("[build] Linux 目标：deb + AppImage（跳过 rpm：其版本号不接受 semver 的 '-alpha'）");
 }
 for (const path of configPaths) tauriArgs.push("--config", path);
 const startedAt = Date.now();
