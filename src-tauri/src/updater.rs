@@ -57,7 +57,11 @@ pub fn mirrors() -> Vec<Mirror> {
         mirror("gh-proxy", "gh-proxy 加速", "https://gh-proxy.com/"),
         mirror("ghfast", "ghfast 加速", "https://ghfast.top/"),
         mirror("ghproxy-net", "ghproxy.net 加速", "https://ghproxy.net/"),
-        mirror("mirror-ghproxy", "mirror.ghproxy 加速", "https://mirror.ghproxy.com/"),
+        mirror(
+            "mirror-ghproxy",
+            "mirror.ghproxy 加速",
+            "https://mirror.ghproxy.com/",
+        ),
     ]
 }
 
@@ -282,9 +286,7 @@ fn arch_tag() -> &'static str {
 fn asset_has_flavor(name: &str, flavor: Flavor) -> bool {
     match flavor {
         Flavor::Lgpl => name.starts_with("Transmutio_"),
-        Flavor::Gpl => {
-            name.starts_with("Transmutio.GPL_") || name.starts_with("Transmutio GPL_")
-        }
+        Flavor::Gpl => name.starts_with("Transmutio.GPL_") || name.starts_with("Transmutio GPL_"),
     }
 }
 
@@ -319,7 +321,10 @@ fn asset_rank(name: &str) -> u8 {
 /// 三平台能力边界：返回 (install_mode, 文案)。
 pub fn install_mode() -> (&'static str, &'static str) {
     if cfg!(windows) {
-        ("install", "Windows：下载 → 校验 → 启动安装器 → 应用退出，安装完成自动重启")
+        (
+            "install",
+            "Windows：下载 → 校验 → 启动安装器 → 应用退出，安装完成自动重启",
+        )
     } else if cfg!(target_os = "macos") {
         (
             "download-only",
@@ -380,7 +385,9 @@ pub fn verify_signature_with(pubkey_b64: &str, path: &Path, sig_text: &str) -> R
                 }
                 verifier.update(&buf[..n]);
             }
-            verifier.finalize().map_err(|e| format!("签名校验失败：{e}"))
+            verifier
+                .finalize()
+                .map_err(|e| format!("签名校验失败：{e}"))
         }
         Err(minisign_verify::Error::UnsupportedLegacyMode) => {
             let bytes = std::fs::read(path).map_err(|e| format!("读取更新包失败：{e}"))?;
@@ -439,10 +446,7 @@ fn http_text(url: &str) -> Result<String, String> {
 
 // ---------------------------------------------------------------- 检查
 
-fn release_asset<'a>(
-    assets: &'a serde_json::Value,
-    name: &str,
-) -> Option<&'a serde_json::Value> {
+fn release_asset<'a>(assets: &'a serde_json::Value, name: &str) -> Option<&'a serde_json::Value> {
     assets
         .as_array()?
         .iter()
@@ -461,7 +465,10 @@ fn pick_candidate(
         if release.get("draft").and_then(|v| v.as_bool()) == Some(true) {
             continue;
         }
-        let tag = release.get("tag_name").and_then(|v| v.as_str()).unwrap_or("");
+        let tag = release
+            .get("tag_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         let version = tag.trim_start_matches('v');
         if parse_version(version).is_none() || !is_newer(version, current) {
             continue;
@@ -644,7 +651,11 @@ fn pending_path(app: &AppHandle) -> PathBuf {
     app.path()
         .app_data_dir()
         .map(|p| p.join("updates").join("pending.json"))
-        .unwrap_or_else(|_| std::env::temp_dir().join("transmutio-updates").join("pending.json"))
+        .unwrap_or_else(|_| {
+            std::env::temp_dir()
+                .join("transmutio-updates")
+                .join("pending.json")
+        })
 }
 
 fn read_pending(app: &AppHandle) -> Option<PendingUpdate> {
@@ -668,7 +679,13 @@ fn remove_pending(app: &AppHandle) {
 /// 启动清理：删除所有中断残留的临时文件；过期 pending（版本不高于当前）连同安装包一起清掉。
 pub fn startup_cleanup(app: &AppHandle) {
     let downloads = downloads_dir(app);
-    for dir in [downloads.clone(), pending_path(app).parent().map(|p| p.to_path_buf()).unwrap_or_else(|| downloads)] {
+    for dir in [
+        downloads.clone(),
+        pending_path(app)
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| downloads),
+    ] {
         let entries = match std::fs::read_dir(&dir) {
             Ok(v) => v,
             Err(_) => continue,
@@ -682,7 +699,10 @@ pub fn startup_cleanup(app: &AppHandle) {
     }
     if let Some(pending) = read_pending(app) {
         let stale = match parse_version(env!("CARGO_PKG_VERSION")) {
-            Some(cur) => !is_newer(&pending.version, env!("CARGO_PKG_VERSION")) && parse_version(&pending.version) <= Some(cur),
+            Some(cur) => {
+                !is_newer(&pending.version, env!("CARGO_PKG_VERSION"))
+                    && parse_version(&pending.version) <= Some(cur)
+            }
             None => false,
         };
         if stale {
@@ -751,7 +771,10 @@ fn fetch_once(
     }
     let append = status == 206 && existing > 0;
     let mut file = if append {
-        std::fs::OpenOptions::new().create(true).append(true).open(part)
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(part)
     } else {
         std::fs::OpenOptions::new()
             .create(true)
@@ -824,8 +847,7 @@ fn fetch_signature(mirror: &Mirror, signature_url: &str) -> Result<String, Strin
 fn fetch_sums(mirror: &Mirror, sums_url: &str, asset_name: &str) -> Result<String, String> {
     let url = format!("{}{}", mirror.prefix, sums_url);
     let text = http_text(&url).map_err(|e| format!("拉取 SHA256SUMS 失败：{e}"))?;
-    parse_sums(&text, asset_name)
-        .ok_or_else(|| format!("SHA256SUMS 中没有 {asset_name} 的条目"))
+    parse_sums(&text, asset_name).ok_or_else(|| format!("SHA256SUMS 中没有 {asset_name} 的条目"))
 }
 
 /// 下载请求（与 UI / 检查结果解耦，便于无窗口检查程序复用）。
@@ -878,9 +900,17 @@ where
         let started = Instant::now();
         let url = format!("{}{}", mirror.prefix, spec.asset_url);
         let result = (|| -> Result<(String, bool), String> {
-            download_file(mirror, index, total_sources, &url, &temp, spec.asset_size, |phase, i, t, received, total| {
-                progress(phase, i, t, received, total, &mirror.label);
-            })?;
+            download_file(
+                mirror,
+                index,
+                total_sources,
+                &url,
+                &temp,
+                spec.asset_size,
+                |phase, i, t, received, total| {
+                    progress(phase, i, t, received, total, &mirror.label);
+                },
+            )?;
             let sha = match &spec.asset_sha256 {
                 Some(v) if !v.trim().is_empty() => {
                     crate::download::verify_file(&temp, v, spec.asset_size)?.to_lowercase()
@@ -888,10 +918,10 @@ where
                 _ => {
                     let sums = match &spec.sums_url {
                         Some(u) => fetch_sums(mirror, u, &spec.asset_name)?,
-                        None => {
-                            return Err("该 Release 未提供 SHA-256（digest 与 SHA256SUMS 均缺失），已拒绝落盘"
-                                .into())
-                        }
+                        None => return Err(
+                            "该 Release 未提供 SHA-256（digest 与 SHA256SUMS 均缺失），已拒绝落盘"
+                                .into(),
+                        ),
                     };
                     crate::download::verify_file(&temp, &sums, spec.asset_size)?
                 }
@@ -1111,8 +1141,7 @@ pub async fn update_download(
             install_block_reason: install_block,
         })
     });
-    task.await
-        .map_err(|e| format!("下载任务失败：{e}"))?
+    task.await.map_err(|e| format!("下载任务失败：{e}"))?
 }
 
 #[tauri::command]
@@ -1150,8 +1179,7 @@ pub async fn update_install(app: AppHandle) -> Result<InstallResult, String> {
         use std::process::Command;
         let mut cmd = Command::new(&path);
         cmd.arg("/S");
-        cmd.spawn()
-            .map_err(|e| format!("启动安装器失败：{e}"))?;
+        cmd.spawn().map_err(|e| format!("启动安装器失败：{e}"))?;
         let handle = app.clone();
         std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(900));
@@ -1229,7 +1257,10 @@ mod tests {
         assert!(!is_newer("1.0.0-alpha5", "1.0.0"));
         assert!(is_newer("1.1.0", "1.0.9"));
         assert!(!is_newer("v1.0.0-alpha4", "1.0.0-alpha5"));
-        assert_eq!(parse_version("v1.0.0-alpha5").unwrap().3.as_deref(), Some("alpha5"));
+        assert_eq!(
+            parse_version("v1.0.0-alpha5").unwrap().3.as_deref(),
+            Some("alpha5")
+        );
     }
 
     #[test]
@@ -1244,9 +1275,18 @@ mod tests {
 
     #[test]
     fn assets_are_filtered_by_flavor_and_platform() {
-        assert!(asset_has_flavor("Transmutio_1.0.0-alpha4_x64-setup.exe", Flavor::Lgpl));
-        assert!(!asset_has_flavor("Transmutio.GPL_1.0.0-alpha4_x64-setup.exe", Flavor::Lgpl));
-        assert!(asset_has_flavor("Transmutio.GPL_1.0.0-alpha4_x64-setup.exe", Flavor::Gpl));
+        assert!(asset_has_flavor(
+            "Transmutio_1.0.0-alpha4_x64-setup.exe",
+            Flavor::Lgpl
+        ));
+        assert!(!asset_has_flavor(
+            "Transmutio.GPL_1.0.0-alpha4_x64-setup.exe",
+            Flavor::Lgpl
+        ));
+        assert!(asset_has_flavor(
+            "Transmutio.GPL_1.0.0-alpha4_x64-setup.exe",
+            Flavor::Gpl
+        ));
         assert!(asset_has_platform(if cfg!(windows) {
             "Transmutio_1.0.0-alpha4_x64-setup.exe"
         } else if cfg!(target_os = "macos") {
@@ -1259,7 +1299,10 @@ mod tests {
     #[test]
     fn sha256sums_parser_matches_asset_name() {
         let text = "aaa  Transmutio_1.0.0-alpha4_x64-setup.exe\nbbb  SHA256SUMS\n";
-        assert_eq!(parse_sums(text, "Transmutio_1.0.0-alpha4_x64-setup.exe").as_deref(), Some("aaa"));
+        assert_eq!(
+            parse_sums(text, "Transmutio_1.0.0-alpha4_x64-setup.exe").as_deref(),
+            Some("aaa")
+        );
         assert_eq!(parse_sums(text, "missing"), None);
     }
 

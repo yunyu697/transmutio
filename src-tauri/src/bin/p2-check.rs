@@ -1365,7 +1365,10 @@ fn avif_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report) {
     if dims.width != 640 || dims.height != 480 {
         return report.fail(
             name,
-            format!("解码尺寸不一致：{}x{}（期望 640x480）", dims.width, dims.height),
+            format!(
+                "解码尺寸不一致：{}x{}（期望 640x480）",
+                dims.width, dims.height
+            ),
         );
     }
     let data = std::fs::read(&out).unwrap_or_default();

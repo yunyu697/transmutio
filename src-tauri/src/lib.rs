@@ -1,8 +1,8 @@
 pub mod after;
 pub mod args;
+pub mod avif;
 pub mod compress;
 pub mod containers;
-pub mod avif;
 pub mod download;
 pub mod exif_write;
 pub mod flavor;

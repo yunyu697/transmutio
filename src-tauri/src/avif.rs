@@ -106,7 +106,11 @@ pub fn encode_one(
     let encoded = Encoder::new()
         .with_quality(params.quality as f32)
         .with_speed(params.speed)
-        .encode_rgba(ravif::Img::new(&pixels[..], width as usize, height as usize))
+        .encode_rgba(ravif::Img::new(
+            &pixels[..],
+            width as usize,
+            height as usize,
+        ))
         .map_err(|e| format!("AVIF 编码失败：{e}"))?;
     if !looks_like_avif(&encoded.avif_file) {
         return Err("编码产物不是合法 AVIF 容器（缺少 ftyp/avif 签名）".into());
@@ -118,7 +122,9 @@ pub fn encode_one(
     let out = unique_output(dir, &stem);
     let tmp = dir.join(format!(
         ".avif-tmp-{}.part",
-        out.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
+        out.file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default()
     ));
     std::fs::write(&tmp, &encoded.avif_file).map_err(|e| format!("写临时文件失败：{e}"))?;
     if out.exists() {
@@ -133,7 +139,11 @@ pub fn encode_one(
     Ok((out, width, height, bytes))
 }
 
-pub fn encode_batch(files: &[String], params: &AvifParams, output_dir: Option<&Path>) -> Vec<AvifResult> {
+pub fn encode_batch(
+    files: &[String],
+    params: &AvifParams,
+    output_dir: Option<&Path>,
+) -> Vec<AvifResult> {
     files
         .iter()
         .map(|src| {
@@ -248,7 +258,10 @@ mod tests {
         let dir = temp_dir("uniq");
         std::fs::write(dir.join("a.avif"), b"x").unwrap();
         assert_eq!(
-            unique_output(&dir, "a").file_name().unwrap().to_string_lossy(),
+            unique_output(&dir, "a")
+                .file_name()
+                .unwrap()
+                .to_string_lossy(),
             "a (1).avif"
         );
     }
@@ -256,6 +269,8 @@ mod tests {
     #[test]
     fn signature_check_rejects_non_avif() {
         assert!(!looks_like_avif(b"not an avif file at all"));
-        assert!(!looks_like_avif(&[0, 0, 0, 0, b'f', b't', b'y', b'p', 1, 2, 3, 4, 5, 6, 7, 8]));
+        assert!(!looks_like_avif(&[
+            0, 0, 0, 0, b'f', b't', b'y', b'p', 1, 2, 3, 4, 5, 6, 7, 8
+        ]));
     }
 }
