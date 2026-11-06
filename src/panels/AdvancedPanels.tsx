@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { formatBytes } from "@formatforge/design-tokens";
-import { api, type CollageParams, type FramesParams, type Job, type PdfToolsInfo, type SeqParams } from "../lib/api";
+import { api, type CollageParams, type ExifFields, type ExifWriteResult, type FramesParams, type Job, type PdfToolsInfo, type SeqParams } from "../lib/api";
 import { loadPanelPrefs, savePanelPrefs } from "../lib/panelPrefs";
 import { DropZone, Field, FileTable, Group, OutputNaming, Segmented, SwitchRow, useMediaFiles, type NamingPrefs } from "./shared";
 import { Icon } from "../components/Icon";
@@ -636,6 +636,163 @@ export function PdfPanel({
         <div style={{ fontSize: 10.5, color: "var(--ff-fg3)" }}>{paths.length ? `${paths.length} 个 PDF` : "添加文件后显示统计"}</div>
         <button className="btn primary" onClick={start} disabled={starting || !paths.length || Boolean(toolMissing)}>
           <Icon name="play" size={14} />{starting ? "正在入队…" : isMerge ? "开始合并" : isSplit ? "开始拆分" : "开始转换"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** EXIF 元数据写入（只写副本，源文件不动）。 */
+const DEFAULT_EXIF: ExifForm = {
+  description: "",
+  artist: "",
+  copyright: "",
+  software: "",
+  dateLocal: "",
+  make: "",
+  model: "",
+  lensModel: "",
+  orientation: "0",
+};
+
+type ExifForm = {
+  description: string;
+  artist: string;
+  copyright: string;
+  software: string;
+  dateLocal: string;
+  make: string;
+  model: string;
+  lensModel: string;
+  orientation: string;
+};
+
+/** datetime-local（2026-11-06T12:00）→ EXIF 固定格式（2026:11:06 12:00:00）。 */
+const toExifDate = (local: string): string | undefined => {
+  const m = local.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!m) return undefined;
+  return `${m[1]}:${m[2]}:${m[3]} ${m[4]}:${m[5]}:00`;
+};
+
+export function ExifPanel({ outputDir, onChangeOutputDir, toast, onBack }: CommonProps) {
+  const { files, busy, notice, pick, remove, clear } = useMediaFiles("image");
+  const [form, setForm] = useState<ExifForm>(() => loadPanelPrefs("exif:form", DEFAULT_EXIF));
+  const [running, setRunning] = useState(false);
+  const [results, setResults] = useState<ExifWriteResult[] | null>(null);
+  useEffect(() => savePanelPrefs("exif:form", form), [form]);
+  const set = <K extends keyof ExifForm>(key: K, value: ExifForm[K]) =>
+    setForm((prev) => ({ ...prev, [key]: value }));
+
+  const start = async () => {
+    if (!files.length) return toast("请先添加图片", "error");
+    const paths = files.filter((file) => !file.error).map((file) => file.path);
+    const fields: ExifFields = {
+      description: form.description.trim() || undefined,
+      artist: form.artist.trim() || undefined,
+      copyright: form.copyright.trim() || undefined,
+      software: form.software.trim() || undefined,
+      dateTimeOriginal: toExifDate(form.dateLocal),
+      make: form.make.trim() || undefined,
+      model: form.model.trim() || undefined,
+      lensModel: form.lensModel.trim() || undefined,
+      orientation: form.orientation === "0" ? undefined : Number(form.orientation),
+    };
+    setRunning(true);
+    setResults(null);
+    try {
+      const written = await api.writeExif(paths, fields, outputDir.trim() || undefined);
+      setResults(written);
+      const ok = written.filter((item) => item.ok).length;
+      toast(`写入完成：${ok}/${written.length} 成功`, ok === written.length ? "ok" : "error");
+    } catch (error) {
+      toast(`写入失败：${error instanceof Error ? error.message : String(error)}`, "error");
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const orientationOptions = [
+    { value: "0", label: "不写入" },
+    { value: "1", label: "1 正常" },
+    { value: "3", label: "3 180°" },
+    { value: "6", label: "6 顺时针 90°" },
+    { value: "8", label: "8 逆时针 90°" },
+  ];
+
+  return (
+    <div className="workbench">
+      <div className="wb-main">
+        <div className="wb-head">
+          <button className="btn small ghost" onClick={onBack}>← 方法列表</button>
+          <div><h1>EXIF 元数据写入</h1><p>只写副本 · 源文件不动 · 写完回读校验</p></div>
+          <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
+            <Icon name="plus" size={14} />{busy ? "读取中…" : "添加图片"}
+          </button>
+        </div>
+        <DropZone kind="image" busy={busy} onPick={pick} />
+        {notice ? <div className="note warn" style={{ margin: "10px 20px 0" }}>{notice}</div> : null}
+        <FileTable files={files} onRemove={remove} onClear={clear} />
+        {results ? (
+          <div style={{ padding: "0 20px 16px" }}>
+            {results.map((item) => (
+              <div key={item.src} className={`note ${item.ok ? "" : "warn"}`} style={{ marginTop: 8 }}>
+                <b>{item.ok ? "OK" : "FAIL"}</b> · {item.src}
+                {item.output ? <div className="sub">→ {item.output}</div> : null}
+                {item.message ? <div className="sub">{item.message}</div> : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      <aside className="inspector">
+        <div className="inspector-head"><Icon name="info" size={15} /><b>元数据字段</b><span className="sub">空白字段不写入</span></div>
+        <div className="inspector-body">
+          <Group title="基本信息" icon="info">
+            <Field label="描述">
+              <input className="input" value={form.description} onChange={(event) => set("description", event.target.value)} placeholder="例如：现场照片" />
+            </Field>
+            <Field label="作者">
+              <input className="input" value={form.artist} onChange={(event) => set("artist", event.target.value)} placeholder="例如：Tyler" />
+            </Field>
+            <Field label="版权">
+              <input className="input" value={form.copyright} onChange={(event) => set("copyright", event.target.value)} placeholder="例如：© 2026 Transmutio" />
+            </Field>
+            <Field label="软件">
+              <input className="input" value={form.software} onChange={(event) => set("software", event.target.value)} placeholder="例如：Transmutio 1.0.0" />
+            </Field>
+            <Field label="拍摄时间">
+              <input className="input" type="datetime-local" value={form.dateLocal} onChange={(event) => set("dateLocal", event.target.value)} />
+            </Field>
+          </Group>
+          <Group title="相机与方向" icon="image">
+            <div className="row2">
+              <Field label="厂商">
+                <input className="input" value={form.make} onChange={(event) => set("make", event.target.value)} />
+              </Field>
+              <Field label="型号">
+                <input className="input" value={form.model} onChange={(event) => set("model", event.target.value)} />
+              </Field>
+            </div>
+            <Field label="镜头">
+              <input className="input" value={form.lensModel} onChange={(event) => set("lensModel", event.target.value)} />
+            </Field>
+            <Field label="方向（EXIF Orientation）">
+              <Segmented value={form.orientation} onChange={(value) => set("orientation", value)} options={orientationOptions} />
+            </Field>
+          </Group>
+          <Group title="写在哪里" icon="folder">
+            <div className="note">
+              输出目录留空 = 与源文件同目录，同名冲突自动加 (1)、(2)。源文件不会被修改；
+              失败时删除中间文件，绝不留下半套输出。支持 JPG / PNG / TIFF / WebP（仅无损或扩展格式）/ HEIC / AVIF / JXL。
+            </div>
+          </Group>
+        </div>
+      </aside>
+      <div className="bottombar">
+        <OutDirBar outputDir={outputDir} onChangeOutputDir={onChangeOutputDir} />
+        <div style={{ fontSize: 10.5, color: "var(--ff-fg3)" }}>{files.length} 张 · 只写副本</div>
+        <button className="btn primary" onClick={start} disabled={running || !files.length}>
+          <Icon name="play" size={14} />{running ? "正在写入…" : "写入 EXIF"}
         </button>
       </div>
     </div>

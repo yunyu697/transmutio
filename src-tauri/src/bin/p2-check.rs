@@ -4,7 +4,7 @@
 //! 运行：设置 FFMPEG_PATH / FFPROBE_PATH（可选 PDFTOPPM_PATH），
 //! `cargo run --features dev-tools --bin p2-check`。
 
-use formatforge_lib::{args, compress, containers, pdf, pdf_tools, preset};
+use formatforge_lib::{args, compress, containers, exif_write, pdf, pdf_tools, preset};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -1242,6 +1242,100 @@ fn gif_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report) {
     }
 }
 
+/// 真实 JPEG：写 EXIF 副本后回读标签 + 像素尺寸不变 + 源文件字节不变。
+fn exif_matrix(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report) {
+    let name = "exif-write";
+    let src = dir.join("exif-src.jpg");
+    if let Err(e) = ffmpeg_color(ffmpeg, &src, "640x480", "0xCC6633") {
+        return report.fail(name, format!("生成真实 JPEG 失败：{e}"));
+    }
+    let src_bytes = match std::fs::read(&src) {
+        Ok(b) => b,
+        Err(e) => return report.fail(name, format!("读取源文件失败：{e}")),
+    };
+    let fields = exif_write::ExifFields {
+        description: Some("现场照片 · 合成样本".into()),
+        artist: Some("Transmutio".into()),
+        copyright: Some("© 2026 Transmutio".into()),
+        date_time_original: Some("2026:11:06 12:00:00".into()),
+        make: Some("Transmutio".into()),
+        model: Some("EXIF-check".into()),
+        lens_model: Some("none".into()),
+        orientation: Some(6),
+        software: Some("Transmutio 1.0.0".into()),
+    };
+    let out = match exif_write::output_path(&src, Some(dir)) {
+        Ok(p) => p,
+        Err(e) => return report.fail(name, format!("计算输出路径失败：{e}")),
+    };
+    if let Err(e) = exif_write::write_one(&src, &out, &fields) {
+        return report.fail(name, format!("写入失败：{e}"));
+    }
+    let snapshot = match exif_write::read_snapshot(&out) {
+        Ok(s) => s,
+        Err(e) => return report.fail(name, format!("回读失败：{e}")),
+    };
+    let mismatches: Vec<String> = [
+        (
+            "描述",
+            fields.description.clone(),
+            snapshot.description.clone(),
+        ),
+        ("作者", fields.artist.clone(), snapshot.artist.clone()),
+        ("版权", fields.copyright.clone(), snapshot.copyright.clone()),
+        (
+            "时间",
+            fields.date_time_original.clone(),
+            snapshot.date_time_original.clone(),
+        ),
+        ("厂商", fields.make.clone(), snapshot.make.clone()),
+        ("型号", fields.model.clone(), snapshot.model.clone()),
+        (
+            "镜头",
+            fields.lens_model.clone(),
+            snapshot.lens_model.clone(),
+        ),
+    ]
+    .into_iter()
+    .filter(|(_, expected, actual)| expected.as_deref() != actual.as_deref())
+    .map(|(label, expected, actual)| format!("{label} 期望 {expected:?} 实际 {actual:?}"))
+    .collect();
+    if !mismatches.is_empty() {
+        return report.fail(name, format!("回读不一致：{}", mismatches.join("；")));
+    }
+    if snapshot.orientation != Some(6) {
+        return report.fail(name, format!("方向回读不一致：{:?}", snapshot.orientation));
+    }
+    let dims = match (probe(ffprobe, &src), probe(ffprobe, &out)) {
+        (Ok(a), Ok(b)) => (a, b),
+        (Err(e), _) | (_, Err(e)) => return report.fail(name, format!("ffprobe 失败：{e}")),
+    };
+    if dims.1.width != dims.0.width || dims.1.height != dims.0.height {
+        return report.fail(
+            name,
+            format!(
+                "像素尺寸变了：{}x{} → {}x{}",
+                dims.0.width, dims.0.height, dims.1.width, dims.1.height
+            ),
+        );
+    }
+    let src_after = std::fs::read(&src).unwrap_or_default();
+    if src_after != src_bytes {
+        return report.fail(name, "源文件字节被修改（应为只写副本）".into());
+    }
+    let out_len = std::fs::metadata(&out).map(|m| m.len()).unwrap_or(0);
+    report.pass(
+        name,
+        format!(
+            "{}x{} 不变；源 {} 字节未改动；输出 {} 字节；回读 8 个标签一致（含方向 6）",
+            dims.1.width,
+            dims.1.height,
+            src_bytes.len(),
+            out_len
+        ),
+    );
+}
+
 fn main() {
     if let Err(message) = run_all() {
         eprintln!("P2 CHECK FAILED: {message}");
@@ -1274,21 +1368,63 @@ fn run_all() -> Result<(), String> {
     };
     println!("输出目录：{}", dir.display());
 
-    image_sequence_to_video(&ffmpeg, &ffprobe, &dir, &mut report);
-    video_to_frames(&ffmpeg, &ffprobe, &dir, &mut report);
-    image_crop(&ffmpeg, &ffprobe, &dir, &mut report);
-    image_collage(&ffmpeg, &ffprobe, &dir, &mut report);
-    pdf_merge_and_split(&dir, &mut report);
-    pdf_to_image(&dir, &ffprobe, &mut report);
-    format_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
-    speed_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
-    watermark_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
-    compress_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
-    subtitle_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
-    volume_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
-    split_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
-    gif_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
-    preset_roundtrip(&dir, &mut report);
+    // P2_ONLY=exif 只跑指定项（默认全跑），便于对单个功能取证据。
+    let only: Vec<String> = std::env::var("P2_ONLY")
+        .unwrap_or_default()
+        .split(',')
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty())
+        .collect();
+    let keep = |key: &str| only.is_empty() || only.iter().any(|f| f == key);
+
+    if keep("seq") {
+        image_sequence_to_video(&ffmpeg, &ffprobe, &dir, &mut report);
+    }
+    if keep("frames") {
+        video_to_frames(&ffmpeg, &ffprobe, &dir, &mut report);
+    }
+    if keep("crop") {
+        image_crop(&ffmpeg, &ffprobe, &dir, &mut report);
+    }
+    if keep("collage") {
+        image_collage(&ffmpeg, &ffprobe, &dir, &mut report);
+    }
+    if keep("pdf") {
+        pdf_merge_and_split(&dir, &mut report);
+    }
+    if keep("pdfimg") {
+        pdf_to_image(&dir, &ffprobe, &mut report);
+    }
+    if keep("format") {
+        format_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
+    }
+    if keep("speed") {
+        speed_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
+    }
+    if keep("wm") {
+        watermark_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
+    }
+    if keep("compress") {
+        compress_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
+    }
+    if keep("exif") {
+        exif_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
+    }
+    if keep("subtitle") {
+        subtitle_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
+    }
+    if keep("volume") {
+        volume_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
+    }
+    if keep("split") {
+        split_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
+    }
+    if keep("gif") {
+        gif_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
+    }
+    if keep("preset") {
+        preset_roundtrip(&dir, &mut report);
+    }
 
     report.write();
     if report.failed > 0 {

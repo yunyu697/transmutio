@@ -442,6 +442,25 @@ export interface ToolsManualEntry {
   reason: string;
 }
 
+export interface ExifFields {
+  description?: string;
+  artist?: string;
+  copyright?: string;
+  software?: string;
+  dateTimeOriginal?: string;
+  make?: string;
+  model?: string;
+  lensModel?: string;
+  orientation?: number;
+}
+
+export interface ExifWriteResult {
+  src: string;
+  output?: string | null;
+  ok: boolean;
+  message?: string | null;
+}
+
 export interface ToolsPlan {
   platform: string;
   arch: string;
@@ -570,4 +589,6 @@ export const api = {
   downloadTool: (packageId: string, sourceId?: string) =>
     invoke<LandedTool>("download_tool", { packageId, sourceId: sourceId ?? null }),
   cancelToolDownload: () => invoke<void>("cancel_tool_download"),
+  writeExif: (files: string[], fields: ExifFields, outputDir?: string) =>
+    invoke<ExifWriteResult[]>("write_exif", { files, fields, outputDir: outputDir ?? null }),
 };

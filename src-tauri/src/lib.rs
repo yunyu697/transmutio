@@ -3,6 +3,7 @@ pub mod args;
 pub mod compress;
 pub mod containers;
 pub mod download;
+pub mod exif_write;
 pub mod flavor;
 pub mod flavor_check;
 pub mod headless;
@@ -223,6 +224,20 @@ async fn open_job_log(app: AppHandle, id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn write_exif(
+    files: Vec<String>,
+    fields: exif_write::ExifFields,
+    output_dir: Option<String>,
+) -> Result<Vec<exif_write::ExifWriteResult>, String> {
+    tokio::task::spawn_blocking(move || {
+        let dir = output_dir.as_deref().map(std::path::Path::new);
+        exif_write::write_batch(&files, &fields, dir)
+    })
+    .await
+    .map_err(|e| format!("EXIF 写入任务失败：{e}"))
+}
+
+#[tauri::command]
 fn default_output_dir(app: AppHandle) -> String {
     app.path()
         .download_dir()
@@ -405,6 +420,7 @@ pub fn run() {
             open_folder,
             open_job_folder,
             open_job_log,
+            write_exif,
             default_output_dir,
             app_info,
             flavor_info,

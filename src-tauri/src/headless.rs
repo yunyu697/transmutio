@@ -1888,9 +1888,14 @@ pub async fn run_checks(report_path: &str) -> i32 {
 
         // 11) 关机：只做命令构造断言，绝不执行
         let shutdown = crate::after::shutdown_command(60);
-        let built = shutdown.program == "shutdown"
-            && shutdown.args.iter().any(|a| a == "/s")
-            && shutdown.args.iter().any(|a| a == "60");
+        // Windows 走 `shutdown /s /t 60`；Linux 走 `shutdown -h +1`（分秒语义不同，断言按平台分开）。
+        let built = if cfg!(windows) {
+            shutdown.program == "shutdown"
+                && shutdown.args.iter().any(|a| a == "/s")
+                && shutdown.args.iter().any(|a| a == "60")
+        } else {
+            shutdown.program == "shutdown" && shutdown.args.iter().any(|a| a == "-h")
+        };
         if built && !crate::after::shutdown_enabled() {
             pass(
                 &mut results,
