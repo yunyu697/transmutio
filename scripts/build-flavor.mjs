@@ -117,7 +117,20 @@ rmSync(bundleDir, { recursive: true, force: true });
 
 // 2) 构建（前端由 beforeBuildCommand 负责）
 const tauriArgs = ["run", "tauri", "--", "build", ...featureArgs];
-if (flavor === "gpl") tauriArgs.push("--config", overlayPath);
+/** 传给 Tauri CLI 的配置 overlay（可合并成一份）。 */
+let configPaths = flavor === "gpl" ? [overlayPath] : [];
+// Debian / RPM 的版本号不允许 '-'；alpha 预发布改为 '~alphaN'（Debian 语义里 `~` 排在同版本正式版之前）。
+// 仅影响 Linux 安装包的打包元数据；产物 `--version` 仍取 Cargo 的 1.0.0-alphaN，与 tag 一致。
+const pkgVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
+if (process.platform === "linux" && /-alpha\d+$/.test(pkgVersion)) {
+  const merged = flavor === "gpl" ? JSON.parse(readFileSync(join(root, overlayPath), "utf8")) : {};
+  merged.version = pkgVersion.replace(/-alpha(\d+)$/, "~alpha$1");
+  const linuxConfig = join(root, "samples", "linux-bundle-version.json");
+  writeFileSync(linuxConfig, JSON.stringify(merged, null, 2), "utf8");
+  configPaths = [linuxConfig];
+  console.log(`[build] Linux 打包版本使用 ${merged.version}（Debian/RPM 不允许 '-'）`);
+}
+for (const path of configPaths) tauriArgs.push("--config", path);
 const startedAt = Date.now();
 const ok = run(npm, tauriArgs, `tauri build (${flavor})`);
 const seconds = Math.round((Date.now() - startedAt) / 1000);

@@ -73,8 +73,8 @@ jobs:
             windows) BIN="src-tauri/target/release/Transmutio.exe"; GBIN="src-tauri/target/release/Transmutio GPL.exe" ;;
             *) BIN="src-tauri/target/release/Transmutio"; GBIN="src-tauri/target/release/Transmutio GPL" ;;
           esac
-          node scripts/check-version.mjs --tag "$GITHUB_REF_NAME" --binary "$BIN"
-          node scripts/check-version.mjs --tag "$GITHUB_REF_NAME" --binary "$GBIN"
+          node scripts/check-version.mjs --tag "$GITHUB_REF_NAME" --skip-alpha-sequence --binary "$BIN"
+          node scripts/check-version.mjs --tag "$GITHUB_REF_NAME" --skip-alpha-sequence --binary "$GBIN"
       - name: 生成 SHA256SUMS
         run: node scripts/release-checksums.mjs
       - name: 上传本平台产物

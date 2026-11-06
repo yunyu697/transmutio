@@ -31,6 +31,8 @@ function argOf(name) {
 }
 const tagArg = argOf("--tag") || (process.env.GITHUB_REF_NAME?.startsWith("v") ? process.env.GITHUB_REF_NAME : undefined);
 const binaryArg = argOf("--binary");
+// 构建作业里用：浅克隆拿不到历史 tag，序号单调性由独立的 guard 作业负责。
+const skipSequence = args.includes("--skip-alpha-sequence");
 
 const failures = [];
 const notes = [];
@@ -58,10 +60,10 @@ if (parsed.ok && parsed.isAlpha) {
   failures.push(`正式版不应固定 wix.version（当前 ${wixVersion}）`);
 }
 
-// 2/3) alpha 序号单调递增
+// 2/3) alpha 序号单调递增（guard 作业负责；构建作业可跳过）
 const tagList = spawnSync("git", ["tag", "--list"], { encoding: "utf8" });
 const tags = tagList.status === 0 ? tagList.stdout.split(/\r?\n/).filter(Boolean) : [];
-if (parsed.ok && parsed.isAlpha) {
+if (parsed.ok && parsed.isAlpha && !skipSequence) {
   const targetTag = tagArg || `v${parsed.value}`;
   const sequences = collectAlphaSequences(tags.filter((t) => t !== targetTag), parsed.base);
   const seqCheck = checkAlphaSequence(parsed, sequences);
