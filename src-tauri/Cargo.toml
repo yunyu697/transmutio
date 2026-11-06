@@ -1,7 +1,7 @@
 [package]
 name = "formatforge"
 default-run = "formatforge"
-version = "1.0.0-alpha10"
+version = "1.0.0-alpha11"
 description = "Transmutio · 跨平台多媒体转换"
 authors = ["Transmutio"]
 edition = "2021"

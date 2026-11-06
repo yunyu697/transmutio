@@ -138,15 +138,24 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
   // 面板参数持久化：重启后恢复上次选择（按方法隔离，避免不同方法互相污染默认值）。
   const [params, setParams] = useState<VideoParams>(() => {
     const loaded = loadPanelPrefs(`video:${methodId}`, initialParams(methodId));
+    // 兼容已删除的「默认」：视频侧映射到质量档 + CRF 23（旧默认就是 x264 缺省 CRF 23）；
+    // 空值按旧版语义落到目标码率。不能静默丢弃旧设置。
+    const rawMode = (loaded as { rateMode?: string }).rateMode;
+    const normalized: VideoParams =
+      rawMode === "default"
+        ? { ...loaded, rateMode: "quality", quality: 23 }
+        : rawMode === ""
+          ? { ...loaded, rateMode: "bitrate" }
+          : loaded;
     return {
-      ...loaded,
-      watermark: normalizeWatermark(loaded.watermark),
-      subtitle: normalizeSubtitle(loaded.subtitle),
+      ...normalized,
+      watermark: normalizeWatermark(normalized.watermark),
+      subtitle: normalizeSubtitle(normalized.subtitle),
       // 兼容旧版本持久化数据（当时还没有 volume / split 字段）。
-      volume: loaded.volume ?? { enabled: false, gainDb: 0, mute: false },
-      split: loaded.split ?? {
+      volume: normalized.volume ?? { enabled: false, gainDb: 0, mute: false },
+      split: normalized.split ?? {
         mode: "copy",
-        container: loaded.container ?? "mp4",
+        container: normalized.container ?? "mp4",
         segmentIndex: 0,
         startSec: 0,
         endSec: 30,
@@ -236,22 +245,20 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
     const duration = rawDuration / (params.speed || 1);
     const first = files[0];
     const sourceVideoKbps = Math.round((first?.videoBitrate ?? first?.bitrate ?? 0) / 1000);
-    // 「默认」按 x264 缺省 CRF 23 估算；「保持原始」优先用探测到的源视频码率。
+    // 「保持原始」优先用探测到的源视频码率，探测不到时按固定 4000 kbps 估算（与后端一致）。
     const videoKbps =
       params.rateMode === "bitrate"
         ? params.bitrateKbps
-        : params.rateMode === "source" && sourceVideoKbps > 0
-          ? sourceVideoKbps
-          : qualityHintKbps(params.resolution, params.rateMode === "default" ? 23 : params.quality);
+        : params.rateMode === "source"
+          ? (sourceVideoKbps > 0 ? sourceVideoKbps : 4000)
+          : qualityHintKbps(params.resolution, params.quality);
     const sourceAudioKbps = Math.round((first?.audioBitrate ?? 0) / 1000);
     const audioKbps =
       params.audioMode === "none"
         ? 0
-        : params.audioRateMode === "source" && sourceAudioKbps > 0
-          ? sourceAudioKbps
-          : params.audioRateMode === "default"
-            ? 128
-            : params.audioBitrateKbps;
+        : params.audioRateMode === "source"
+          ? (sourceAudioKbps > 0 ? sourceAudioKbps : 128)
+          : params.audioBitrateKbps;
     return { bytes: ((videoKbps + audioKbps) * 1000 * duration) / 8, duration };
   }, [files, params]);
 
@@ -480,19 +487,12 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
                 value={params.rateMode}
                 onChange={(value) => set("rateMode", value)}
                 options={[
-                  { value: "default", label: "默认" },
-                  { value: "quality", label: "恒定质量" },
-                  { value: "bitrate", label: "目标码率" },
+                  { value: "quality", label: "质量档位" },
+                  { value: "bitrate", label: "自定义码率" },
                   { value: "source", label: "保持原始" },
                 ]}
               />
             </Field>
-            {params.rateMode === "default" ? (
-              <div className="note">
-                默认：不传任何码率 / 质量参数，由编码器按内置默认决定（x264 / x265 默认 CRF 23）。
-                体积不保证与源相近，需要可控体积请选「恒定质量」或「保持原始」。
-              </div>
-            ) : null}
             {params.rateMode === "quality" ? (
               <QualityTierField crf={params.quality} onChange={(crf) => set("quality", crf)} />
             ) : null}
@@ -502,25 +502,25 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
             {params.rateMode === "source" ? (
               <div className="note">
                 保持原始：沿用源文件的视频码率作为目标，输出体积接近源。
-                新编码器无法逐字节复现原码率，实际码率会有偏差（以实测为准）。
+                读取不到源码率（ffprobe 失败）时按 4000 kbps 编码；新编码器无法逐字节复现原码率，实际码率会有偏差。
               </div>
             ) : null}
             <div className="row2">
               <Field label="分辨率">
                 <select className="select" value={params.resolution} onChange={(e) => set("resolution", e.target.value as VideoParams["resolution"])}>
                   <option value="source">保持原始</option>
-                  <option value="2160">4K（2160p）</option>
-                  <option value="1440">2K（1440p）</option>
-                  <option value="1080">全高清（1080p）</option>
-                  <option value="720">高清（720p）</option>
-                  <option value="480">标清（480p）</option>
+                  <option value="2160">2160p</option>
+                  <option value="1440">1440p</option>
+                  <option value="1080">1080p</option>
+                  <option value="720">720p</option>
+                  <option value="480">480p</option>
                 </select>
               </Field>
               <Field label="帧率">
                 <select className="select" value={params.fps} onChange={(e) => set("fps", e.target.value as VideoParams["fps"])}>
                   <option value="source">保持原始</option>
-                  <option value="30">标准（30 fps）</option>
-                  <option value="60">流畅（60 fps）</option>
+                  <option value="30">30 fps</option>
+                  <option value="60">60 fps</option>
                 </select>
               </Field>
             </div>

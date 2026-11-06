@@ -241,12 +241,12 @@ export interface VideoParams {
   container: string;
   codec: "h264" | "hevc" | "av1" | "vp9" | "vp8" | "mpeg4";
   encoder: string;
-  /** quality | bitrate | source（保持原始）| default（编码器默认） */
-  rateMode: "quality" | "bitrate" | "source" | "default";
+  /** quality（质量档位）| bitrate（自定义码率）| source（保持原始） */
+  rateMode: "quality" | "bitrate" | "source";
   quality: number;
   bitrateKbps: number;
-  /** 音频码控方式：bitrate | source（保持原始）| default */
-  audioRateMode?: "bitrate" | "source" | "default";
+  /** 音频码控方式：bitrate | source（保持原始） */
+  audioRateMode?: "bitrate" | "source";
   resolution: "source" | "2160" | "1440" | "1080" | "720" | "480";
   fps: "source" | "30" | "60";
   /** 居中裁剪画面比例 */
@@ -274,8 +274,8 @@ export interface AudioParams {
   /** mp3 | aac | flac | wav | ogg | opus */
   format: "mp3" | "aac" | "flac" | "wav" | "ogg" | "opus";
   bitrateKbps: number;
-  /** bitrate | source（保持原始）| default（编码器默认） */
-  rateMode?: "bitrate" | "source" | "default";
+  /** bitrate | source（保持原始） */
+  rateMode?: "bitrate" | "source";
   sampleRate: "source" | "44100" | "48000";
   channels: "source" | "mono" | "stereo";
   /** EBU R128 响度归一化 */
@@ -393,8 +393,8 @@ export interface MuxParams {
   mode: "replace" | "add";
   audioMode: "aac" | "copy";
   audioBitrateKbps: number;
-  /** bitrate | default（换轨场景没有「保持原始」：源码率属于另一路音轨） */
-  audioRateMode?: "bitrate" | "default";
+  /** bitrate（换轨场景没有「保持原始」：源码率属于另一路音轨） */
+  audioRateMode?: "bitrate";
 }
 
 export interface GifParams {

@@ -9,7 +9,6 @@ import {
   CRF_MAX,
   CRF_MIN,
   CRF_TIERS,
-  VIDEO_BITRATE_TIERS,
   tierForCrf,
   tierForKbps,
   type BitrateTier,
@@ -304,7 +303,7 @@ export function QualityTierField({
   );
 }
 
-/** 目标码率档位：口语化标签，kbps 数字只在「高级」展开后出现。 */
+/** 自定义码率：直接填写 kbps（裸数字，不再套档位名）。 */
 export function VideoBitrateField({
   kbps,
   onChange,
@@ -312,53 +311,28 @@ export function VideoBitrateField({
   kbps: number;
   onChange: (kbps: number) => void;
 }) {
-  const tier = tierForKbps(VIDEO_BITRATE_TIERS, kbps);
   return (
-    <>
-      <Field label="目标码率档位">
-        <select
-          className="select"
-          value={tier?.id ?? "custom"}
-          onChange={(event) => {
-            const next = VIDEO_BITRATE_TIERS.find((item) => item.id === event.target.value);
-            if (next) onChange(next.kbps);
-          }}
-        >
-          {VIDEO_BITRATE_TIERS.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name}
-            </option>
-          ))}
-          {tier ? null : <option value="custom">自定义（见高级）</option>}
-        </select>
-      </Field>
-      <details className="advanced">
-        <summary>高级：手动填写目标码率</summary>
-        <div className="advanced-body">
-          <input
-            className="input"
-            type="number"
-            min={300}
-            step={100}
-            value={kbps}
-            onChange={(event) => onChange(Math.max(300, Number(event.target.value) || 0))}
-          />
-          <span className="note">单位 kbps；当前目标 {kbps} kbps。</span>
-        </div>
-      </details>
-    </>
+    <Field label="自定义码率（kbps）">
+      <input
+        className="input"
+        type="number"
+        min={300}
+        step={100}
+        value={kbps}
+        onChange={(event) => onChange(Math.max(300, Number(event.target.value) || 0))}
+      />
+    </Field>
   );
 }
 
-export type AudioRateMode = "default" | "source" | "bitrate" | "";
+export type AudioRateMode = "source" | "bitrate" | "";
 
-const audioModeOf = (mode: AudioRateMode): AudioRateMode => (mode === "default" || mode === "source" ? mode : "bitrate");
+const audioModeOf = (mode: AudioRateMode): AudioRateMode => (mode === "source" ? "source" : "bitrate");
 
 /**
- * 音频码率控件：三种语义必须分开写清——
- * 默认 = 不传 `-b:a`，由编码器内置默认决定，体积不保证接近源；
- * 保持原始 = 用源音轨码率做目标，输出体积接近源；
- * 固定档位 = 传选定 kbps。
+ * 音频码率控件：已删除「默认」选项，只剩两种语义——
+ * 保持原始 = 用源音轨码率做目标，输出体积接近源；探测不到源码率时回落 128 kbps；
+ * 固定档位 = 传选定 kbps（直接显示数字）。
  */
 export function AudioBitrateField({
   mode,
@@ -374,15 +348,13 @@ export function AudioBitrateField({
   /** 换轨等场景源码率不属于同一路流，可关闭「保持原始」。 */
   allowSource?: boolean;
 }) {
-  const current = allowSource ? audioModeOf(mode) : audioModeOf(mode) === "source" ? "bitrate" : audioModeOf(mode);
+  const current = allowSource ? audioModeOf(mode) : "bitrate";
   const tier = tierForKbps(tiers, kbps);
-  const value = current === "default" ? "default" : current === "source" ? "source" : (tier?.id ?? "custom");
+  const value = current === "source" ? "source" : (tier?.id ?? "custom");
   const hint =
-    value === "default"
-      ? "默认：不指定码率，由音频编码器按内置默认质量决定，不保证与源体积相近。"
-      : value === "source"
-        ? "保持原始：沿用源文件的音频码率，输出体积接近源。"
-        : "固定档位：按所选档位编码，体积可预期。";
+    current === "source"
+      ? "保持原始：沿用源文件的音频码率，输出体积接近源；读取不到源码率时按 128 kbps 编码。"
+      : "固定档位：按所选码率编码，体积可预期。";
   return (
     <>
       <Field label="音频码率">
@@ -391,47 +363,24 @@ export function AudioBitrateField({
           value={value}
           onChange={(event) => {
             const next = event.target.value;
-            if (next === "default" || next === "source") {
-              onChange(next, kbps);
+            if (next === "source") {
+              onChange("source", kbps);
               return;
             }
             const picked = tiers.find((item) => item.id === next);
             if (picked) onChange("bitrate", picked.kbps);
           }}
         >
-          <option value="default">默认</option>
           {allowSource ? <option value="source">保持原始</option> : null}
           {tiers.map((item) => (
             <option key={item.id} value={item.id}>
               {item.name}
             </option>
           ))}
-          {current === "bitrate" && !tier ? <option value="custom">自定义（见高级）</option> : null}
+          {current === "bitrate" && !tier ? <option value="custom">自定义（{kbps} kbps）</option> : null}
         </select>
       </Field>
       <div className="note">{hint}</div>
-      <details className="advanced">
-        <summary>高级：手动填写音频码率</summary>
-        <div className="advanced-body">
-          <input
-            className="input"
-            type="number"
-            min={32}
-            step={8}
-            value={kbps}
-            disabled={current !== "bitrate"}
-            onChange={(event) => {
-              const next = Math.max(32, Number(event.target.value) || 0);
-              onChange("bitrate", next);
-            }}
-          />
-          <span className="note">
-            {current === "bitrate"
-              ? `单位 kbps；当前 ${kbps} kbps。`
-              : "当前不是固定码率模式，输入框不可编辑。"}
-          </span>
-        </div>
-      </details>
     </>
   );
 }

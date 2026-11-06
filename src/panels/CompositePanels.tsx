@@ -246,7 +246,14 @@ export function MuxPanel({ methodId, outputDir, ffmpegReady, onChangeOutputDir, 
   const video = useMediaFiles("video");
   const audio = useMediaFiles("audio");
   const defaults: MuxParams = { mode: "replace", audioMode: "aac", audioBitrateKbps: 192, audioRateMode: "bitrate" };
-  const [params, setParams] = useState<MuxParams>(() => loadPanelPrefs(`video-${methodId}`, defaults));
+  const [params, setParams] = useState<MuxParams>(() => {
+    const loaded = loadPanelPrefs(`video-${methodId}`, defaults);
+    // 兼容已删除的「默认」：换轨侧按 128 kbps 固定档位映射，不静默丢设置。
+    const rawMode = (loaded as { audioRateMode?: string }).audioRateMode;
+    return rawMode === "default" || rawMode === ""
+      ? { ...loaded, audioRateMode: "bitrate", audioBitrateKbps: rawMode === "default" ? 128 : loaded.audioBitrateKbps }
+      : loaded;
+  });
   const [naming, setNaming] = useNaming(methodId);
   const [starting, setStarting] = useState(false);
   useEffect(() => savePanelPrefs(`video-${methodId}`, params), [methodId, params]);

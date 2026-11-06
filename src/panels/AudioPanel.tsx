@@ -52,8 +52,17 @@ export function AudioPanel({
   // 参数持久化：重启后恢复上次的码率/采样率/声道等设置。
   const [params, setParams] = useState<AudioParams>(() => {
     const loaded = loadPanelPrefs(`audio:${methodId}`, defaults);
+    // 兼容已删除的「默认」：音频侧按 AAC 立体声缺省 128 kbps 映射到固定档位；
+    // 空值按旧版语义落到固定档位。不能静默丢弃旧设置。
+    const rawMode = (loaded as { rateMode?: string }).rateMode;
+    const normalized: AudioParams =
+      rawMode === "default"
+        ? { ...loaded, rateMode: "bitrate", bitrateKbps: 128 }
+        : rawMode === ""
+          ? { ...loaded, rateMode: "bitrate" }
+          : loaded;
     // 兼容旧版本持久化数据（当时还没有 volume 字段）。
-    return { ...loaded, volume: loaded.volume ?? { enabled: false, gainDb: 0, mute: false } };
+    return { ...normalized, volume: normalized.volume ?? { enabled: false, gainDb: 0, mute: false } };
   });
   const [naming, setNaming] = useState<NamingPrefs>(() => loadPanelPrefs(`naming:${methodId}`, { template: "", conflict: "suffix" }));
   const [starting, setStarting] = useState(false);
@@ -80,15 +89,13 @@ export function AudioPanel({
     const rawDuration = files.reduce((sum, file) => sum + (file.durationSec ?? 0), 0);
     if (!rawDuration || !lossy) return null;
     const duration = rawDuration / (params.speed || 1);
-    // 「保持原始」按第一条文件的源音轨码率估算，「默认」按 AAC 内置默认 128 kbps 估算。
+    // 「保持原始」按第一条文件的源音轨码率估算，读取不到时按固定 128 kbps 估算（与后端一致）。
     const first = files[0];
     const sourceKbps = Math.round((first?.audioBitrate ?? 0) / 1000);
     const kbps =
-      params.rateMode === "source" && sourceKbps > 0
-        ? sourceKbps
-        : params.rateMode === "default"
-          ? 128
-          : params.bitrateKbps;
+      params.rateMode === "source"
+        ? (sourceKbps > 0 ? sourceKbps : 128)
+        : params.bitrateKbps;
     const bytes = (kbps * 1000 * duration) / 8;
     return { bytes, duration };
   }, [files, params.rateMode, params.bitrateKbps, params.speed, lossy]);
@@ -208,6 +215,7 @@ export function AudioPanel({
             )}
             <div className="note">
               源文件为视频时只提取第一条音轨；视频画面不会被保留。若源文件没有音轨，任务会失败并给出原因。
+              源码率读不到（ffprobe 失败）时，「保持原始」按 128 kbps 编码。
             </div>
           </Group>
 

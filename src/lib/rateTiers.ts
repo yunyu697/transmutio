@@ -52,20 +52,12 @@ export interface BitrateTier {
   kbps: number;
 }
 
-export const VIDEO_BITRATE_TIERS: BitrateTier[] = [
-  { id: "data-saver", name: "省流量", kbps: 1000 },
-  { id: "web", name: "网页 / 社交分享", kbps: 2000 },
-  { id: "standard", name: "标准", kbps: 4000 },
-  { id: "hd", name: "高清", kbps: 8000 },
-  { id: "high", name: "高码率", kbps: 16000 },
-];
-
-/** 音频码率档位（kbps） */
+/** 音频码率档位：按用户要求直接显示数字（128 / 192 / 256 / 320 kbps），不再套档位名。 */
 export const AUDIO_BITRATE_TIERS: BitrateTier[] = [
-  { id: "standard", name: "标准", kbps: 128 },
-  { id: "high", name: "高", kbps: 192 },
-  { id: "higher", name: "更高", kbps: 256 },
-  { id: "max", name: "极高", kbps: 320 },
+  { id: "standard", name: "128 kbps", kbps: 128 },
+  { id: "high", name: "192 kbps", kbps: 192 },
+  { id: "higher", name: "256 kbps", kbps: 256 },
+  { id: "max", name: "320 kbps", kbps: 320 },
 ];
 
 export function tierForKbps(tiers: BitrateTier[], kbps: number): BitrateTier | null {
