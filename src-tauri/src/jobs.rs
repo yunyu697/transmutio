@@ -32,7 +32,7 @@ fn new_job_id() -> String {
 #[serde(rename_all = "camelCase")]
 pub struct Job {
     pub id: String,
-    /// video-mp4 | video-merge | video-mux | video-gif | audio-mp3 | audio-aac | image
+    /// video-mp4 | video-merge | video-mux | video-gif | audio-mp3 | audio-aac | audio-merge | audio-trim | image
     pub kind: String,
     pub input: String,
     /// 多输入任务（合并 / 混流）的完整输入列表；单输入任务为空。
@@ -251,7 +251,7 @@ fn fmt_sec_short(value: f64) -> String {
 fn kind_ext(kind: &str, params: &Value) -> String {
     match kind {
         // 音频格式由 params.format 决定；kind 仅用于任务分类（历史 id 保持兼容）。
-        "audio-mp3" | "audio-aac" => {
+        "audio-mp3" | "audio-aac" | "audio-merge" | "audio-trim" => {
             let format = params
                 .get("format")
                 .and_then(Value::as_str)
@@ -529,6 +529,20 @@ fn precheck_spec(
             args::validate_audio_volume(&p)?;
             containers::validate_audio(&p.format)
         }
+        "audio-merge" => {
+            let p: args::AudioMergeParams = serde_json::from_value(params.clone())
+                .map_err(|e| format!("音频合并参数格式错误：{e}"))?;
+            if inputs.len() < 2 {
+                return Err("音频合并至少需要 2 个音频文件：请多选后再入队".into());
+            }
+            containers::validate_audio(&p.format)
+        }
+        "audio-trim" => {
+            let p: args::AudioTrimParams = serde_json::from_value(params.clone())
+                .map_err(|e| format!("音频截取参数格式错误：{e}"))?;
+            args::validate_audio_trim(&p)?;
+            containers::validate_audio(&p.format)
+        }
         "video-split" => {
             let split = split_params(params);
             // precheck 阶段拿不到源时长，先用 INFINITY 跳过上界；enqueue 探测后再补校。
@@ -647,7 +661,7 @@ fn precheck_spec(
             Ok(())
         }
         other => Err(format!(
-            "未知任务类型「{other}」；支持 video-mp4 / video-split / video-merge / video-mux / video-gif / image-gif / audio-mp3 / audio-aac / image / image-compress / image-seq-video / video-frames / image-collage / pdf-merge / pdf-split / pdf-image"
+            "未知任务类型「{other}」；支持 video-mp4 / video-split / video-merge / video-mux / video-gif / image-gif / audio-mp3 / audio-aac / audio-merge / audio-trim / image / image-compress / image-seq-video / video-frames / image-collage / pdf-merge / pdf-split / pdf-image"
         )),
     }
 }
@@ -757,8 +771,25 @@ pub async fn enqueue(ctx: &Ctx, specs: Vec<JobSpec>) -> Result<Vec<Job>, String>
             total_duration = Some((split.end_sec - split.start_sec).max(0.0));
         }
 
+        // 音频截取：探测到源时长后拒绝超出边界的区间，任务时长取截取长度。
+        if spec.kind == "audio-trim" {
+            let p: args::AudioTrimParams =
+                serde_json::from_value(spec.params.clone()).unwrap_or_default();
+            if let Some(source_duration) = info.duration_sec {
+                if p.end_sec > source_duration + 0.05 {
+                    return Err(format!(
+                        "截取终点 {} 秒超出源时长 {} 秒：请把终点调到 {} 秒以内",
+                        fmt_sec_short(p.end_sec),
+                        fmt_sec_short(source_duration),
+                        fmt_sec_short(source_duration)
+                    ));
+                }
+            }
+            total_duration = Some((p.end_sec - p.start_sec).max(0.0));
+        }
+
         // 合并任务的总时长/进度依赖全部输入，这里一次性探测并累加。
-        if spec.kind == "video-merge" {
+        if spec.kind == "video-merge" || spec.kind == "audio-merge" {
             let mut sum = 0.0f64;
             let mut all_known = true;
             for input in &inputs {
@@ -2871,6 +2902,15 @@ async fn watermark_dims_for_job(
             .map_err(|e| format!("图片参数格式错误：{e}"))?;
         args::image_base_dims(&p, &job.input, src_w, src_h)
     };
+    if args::watermark_mode_of(&wm) == "text" {
+        // 文字水印不需要第二路图片，也不需要图片尺寸；字号只需要最终画面高度。
+        return Ok(Some(args::WatermarkDims {
+            base_width: base_w,
+            base_height: base_h,
+            wm_width: 0,
+            wm_height: 0,
+        }));
+    }
     let info = probe::probe_media(bin, &wm.path).await;
     let (wm_w, wm_h) = match (info.width, info.height) {
         (Some(w), Some(h)) if w > 0 && h > 0 => (w, h),
@@ -3282,7 +3322,6 @@ async fn run_job(ctx: Ctx, id: String) {
                     p.encoder = pick_sequence_encoder(caps.as_ref());
                 }
                 let (pattern, start, count) = args::validate_sequence(&job.inputs)?;
-                p.start_number = start;
                 let probe_bin = tools_snapshot
                     .as_ref()
                     .and_then(|t| t.ffprobe.as_ref())
@@ -3305,6 +3344,7 @@ async fn run_job(ctx: Ctx, id: String) {
                     &p,
                     target,
                     count,
+                    start,
                 ))
             }
             .await;
@@ -3380,10 +3420,14 @@ async fn run_job(ctx: Ctx, id: String) {
             }
             chain
         }
-        "audio-mp3" | "audio-aac" => {
-            let p: args::AudioParams =
-                serde_json::from_value(job.params.clone()).unwrap_or_default();
-            let wanted = args::audio_encoder(&p);
+        "audio-mp3" | "audio-aac" | "audio-merge" | "audio-trim" => {
+            let format = job
+                .params
+                .get("format")
+                .and_then(Value::as_str)
+                .unwrap_or(if job.kind == "audio-aac" { "aac" } else { "mp3" })
+                .to_string();
+            let wanted = args::audio_encoder_for(&format);
             let usable = caps
                 .as_ref()
                 .map(|c| {
@@ -3398,7 +3442,7 @@ async fn run_job(ctx: Ctx, id: String) {
             if usable.contains(&wanted.to_string()) || caps.is_none() {
                 chain.push(wanted.to_string());
             }
-            if let Some(spec) = containers::find_audio(&p.format) {
+            if let Some(spec) = containers::find_audio(&format) {
                 for alt in spec.encoders {
                     if *alt != wanted && usable.contains(&alt.to_string()) {
                         chain.push(alt.to_string());
@@ -3571,6 +3615,64 @@ async fn run_job(ctx: Ctx, id: String) {
                         }
                     }
                     args::build_audio(encoder, &job.input, temp.to_string_lossy().as_ref(), &p)
+                }
+                "audio-merge" | "audio-trim" => {
+                    let probe_bin = tools_snapshot
+                        .as_ref()
+                        .and_then(|t| t.ffprobe.as_ref())
+                        .map(|p| p.path.as_str());
+                    let built = if job.kind == "audio-merge" {
+                        let mut p: args::AudioMergeParams =
+                            serde_json::from_value(job.params.clone()).unwrap_or_default();
+                        // 「保持原始」与 source 采样率/声道都取首个输入的真实值。
+                        if let Some(bin) = probe_bin {
+                            let info = probe::probe_media(bin, &job.input).await;
+                            if args::wants_source_rate(&p.rate_mode) {
+                                p.source_kbps =
+                                    info.audio_bitrate.map(|b| (b / 1000) as u32).unwrap_or(0);
+                            }
+                            p.base_sample_rate = info.sample_rate.unwrap_or(0);
+                            p.base_channels = info.channels.unwrap_or(0);
+                        }
+                        args::build_audio_merge(
+                            &job.inputs,
+                            temp.to_string_lossy().as_ref(),
+                            &p,
+                            encoder,
+                        )
+                    } else {
+                        let mut p: args::AudioTrimParams =
+                            serde_json::from_value(job.params.clone()).unwrap_or_default();
+                        if args::wants_source_rate(&p.rate_mode) {
+                            if let Some(bin) = probe_bin {
+                                let info = probe::probe_media(bin, &job.input).await;
+                                p.source_kbps =
+                                    info.audio_bitrate.map(|b| (b / 1000) as u32).unwrap_or(0);
+                            }
+                        }
+                        args::build_audio_trim(
+                            &job.input,
+                            temp.to_string_lossy().as_ref(),
+                            &p,
+                            encoder,
+                        )
+                    };
+                    match built {
+                        Ok(argv) => argv,
+                        Err(message) => {
+                            remove_temp_file(&temp).await;
+                            set_job(&ctx, &id, |job| {
+                                job.status = "failed".into();
+                                job.error_kind = Some("invalid-params".into());
+                                job.message = Some(message);
+                                job.finished_at = Some(now_ms());
+                            })
+                            .await;
+                            write_job_log(&ctx, &id, "failed", &attempts_info, "").await;
+                            finish_slot(&ctx, &id).await;
+                            return;
+                        }
+                    }
                 }
                 _ => {
                     let mut p: args::ImageParams =

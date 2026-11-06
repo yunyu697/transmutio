@@ -397,6 +397,8 @@ async function main() {
         lastSection: "video",
         outputDir: "C:\\Users\\Tyler\\Videos\\FormatForge",
       }),
+      "transmutio:storage-migration:v1": JSON.stringify({ migrated: 7, at: 1 }),
+      "transmutio:migration-notice-dismissed": "1",
     };
     const page3 = await browser.newPage({ viewport: { width: 1440, height: 960 } });
     page3.on("pageerror", (error) => pageErrors.push(String(error)));
@@ -433,12 +435,11 @@ async function main() {
     await page3.goto(origin, { waitUntil: "domcontentloaded" });
     await page3.waitForSelector(".method-grid", { timeout: 10000 });
 
-    const legacyKeys = Object.keys(legacyInjected);
+    const legacyPrefixKeys = Object.keys(legacyInjected).filter((k) => k.startsWith("formatforge:"));
     const migrationKeys = [
-      ...legacyKeys,
+      ...Object.keys(legacyInjected),
       "transmutio:panel:video:video-mp4",
       "transmutio:settings",
-      "transmutio:storage-migration:v1",
     ];
     const readKeys = (target, keys) =>
       target.evaluate((list) => {
@@ -453,10 +454,11 @@ async function main() {
     const migratedSnapshot = await readKeys(page3, migrationKeys);
     add(
       "panel-persist-legacy-ignored",
-      "旧前缀键保留原值、不迁移、不写标记",
-      legacyKeys.every((key) => migratedSnapshot[key] === legacyInjected[key]) &&
-        migratedSnapshot["transmutio:storage-migration:v1"] === null,
-      `legacyVideo=${migratedSnapshot["formatforge:panel:video:video-mp4"]} legacySettings=${migratedSnapshot["formatforge:settings"]} marker=${migratedSnapshot["transmutio:storage-migration:v1"]}`,
+      "旧前缀键保留原值、不迁移；alpha11 遗留键被清理",
+      legacyPrefixKeys.every((key) => migratedSnapshot[key] === legacyInjected[key]) &&
+        migratedSnapshot["transmutio:storage-migration:v1"] === null &&
+        migratedSnapshot["transmutio:migration-notice-dismissed"] === null,
+      `legacyVideo=${migratedSnapshot["formatforge:panel:video:video-mp4"]} legacySettings=${migratedSnapshot["formatforge:settings"]} marker=${migratedSnapshot["transmutio:storage-migration:v1"]} notice=${migratedSnapshot["transmutio:migration-notice-dismissed"]}`,
     );
 
     await openMethod(page3, "视频", "视频转码");
@@ -493,9 +495,10 @@ async function main() {
     add(
       "panel-persist-legacy-ignored",
       "重复加载仍不读、不删旧前缀键",
-      legacyKeys.every((key) => afterSnapshot[key] === legacyInjected[key]) &&
-        afterSnapshot["transmutio:storage-migration:v1"] === null,
-      `legacyVideo=${afterSnapshot["formatforge:panel:video:video-mp4"]} legacySettings=${afterSnapshot["formatforge:settings"]} marker=${afterSnapshot["transmutio:storage-migration:v1"]}`,
+      legacyPrefixKeys.every((key) => afterSnapshot[key] === legacyInjected[key]) &&
+        afterSnapshot["transmutio:storage-migration:v1"] === null &&
+        afterSnapshot["transmutio:migration-notice-dismissed"] === null,
+      `legacyVideo=${afterSnapshot["formatforge:panel:video:video-mp4"]} legacySettings=${afterSnapshot["formatforge:settings"]} marker=${afterSnapshot["transmutio:storage-migration:v1"]} notice=${afterSnapshot["transmutio:migration-notice-dismissed"]}`,
     );
 
     add("panel-persist", "页面无未捕获异常", pageErrors.length === 0, pageErrors.join("; ") || "无");

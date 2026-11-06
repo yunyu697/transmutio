@@ -141,6 +141,98 @@ pub struct AudioParams {
     pub volume: VolumeParams,
 }
 
+/// 音频合并（顺序拼接）的输出参数。`baseSampleRate/baseChannels` 由入队探测回填，
+/// 供 `sampleRate/channels = source` 时统一各输入；合并链内部逐路 aresample + aformat。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AudioMergeParams {
+    /// mp3 | aac | flac | wav | ogg | opus
+    pub format: String,
+    pub bitrate_kbps: u32,
+    /// bitrate | source（空 = bitrate）
+    pub rate_mode: String,
+    /// 首个输入的源码率（kbps），由后端探测回填
+    #[serde(skip)]
+    pub source_kbps: u32,
+    /// source | 44100 | 48000
+    pub sample_rate: String,
+    /// source | mono | stereo
+    pub channels: String,
+    pub normalize: bool,
+    /// 基准采样率/声道（取首个输入），由后端探测回填
+    #[serde(skip)]
+    pub base_sample_rate: u32,
+    #[serde(skip)]
+    pub base_channels: u32,
+}
+
+impl Default for AudioMergeParams {
+    fn default() -> Self {
+        Self {
+            format: "mp3".into(),
+            bitrate_kbps: 192,
+            rate_mode: "bitrate".into(),
+            source_kbps: 0,
+            sample_rate: "source".into(),
+            channels: "source".into(),
+            normalize: false,
+            base_sample_rate: 0,
+            base_channels: 0,
+        }
+    }
+}
+
+/// 音频截取：截取 `[startSec, endSec)` 并重新编码（不复制流，保证边界按时间点准确）。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AudioTrimParams {
+    pub format: String,
+    pub bitrate_kbps: u32,
+    /// bitrate | source（空 = bitrate）
+    pub rate_mode: String,
+    /// 源码率（kbps），由后端探测回填
+    #[serde(skip)]
+    pub source_kbps: u32,
+    /// source | 44100 | 48000
+    pub sample_rate: String,
+    /// source | mono | stereo
+    pub channels: String,
+    pub normalize: bool,
+    pub start_sec: f64,
+    pub end_sec: f64,
+}
+
+impl Default for AudioTrimParams {
+    fn default() -> Self {
+        Self {
+            format: "mp3".into(),
+            bitrate_kbps: 192,
+            rate_mode: "bitrate".into(),
+            source_kbps: 0,
+            sample_rate: "source".into(),
+            channels: "source".into(),
+            normalize: false,
+            start_sec: 0.0,
+            end_sec: 30.0,
+        }
+    }
+}
+
+/// 截取区间校验：起点必须 ≥ 0，终点必须大于起点；两端都有限。
+pub fn validate_audio_trim(p: &AudioTrimParams) -> Result<(), String> {
+    if !p.start_sec.is_finite() || p.start_sec < 0.0 {
+        return Err(format!("截取起点必须 ≥ 0 秒（当前 {}）", fmt_num(p.start_sec)));
+    }
+    if !p.end_sec.is_finite() || p.end_sec <= p.start_sec {
+        return Err(format!(
+            "截取终点必须大于起点（起点 {} 秒，终点 {} 秒）",
+            fmt_num(p.start_sec),
+            fmt_num(p.end_sec)
+        ));
+    }
+    Ok(())
+}
+
 /// 相对音量增益。只把整条音轨统一放大/衰减固定 dB，不改变动态范围；
 /// 与音频卡「响度归一化」（loudnorm，把整体拉回 -16 LUFS）语义不同。
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -289,6 +381,27 @@ pub struct WatermarkParams {
     pub margin: u32,
     /// -180..=180（度）
     pub rotation: f64,
+    /// image | text；空字符串等价 image（兼容旧预设）
+    #[serde(default)]
+    pub mode: String,
+    /// 文字水印内容（mode=text 时必填）
+    #[serde(default)]
+    pub text: String,
+    /// 字体文件路径（mode=text 时必填，使用系统字体，不打包字体）
+    #[serde(default)]
+    pub font_path: String,
+    /// 字号：最终画面高度的百分比，1–20
+    #[serde(default)]
+    pub font_size_percent: f64,
+    /// 字体颜色 #RRGGBB
+    #[serde(default)]
+    pub font_color: String,
+    /// 描边宽度（像素）
+    #[serde(default)]
+    pub border_width: u32,
+    /// 描边颜色 #RRGGBB
+    #[serde(default)]
+    pub border_color: String,
     /// 基准画面尺寸（输出帧），由后端回填
     #[serde(skip)]
     pub base_width: u32,
@@ -313,6 +426,13 @@ impl Default for WatermarkParams {
             scale_percent: 15,
             margin: 24,
             rotation: 0.0,
+            mode: "image".into(),
+            text: String::new(),
+            font_path: String::new(),
+            font_size_percent: 4.5,
+            font_color: "#FFFFFF".into(),
+            border_width: 2,
+            border_color: "#000000".into(),
             base_width: 0,
             base_height: 0,
             wm_width: 0,
@@ -327,7 +447,6 @@ impl Default for WatermarkParams {
 #[serde(rename_all = "camelCase", default)]
 pub struct SeqParams {
     pub fps: u32,
-    pub start_number: u32,
     pub size_mode: String,
     pub width: u32,
     pub height: u32,
@@ -905,15 +1024,18 @@ pub fn seq_target_size(p: &SeqParams, dims: &[(u32, u32)]) -> Result<Option<(u32
 }
 
 /// 图片序列 → 视频。
+/// `start_number` 必须来自 `validate_sequence`（按文件名推导），不能由界面指定：
+/// ffmpeg 用 `prefix%0Nd` 读文件，起始编号与实际文件名不一致会读到错误的帧或直接失败。
 pub fn build_seq_video(
     pattern: &str,
     output: &str,
     p: &SeqParams,
     target: Option<(u32, u32)>,
     frames: u32,
+    start_number: u32,
 ) -> Vec<String> {
     let fps = if p.fps > 0 { p.fps.clamp(1, 60) } else { 25 };
-    let start = p.start_number.max(1);
+    let start = start_number.max(1);
     let mut args: Vec<String> = vec![
         "-hide_banner".into(),
         "-nostdin".into(),
@@ -1369,9 +1491,178 @@ pub fn watermark_position(
 }
 
 /// 入队校验：关闭时一律放行；开启时必须给出真实存在且格式受支持的图片。
+/// 水印模式：空字符串 / 未知值一律按 image 处理，保证旧预设可用。
+pub fn watermark_mode_of(w: &WatermarkParams) -> &str {
+    if w.mode.trim().eq_ignore_ascii_case("text") {
+        "text"
+    } else {
+        "image"
+    }
+}
+
+fn is_hex_color(value: &str) -> bool {
+    let v = value.trim();
+    let v = v.strip_prefix('#').unwrap_or(v);
+    v.len() == 6 && v.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// 把文字水印内容落到系统临时目录，用 `textfile=` 传入 drawtext。
+///
+/// 不用内联 `text=`：filtergraph 对冒号/分号/逗号/方括号的转义规则与 drawtext 自身的
+/// AVOption 解析叠加后，单引号和反斜杠无法稳定还原（实测会出现吞字或官方报错）。
+/// 写文件可以逐字节保留用户文本，文件名按内容哈希去重，同一文本多个任务共用一份。
+fn watermark_textfile(text: &str) -> Result<String, String> {
+    // FNV-1a：只用于稳定命名，不承担安全职责。
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in text.as_bytes() {
+        hash ^= u64::from(*b);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    let dir = std::env::temp_dir();
+    let path = dir.join(format!("transmutio-wmtext-{hash:016x}.txt"));
+    if let Ok(existing) = std::fs::read(&path) {
+        if existing == text.as_bytes() {
+            return Ok(path.to_string_lossy().to_string());
+        }
+    }
+    let unique = format!(
+        "transmutio-wmtext-{hash:016x}-{}-{}.tmp",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    );
+    let staging = dir.join(unique);
+    std::fs::write(&staging, text)
+        .map_err(|e| format!("无法写入文字水印临时文件 {}：{e}", staging.display()))?;
+    // Windows 上目标已存在时 rename 会失败：保留现有文件即可（内容相同）。
+    let final_path = if std::fs::rename(&staging, &path).is_ok() {
+        path
+    } else {
+        let _ = std::fs::remove_file(&staging);
+        path
+    };
+    Ok(final_path.to_string_lossy().to_string())
+}
+
+/// filtergraph 里的文件路径：正斜杠更稳；盘符冒号在 filtergraph/AVOption 两层
+/// 解析下需要写成 `\\:`（两个反斜杠），逗号写成 `\,`。
+fn filter_path_escape(path: &str) -> String {
+    path.replace('\\', "/")
+        .replace(':', "\\\\:")
+        .replace(',', "\\,")
+        .replace('\'', "\\'")
+}
+
+/// 文字水印滤镜。字号按最终画面高度换算；位置复用九宫格语义，
+/// custom 使用参数里的像素坐标（负值按 0 处理）。
+pub fn text_watermark_filter(w: &WatermarkParams) -> Result<String, String> {
+    let text = w.text.trim();
+    if text.is_empty() {
+        return Err("文字水印内容不能为空".into());
+    }
+    let textfile = watermark_textfile(text)?;
+    let base_height = if w.base_height > 0 { w.base_height } else { 720 };
+    let px = subtitle_font_px(base_height, w.font_size_percent);
+    let margin = w.margin;
+    let (x, y) = match w.position.trim() {
+        "nw" => (format!("{margin}"), format!("{margin}")),
+        "n" => ("(w-text_w)/2".into(), format!("{margin}")),
+        "ne" => (format!("w-text_w-{margin}"), format!("{margin}")),
+        "w" => (format!("{margin}"), "(h-text_h)/2".into()),
+        "c" => ("(w-text_w)/2".into(), "(h-text_h)/2".into()),
+        "e" => (format!("w-text_w-{margin}"), "(h-text_h)/2".into()),
+        "sw" => (format!("{margin}"), format!("h-text_h-{margin}")),
+        "s" => ("(w-text_w)/2".into(), format!("h-text_h-{margin}")),
+        "custom" => (format!("{}", w.x.max(0)), format!("{}", w.y.max(0))),
+        _ => (format!("w-text_w-{margin}"), format!("h-text_h-{margin}")),
+    };
+    let color = if is_hex_color(&w.font_color) {
+        format!("#{}", w.font_color.trim().trim_start_matches('#'))
+    } else {
+        "#FFFFFF".to_string()
+    };
+    let border = if is_hex_color(&w.border_color) {
+        format!("#{}", w.border_color.trim().trim_start_matches('#'))
+    } else {
+        "#000000".to_string()
+    };
+    let opacity = if w.opacity.is_finite() {
+        w.opacity.clamp(0.0, 1.0)
+    } else {
+        0.9
+    };
+    Ok(format!(
+        "drawtext=fontfile={}:textfile={}:fontsize={}:fontcolor={}:alpha={}:borderw={}:bordercolor={}:x={}:y={}:expansion=none",
+        filter_path_escape(w.font_path.trim()),
+        filter_path_escape(&textfile),
+        px,
+        color,
+        fmt_num(opacity),
+        w.border_width.min(20),
+        border,
+        x,
+        y
+    ))
+}
+
 pub fn validate_watermark(w: &WatermarkParams) -> Result<(), String> {
     if !w.enabled {
         return Ok(());
+    }
+    if !w.opacity.is_finite() || !(0.0..=1.0).contains(&w.opacity) {
+        return Err(format!("水印不透明度 {} 超出范围 0–1", w.opacity));
+    }
+    if watermark_mode_of(w) == "text" {
+        let text = w.text.trim();
+        if text.is_empty() {
+            return Err("文字水印内容不能为空：请填写要叠加的文字".into());
+        }
+        if text.chars().count() > 200 {
+            return Err("文字水印最多 200 个字符".into());
+        }
+        if text.contains('\n') || text.contains('\r') {
+            return Err("文字水印暂不支持换行，请改为单行文本".into());
+        }
+        let font = w.font_path.trim();
+        if font.is_empty() {
+            return Err("文字水印缺少字体文件：请选择支持中文的字体（如 C:\\Windows\\Fonts\\msyh.ttc）".into());
+        }
+        let path = std::path::Path::new(font);
+        if !path.is_file() {
+            return Err(format!("字体文件不存在：{font}（请重新选择 .ttf / .otf / .ttc 字体）"));
+        }
+        let ext = path
+            .extension()
+            .map(|e| e.to_string_lossy().to_ascii_lowercase())
+            .unwrap_or_default();
+        if !["ttf", "otf", "ttc"].contains(&ext.as_str()) {
+            return Err(format!(
+                "不支持的字体格式「{ext}」，可选 ttf / otf / ttc（无法解析字体时会由 ffmpeg 报错）"
+            ));
+        }
+        if !w.font_size_percent.is_finite() || !(1.0..=20.0).contains(&w.font_size_percent) {
+            return Err(format!(
+                "文字水印字号 {}% 超出范围 1–20（按画面高度百分比）",
+                w.font_size_percent
+            ));
+        }
+        if !is_hex_color(&w.font_color) {
+            return Err(format!("字体颜色「{}」不是 #RRGGBB 格式", w.font_color));
+        }
+        if !is_hex_color(&w.border_color) {
+            return Err(format!("描边颜色「{}」不是 #RRGGBB 格式", w.border_color));
+        }
+        if w.rotation.abs() >= 0.01 {
+            return Err("文字水印不支持旋转：请把旋转设为 0（旋转仅适用于图片水印）".into());
+        }
+        return match w.position.trim() {
+            "" | "nw" | "n" | "ne" | "w" | "c" | "e" | "sw" | "s" | "se" | "custom" => Ok(()),
+            other => Err(format!(
+                "不支持的水印位置「{other}」，可选 nw / n / ne / w / c / e / sw / s / se / custom"
+            )),
+        };
     }
     let path = w.path.trim();
     if path.is_empty() || !std::path::Path::new(path).is_file() {
@@ -1742,7 +2033,8 @@ pub fn build_video(
     }
     args.push("-i".into());
     args.push(input.into());
-    let wm_plan = if p.watermark.enabled {
+    let text_wm = p.watermark.enabled && watermark_mode_of(&p.watermark) == "text";
+    let wm_plan = if p.watermark.enabled && !text_wm {
         Some(watermark_plan(&p.watermark, true)?)
     } else {
         None
@@ -1823,6 +2115,10 @@ pub fn build_video(
     }
     if let Some((video_filter, _)) = speed_filters(p.speed, p.keep_pitch) {
         filters.push(video_filter);
+    }
+    if text_wm {
+        // drawtext 在软件帧上执行，必须放在 scale / 字幕 / 变速之后、VAAPI 上传之前。
+        filters.push(text_watermark_filter(&p.watermark)?);
     }
     if vaapi_ok && wm_plan.is_none() {
         filters.push("format=nv12".into());
@@ -1948,8 +2244,8 @@ pub fn build_video(
     Ok(args)
 }
 
-pub fn audio_encoder(p: &AudioParams) -> &'static str {
-    match p.format.as_str() {
+pub fn audio_encoder_for(format: &str) -> &'static str {
+    match format {
         "aac" => "aac",
         "flac" => "flac",
         "wav" => "pcm_s16le",
@@ -1959,24 +2255,30 @@ pub fn audio_encoder(p: &AudioParams) -> &'static str {
     }
 }
 
-pub fn build_audio(encoder: &str, input: &str, output: &str, p: &AudioParams) -> Vec<String> {
-    let mode = audio_rate_mode_of(&p.rate_mode);
-    // 保持原始：源码率探测不到时固定 128 kbps（界面已写明）；
-    // 旧数据「default」已删除，按 128 kbps 复现 AAC 立体声缺省。
-    let legacy_default = p.rate_mode == "default";
-    let kbps = if mode == "source" {
-        if p.source_kbps > 0 {
-            p.source_kbps
+pub fn audio_encoder(p: &AudioParams) -> &'static str {
+    audio_encoder_for(&p.format)
+}
+
+/// 输出音频码率（kbps）：source 用探测值（缺失回退 128）；旧数据 `default` 按 128；
+/// 自定义码率缺失时回退 192。
+pub fn audio_kbps(rate_mode: &str, bitrate_kbps: u32, source_kbps: u32) -> u32 {
+    if audio_rate_mode_of(rate_mode) == "source" {
+        if source_kbps > 0 {
+            source_kbps
         } else {
             128
         }
-    } else if legacy_default {
+    } else if rate_mode == "default" {
         128
-    } else if p.bitrate_kbps > 0 {
-        p.bitrate_kbps
+    } else if bitrate_kbps > 0 {
+        bitrate_kbps
     } else {
         192
-    };
+    }
+}
+
+pub fn build_audio(encoder: &str, input: &str, output: &str, p: &AudioParams) -> Vec<String> {
+    let kbps = audio_kbps(&p.rate_mode, p.bitrate_kbps, p.source_kbps);
     let spec = crate::containers::find_audio(&p.format);
     let lossy = spec.map(|f| f.lossy).unwrap_or(true);
     let mut args: Vec<String> = vec![
@@ -2027,6 +2329,126 @@ pub fn build_audio(encoder: &str, input: &str, output: &str, p: &AudioParams) ->
     }
     args.push(output.into());
     args
+}
+
+/// 合并后的声道布局（返回 aformat 的 channel_layouts 与声道数）。
+fn merge_layout(channels: &str, base_channels: u32) -> (&'static str, u32) {
+    match channels {
+        "mono" => ("mono", 1),
+        "stereo" => ("stereo", 2),
+        _ => match base_channels {
+            1 => ("mono", 1),
+            6 => ("5.1", 6),
+            8 => ("7.1", 8),
+            _ => ("stereo", 2),
+        },
+    }
+}
+
+/// 合并后的采样率：显式值优先，`source` 取首个输入的探测值，探测不到回退 48000。
+fn merge_sample_rate(sample_rate: &str, base: u32) -> u32 {
+    sample_rate
+        .parse::<u32>()
+        .ok()
+        .filter(|value| *value > 0)
+        .unwrap_or(if base > 0 { base } else { 48000 })
+}
+
+/// 音频合并：逐路 aresample + aformat 统一采样率/声道，再用 concat 顺序拼接。
+/// 必须使用 filter_complex：不同来源的采样率/声道不一致，直接 concat 会失败或产出错位音频。
+pub fn build_audio_merge(
+    inputs: &[String],
+    output: &str,
+    p: &AudioMergeParams,
+    encoder: &str,
+) -> Result<Vec<String>, String> {
+    if inputs.len() < 2 {
+        return Err("音频合并至少需要 2 个输入文件".into());
+    }
+    let lossy = crate::containers::find_audio(&p.format)
+        .map(|f| f.lossy)
+        .unwrap_or(true);
+    let kbps = audio_kbps(&p.rate_mode, p.bitrate_kbps, p.source_kbps);
+    let sample_rate = merge_sample_rate(&p.sample_rate, p.base_sample_rate);
+    let (layout, _channels) = merge_layout(&p.channels, p.base_channels);
+
+    let mut graph = String::new();
+    for index in 0..inputs.len() {
+        if index > 0 {
+            graph.push(';');
+        }
+        graph.push_str(&format!(
+            "[{index}:a:0]aresample=async=1:first_pts=0,aformat=sample_rates={sample_rate}:channel_layouts={layout}[a{index}]"
+        ));
+    }
+    graph.push(';');
+    for index in 0..inputs.len() {
+        graph.push_str(&format!("[a{index}]"));
+    }
+    graph.push_str(&format!("concat=n={}:v=0:a=1[acat]", inputs.len()));
+    let out_label = if p.normalize {
+        graph.push_str(";[acat]loudnorm=I=-16:TP=-1.5:LRA=11[aout]");
+        "aout"
+    } else {
+        "acat"
+    };
+
+    let mut args: Vec<String> = vec![
+        "-hide_banner".into(),
+        "-nostdin".into(),
+        "-y".into(),
+        "-loglevel".into(),
+        "warning".into(),
+        "-progress".into(),
+        "pipe:1".into(),
+    ];
+    for input in inputs {
+        args.push("-i".into());
+        args.push(input.clone());
+    }
+    args.push("-filter_complex".into());
+    args.push(graph);
+    args.push("-map".into());
+    args.push(format!("[{out_label}]"));
+    args.push("-c:a".into());
+    args.push(encoder.into());
+    if lossy {
+        args.push("-b:a".into());
+        args.push(format!("{kbps}k"));
+    }
+    args.push(output.into());
+    Ok(args)
+}
+
+/// 音频截取：在输入前 `-ss` 定位、输入后 `-t` 限定长度；重编码保证边界按时间点准确。
+pub fn build_audio_trim(
+    input: &str,
+    output: &str,
+    p: &AudioTrimParams,
+    encoder: &str,
+) -> Result<Vec<String>, String> {
+    validate_audio_trim(p)?;
+    let audio = AudioParams {
+        format: p.format.clone(),
+        bitrate_kbps: p.bitrate_kbps,
+        rate_mode: p.rate_mode.clone(),
+        source_kbps: p.source_kbps,
+        sample_rate: p.sample_rate.clone(),
+        channels: p.channels.clone(),
+        normalize: p.normalize,
+        speed: 1.0,
+        keep_pitch: true,
+        volume: VolumeParams::default(),
+    };
+    let mut args = build_audio(encoder, input, output, &audio);
+    if let Some(input_at) = args.iter().position(|a| a == "-i") {
+        args.insert(input_at, "-ss".into());
+        args.insert(input_at + 1, fmt_num(p.start_sec));
+        // 插入后：input_at = "-ss"，input_at+3 = 输入路径；`-t` 紧跟输入路径。
+        args.insert(input_at + 4, "-t".into());
+        args.insert(input_at + 5, fmt_num(p.end_sec - p.start_sec));
+    }
+    Ok(args)
 }
 
 /// 按时间点切分。copy 走流复制（受关键帧约束），encode 重编码（帧级准确）。
@@ -2143,7 +2565,8 @@ pub fn build_image(input: &str, output: &str, p: &ImageParams) -> Result<Vec<Str
         "-i".into(),
         input.into(),
     ];
-    let wm_plan = if p.watermark.enabled {
+    let text_wm = p.watermark.enabled && watermark_mode_of(&p.watermark) == "text";
+    let wm_plan = if p.watermark.enabled && !text_wm {
         Some(watermark_plan(&p.watermark, false)?)
     } else {
         None
@@ -2176,6 +2599,10 @@ pub fn build_image(input: &str, output: &str, p: &ImageParams) -> Result<Vec<Str
             p.max_edge, p.max_edge
         ));
     }
+    if text_wm {
+        filters.push(text_watermark_filter(&p.watermark)?);
+    }
+    let overlay_used = wm_plan.is_some();
     if let Some((wm_chain, overlay)) = &wm_plan {
         let main_chain = if filters.is_empty() {
             "[0:v]null".to_string()
@@ -2196,7 +2623,7 @@ pub fn build_image(input: &str, output: &str, p: &ImageParams) -> Result<Vec<Str
             args.push("png".into());
             args.push("-compression_level".into());
             args.push("6".into());
-            if wm_plan.is_some() {
+            if overlay_used {
                 // overlay 之后帧是 rgba，png 编码器默认会保留 alpha；这里固定 rgb24 输出。
                 args.push("-pix_fmt".into());
                 args.push("rgb24".into());
@@ -2207,7 +2634,7 @@ pub fn build_image(input: &str, output: &str, p: &ImageParams) -> Result<Vec<Str
             args.push("libwebp".into());
             args.push("-quality".into());
             args.push(quality.to_string());
-            if wm_plan.is_some() {
+            if overlay_used {
                 args.push("-pix_fmt".into());
                 args.push("yuv420p".into());
             }
@@ -2227,7 +2654,7 @@ pub fn build_image(input: &str, output: &str, p: &ImageParams) -> Result<Vec<Str
             args.push("mjpeg".into());
             args.push("-q:v".into());
             args.push(q.clamp(2, 31).to_string());
-            if wm_plan.is_some() {
+            if overlay_used {
                 // mjpeg 不接受 rgba；jpg 的完整色度需要 yuvj420p。
                 args.push("-pix_fmt".into());
                 args.push("yuvj420p".into());
@@ -2860,6 +3287,95 @@ mod tests {
     }
 
     #[test]
+    fn audio_merge_unifies_format_then_concats_in_order() {
+        let inputs = vec!["a.m4a".to_string(), "b.wav".to_string(), "c.flac".to_string()];
+        let p = AudioMergeParams {
+            format: "mp3".into(),
+            bitrate_kbps: 192,
+            base_sample_rate: 48000,
+            base_channels: 1,
+            ..Default::default()
+        };
+        let args = build_audio_merge(&inputs, "out.mp3", &p, "libmp3lame").unwrap();
+        assert_eq!(args.iter().filter(|a| *a == "-i").count(), 3);
+        let graph = args[args.iter().position(|a| a == "-filter_complex").unwrap() + 1].clone();
+        for index in 0..3 {
+            assert!(graph.contains(&format!("[{index}:a:0]")), "{graph}");
+            assert!(
+                graph.contains(&format!(
+                    "[{index}:a:0]aresample=async=1:first_pts=0,aformat=sample_rates=48000:channel_layouts=mono[a{index}]"
+                )),
+                "{graph}"
+            );
+        }
+        assert!(graph.contains("concat=n=3:v=0:a=1[acat]"), "{graph}");
+        let map = args[args.iter().position(|a| a == "-map").unwrap() + 1].clone();
+        assert_eq!(map, "[acat]");
+        assert_eq!(args[args.iter().position(|a| a == "-b:a").unwrap() + 1], "192k");
+    }
+
+    #[test]
+    fn audio_merge_normalize_appends_loudnorm() {
+        let p = AudioMergeParams {
+            format: "mp3".into(),
+            normalize: true,
+            ..Default::default()
+        };
+        let args = build_audio_merge(
+            &["a.mp3".to_string(), "b.mp3".to_string()],
+            "out.mp3",
+            &p,
+            "libmp3lame",
+        )
+        .unwrap();
+        let graph = args[args.iter().position(|a| a == "-filter_complex").unwrap() + 1].clone();
+        assert!(graph.contains("concat=n=2:v=0:a=1[acat];[acat]loudnorm="), "{graph}");
+        let map = args[args.iter().position(|a| a == "-map").unwrap() + 1].clone();
+        assert_eq!(map, "[aout]");
+    }
+
+    #[test]
+    fn audio_merge_rejects_single_input() {
+        let p = AudioMergeParams::default();
+        let err = build_audio_merge(&["a.mp3".to_string()], "out.mp3", &p, "libmp3lame").unwrap_err();
+        assert!(err.contains("至少需要 2 个"), "{err}");
+    }
+
+    #[test]
+    fn audio_trim_inserts_ss_before_input_and_t_after_it() {
+        let p = AudioTrimParams {
+            format: "mp3".into(),
+            start_sec: 2.0,
+            end_sec: 5.5,
+            ..Default::default()
+        };
+        let args = build_audio_trim("in.mp4", "out.mp3", &p, "libmp3lame").unwrap();
+        let ss = args.iter().position(|a| a == "-ss").expect("缺少 -ss");
+        let input = args.iter().position(|a| a == "-i").expect("缺少 -i");
+        assert!(ss < input, "-ss 必须在 -i 之前：{args:?}");
+        assert_eq!(args[ss + 1], "2");
+        let t = args.iter().position(|a| a == "-t").expect("缺少 -t");
+        assert!(t > input, "-t 必须在 -i 之后：{args:?}");
+        assert_eq!(args[t + 1], "3.5");
+    }
+
+    #[test]
+    fn audio_trim_rejects_inverted_or_negative_range() {
+        let p = AudioTrimParams {
+            start_sec: 5.0,
+            end_sec: 3.0,
+            ..Default::default()
+        };
+        assert!(build_audio_trim("in.mp3", "out.mp3", &p, "libmp3lame").is_err());
+        let p = AudioTrimParams {
+            start_sec: -1.0,
+            end_sec: 3.0,
+            ..Default::default()
+        };
+        assert!(build_audio_trim("in.mp3", "out.mp3", &p, "libmp3lame").is_err());
+    }
+
+    #[test]
     fn legacy_same_alias_still_maps_to_keep_original() {
         for legacy in ["same", "original", "copy", "keep", "与源相同"] {
             let mut p = video_params();
@@ -3436,7 +3952,6 @@ mod tests {
     fn seq_video_build_sets_framerate_and_frame_limit() {
         let p = SeqParams {
             fps: 12,
-            start_number: 7,
             size_mode: "fixed".into(),
             width: 320,
             height: 240,
@@ -3444,7 +3959,7 @@ mod tests {
             quality: 20,
             bitrate_kbps: 0,
         };
-        let args = build_seq_video("dir/frame_%04d.png", "out.mp4", &p, Some((320, 240)), 7);
+        let args = build_seq_video("dir/frame_%04d.png", "out.mp4", &p, Some((320, 240)), 7, 7);
         assert_eq!(
             args[args.iter().position(|a| a == "-framerate").unwrap() + 1],
             "12"
@@ -3461,6 +3976,28 @@ mod tests {
         assert!(
             vf.contains("scale=320:240") && vf.contains("pad=320:240"),
             "{vf}"
+        );
+    }
+
+    #[test]
+    fn seq_start_number_is_derived_from_filenames() {
+        // 起始编号只由文件名决定：界面不再提供输入框，避免指定一个 ffmpeg 读不到的编号。
+        let inputs: Vec<String> = (5..=8)
+            .map(|n| format!("dir/frame_{n:04}.png"))
+            .collect();
+        let (pattern, start, count) = validate_sequence(&inputs).unwrap();
+        assert!(pattern.ends_with("frame_%04d.png"), "{pattern}");
+        assert_eq!(start, 5, "起始编号应取文件名里的最小编号");
+        assert_eq!(count, 4);
+        let p = SeqParams {
+            fps: 10,
+            size_mode: "source".into(),
+            ..Default::default()
+        };
+        let args = build_seq_video(&pattern, "out.mp4", &p, None, count, start);
+        assert_eq!(
+            args[args.iter().position(|a| a == "-start_number").unwrap() + 1],
+            "5"
         );
     }
 
@@ -3806,6 +4343,118 @@ mod tests {
         let parsed: WatermarkParams = serde_json::from_str("{\"enabled\":true}").unwrap();
         assert_eq!(parsed.base_width, 0);
         assert_eq!(parsed.scale_percent, 15);
+        // 旧预设没有 mode：必须按图片水印处理，不能误判成文字。
+        assert_eq!(watermark_mode_of(&parsed), "image");
+        assert_eq!(WatermarkParams::default().mode, "image");
+    }
+
+    #[test]
+    fn watermark_text_filter_escapes_special_chars() {
+        let mut w = WatermarkParams {
+            enabled: true,
+            mode: "text".into(),
+            text: "你好: 50%, 'q' \\ [x] %".into(),
+            font_path: "C:\\Windows\\Fonts\\msyh.ttc".into(),
+            base_width: 1280,
+            base_height: 720,
+            position: "custom".into(),
+            x: 40,
+            y: 60,
+            ..Default::default()
+        };
+        let filter = text_watermark_filter(&w).unwrap();
+        assert!(filter.starts_with("drawtext=fontfile="), "{filter}");
+        // 盘符冒号在 filtergraph/AVOption 两层解析下必须写成两个反斜杠。
+        assert!(filter.contains("fontfile=C\\\\:/Windows/Fonts/msyh.ttc"), "{filter}");
+        // 文本走 textfile，避免单引号/反斜杠在内联 text= 里被吞掉。
+        assert!(filter.contains("textfile="), "{filter}");
+        let start = filter.find("textfile=").unwrap() + "textfile=".len();
+        let end = start + filter[start..].find(":fontsize").unwrap();
+        let escaped = &filter[start..end];
+        let path = escaped.replace("\\\\:", ":").replace("\\,", ",");
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(content, w.text.trim(), "临时文本必须逐字节保留用户输入");
+        assert!(filter.contains("x=40"), "{filter}");
+        assert!(filter.contains("y=60"), "{filter}");
+        assert!(filter.contains("expansion=none"), "{filter}");
+
+        // 九宫格位置用表达式，不写死坐标。
+        w.position = "se".into();
+        w.x = 0;
+        w.y = 0;
+        let filter = text_watermark_filter(&w).unwrap();
+        assert!(filter.contains("x=w-text_w-24"), "{filter}");
+        assert!(filter.contains("y=h-text_h-24"), "{filter}");
+    }
+
+    #[test]
+    fn watermark_text_validation_is_explicit() {
+        let mut w = WatermarkParams {
+            enabled: true,
+            mode: "text".into(),
+            text: "字幕".into(),
+            font_path: "C:\\definitely-missing-font.ttf".into(),
+            ..Default::default()
+        };
+        let err = validate_watermark(&w).unwrap_err();
+        assert!(err.contains("字体文件不存在"), "{err}");
+
+        w.font_path = "C:\\Windows\\Fonts\\msyh.ttc".into();
+        w.text.clear();
+        assert!(validate_watermark(&w).unwrap_err().contains("不能为空"));
+
+        w.text = "第一行\n第二行".into();
+        assert!(validate_watermark(&w).unwrap_err().contains("不支持换行"));
+
+        w.text = "正常".into();
+        w.rotation = 30.0;
+        assert!(validate_watermark(&w).unwrap_err().contains("不支持旋转"));
+        w.rotation = 0.0;
+        w.font_size_percent = 0.5;
+        assert!(validate_watermark(&w).unwrap_err().contains("字号"));
+        w.font_size_percent = 21.0;
+        assert!(validate_watermark(&w).unwrap_err().contains("字号"));
+        w.font_size_percent = 4.5;
+        w.font_color = "white".into();
+        assert!(validate_watermark(&w).unwrap_err().contains("字体颜色"));
+        w.font_color = "#FFFFFF".into();
+        w.border_color = "#FFF".into();
+        assert!(validate_watermark(&w).unwrap_err().contains("描边颜色"));
+        w.border_color = "#000000".into();
+        assert!(validate_watermark(&w).is_ok());
+    }
+
+    #[test]
+    fn watermark_text_video_uses_vf_without_second_input() {
+        let mut p = video_params();
+        p.watermark = WatermarkParams {
+            enabled: true,
+            mode: "text".into(),
+            text: "Transmutio 2026".into(),
+            font_path: "C:\\Windows\\Fonts\\msyh.ttc".into(),
+            base_width: 1280,
+            base_height: 720,
+            ..Default::default()
+        };
+        let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
+        assert_eq!(count_flag(&args, "-i"), 1, "文字水印不需要第二路输入");
+        assert_eq!(count_flag(&args, "-filter_complex"), 0, "文字水印应走 -vf");
+        assert_eq!(count_flag(&args, "-vf"), 1);
+        assert_eq!(count_flag(&args, "-shortest"), 0);
+        let vf_pos = args.iter().position(|a| a == "-vf").unwrap();
+        assert!(args[vf_pos + 1].contains("drawtext="), "{}", args[vf_pos + 1]);
+
+        let img = ImageParams {
+            format: "png".into(),
+            watermark: p.watermark.clone(),
+            ..Default::default()
+        };
+        let args = build_image("in.png", "out.png", &img).unwrap();
+        assert_eq!(count_flag(&args, "-i"), 1, "图片文字水印不需要第二路输入");
+        assert_eq!(count_flag(&args, "-filter_complex"), 0);
+        assert_eq!(count_flag(&args, "-vf"), 1);
+        let vf_pos = args.iter().position(|a| a == "-vf").unwrap();
+        assert!(args[vf_pos + 1].contains("drawtext="), "{}", args[vf_pos + 1]);
     }
 
     #[test]

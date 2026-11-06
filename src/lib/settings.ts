@@ -7,7 +7,6 @@ import { createNamespacedStorage } from "./storage";
 
 export interface Settings {
   theme: ThemeMode;
-  locale: "zh-CN" | "en-US";
   concurrency: number;
   outputDir: string;
   ffmpegPath: string;
@@ -99,7 +98,6 @@ export const settingsStore = createSettingsStore<Settings>({
   key: "settings",
   defaults: {
     theme: "dark",
-    locale: "zh-CN",
     concurrency: 4,
     outputDir: "",
     ffmpegPath: "",

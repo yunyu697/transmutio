@@ -6,7 +6,14 @@ import type { WatermarkParams } from "./api";
 
 export const WATERMARK_DEFAULTS: WatermarkParams = {
   enabled: false,
+  mode: "image",
   path: "",
+  text: "",
+  fontPath: "",
+  fontSizePercent: 4.5,
+  fontColor: "#FFFFFF",
+  borderWidth: 2,
+  borderColor: "#000000",
   position: "se",
   x: 0,
   y: 0,
@@ -26,7 +33,20 @@ export function normalizeWatermark(value: unknown): WatermarkParams {
     typeof input === "number" && Number.isFinite(input) ? input : fallback;
   return {
     enabled: typeof raw.enabled === "boolean" ? raw.enabled : WATERMARK_DEFAULTS.enabled,
+    mode: raw.mode === "text" ? "text" : "image",
     path: typeof raw.path === "string" ? raw.path : WATERMARK_DEFAULTS.path,
+    text: typeof raw.text === "string" ? raw.text : WATERMARK_DEFAULTS.text,
+    fontPath: typeof raw.fontPath === "string" ? raw.fontPath : WATERMARK_DEFAULTS.fontPath,
+    fontSizePercent: clamp(num(raw.fontSizePercent, WATERMARK_DEFAULTS.fontSizePercent), 1, 20),
+    fontColor:
+      typeof raw.fontColor === "string" && /^#[0-9a-f]{6}$/i.test(raw.fontColor)
+        ? raw.fontColor
+        : WATERMARK_DEFAULTS.fontColor,
+    borderWidth: clamp(Math.round(num(raw.borderWidth, WATERMARK_DEFAULTS.borderWidth)), 0, 20),
+    borderColor:
+      typeof raw.borderColor === "string" && /^#[0-9a-f]{6}$/i.test(raw.borderColor)
+        ? raw.borderColor
+        : WATERMARK_DEFAULTS.borderColor,
     position:
       typeof raw.position === "string" && POSITIONS.includes(raw.position)
         ? raw.position
@@ -47,6 +67,17 @@ export async function pickWatermarkImage(): Promise<string | null> {
     multiple: false,
     directory: false,
     filters: [{ name: "水印图片", extensions: ["png", "jpg", "jpeg", "webp"] }],
+  });
+  return typeof picked === "string" ? picked : null;
+}
+
+/** 选择字体文件：ttf / otf / ttc（使用系统字体，不随应用打包）。 */
+export async function pickFontFile(): Promise<string | null> {
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const picked = await open({
+    multiple: false,
+    directory: false,
+    filters: [{ name: "字体文件", extensions: ["ttf", "otf", "ttc"] }],
   });
   return typeof picked === "string" ? picked : null;
 }

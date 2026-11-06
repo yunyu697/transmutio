@@ -49,3 +49,18 @@ export function createNamespacedStorage() {
     removeItem: (key: string) => removeNamespaced(key),
   };
 }
+
+/**
+ * 一次性清理 alpha11 遗留的两个键。只删这两个确切键：
+ * - 不读、不写、不删 `formatforge:*`；
+ * - 无迁移标记、无后续副作用，删完即结束。
+ */
+export function cleanupRetiredKeys(storage: Storage | null = safeStorage()): void {
+  if (!storage) return;
+  try {
+    storage.removeItem("transmutio:storage-migration:v1");
+    storage.removeItem("transmutio:migration-notice-dismissed");
+  } catch {
+    /* ignore */
+  }
+}

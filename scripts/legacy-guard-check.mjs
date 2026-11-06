@@ -17,7 +17,7 @@
  * 用法：node scripts/legacy-guard-check.mjs [lgpl|gpl|all]
  * 输出：samples/legacy-guard-report.json
  */
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -157,13 +157,22 @@ function probeNsis(flavor) {
 
 const asArray = (value) => (Array.isArray(value) ? value : value ? [value] : []);
 
+/** 按前缀找最新 MSI，不写死版本号（版本升级后脚本仍然可用）。 */
+function findMsi(dir, prefix) {
+  if (!existsSync(dir)) return "";
+  const files = readdirSync(dir).filter((f) => f.startsWith(prefix) && f.endsWith(".msi"));
+  if (!files.length) return "";
+  files.sort((a, b) => statSync(join(dir, b)).mtimeMs - statSync(join(dir, a)).mtimeMs);
+  return join(dir, files[0]);
+}
+
 const report = { generatedAt: new Date().toISOString(), flavors: {} };
 let failures = 0;
 
 for (const flavor of flavors) {
   const distDir = join(root, "dist-artifacts", flavor);
   const prefix = flavor === "gpl" ? "Transmutio GPL" : "Transmutio";
-  const msi = join(distDir, `${prefix}_0.1.0_x64_en-US.msi`);
+  const msi = findMsi(distDir, `${prefix}_`);
   const nsiPath = join(distDir, "installer.generated.nsi");
   const hooksPath = join(root, "src-tauri", "installer-hooks.nsh");
   const legacyUpgradeCode = LEGACY_UPGRADE_CODES[flavor];

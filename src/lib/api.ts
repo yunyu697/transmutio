@@ -101,6 +101,8 @@ export type JobKind =
   | "audio-mp3"
   | "image-gif"
   | "audio-aac"
+  | "audio-merge"
+  | "audio-trim"
   | "image"
   | "image-compress"
   | "image-seq-video"
@@ -164,8 +166,22 @@ export interface JobSpec {
 /** 图片水印参数（后端 camelCase 反序列化；关闭时不传该字段）。 */
 export interface WatermarkParams {
   enabled: boolean;
-  /** 水印图片路径（png / jpg / jpeg / webp） */
+  /** image = 图片水印；text = 文字水印（drawtext） */
+  mode: "image" | "text";
+  /** 水印图片路径（png / jpg / jpeg / webp，mode=image） */
   path: string;
+  /** 文字水印内容（mode=text） */
+  text: string;
+  /** 字体文件路径（mode=text，使用系统字体，缺失时后端明确报错） */
+  fontPath: string;
+  /** 字号：最终画面高度的百分比，1..20 */
+  fontSizePercent: number;
+  /** 字体颜色 #RRGGBB */
+  fontColor: string;
+  /** 描边宽度（像素，0..20） */
+  borderWidth: number;
+  /** 描边颜色 #RRGGBB */
+  borderColor: string;
   /** nw | n | ne | w | c | e | sw | s | se | custom */
   position: string;
   /** 仅 custom：水印左上角坐标（像素） */
@@ -173,11 +189,11 @@ export interface WatermarkParams {
   y: number;
   /** 0..1 */
   opacity: number;
-  /** 相对输出画面短边的百分比，5..50 */
+  /** 相对输出画面短边的百分比，5..50（仅图片水印） */
   scalePercent: number;
   /** 距画面边缘的留白（像素） */
   margin: number;
-  /** -180..180（度） */
+  /** -180..180（度，仅图片水印；文字水印必须为 0） */
   rotation: number;
 }
 
@@ -288,6 +304,28 @@ export interface AudioParams {
   volume: VolumeParams;
 }
 
+/** 音频合并 / 截取的输出参数（两者共用输出格式与采样设置）。 */
+export interface AudioOutputParams {
+  /** mp3 | aac | flac | wav | ogg | opus */
+  format: AudioParams["format"];
+  bitrateKbps: number;
+  /** bitrate | source（保持原始） */
+  rateMode?: "bitrate" | "source";
+  sampleRate: AudioParams["sampleRate"];
+  channels: AudioParams["channels"];
+  /** EBU R128 响度归一化 */
+  normalize: boolean;
+}
+
+/** 音频合并：按列表顺序拼接，逐路统一采样率/声道后 concat。 */
+export type AudioMergeParams = AudioOutputParams;
+
+/** 音频截取：截取 [startSec, endSec) 并重编码。 */
+export interface AudioTrimParams extends AudioOutputParams {
+  startSec: number;
+  endSec: number;
+}
+
 /** 图片压缩参数（仅 image-compress 任务读取；默认值对应后端默认）。 */
 export interface CompressParams {
   /** target = 逼近目标大小；quality = 固定质量 */
@@ -331,7 +369,6 @@ export interface ImageParams {
 
 export interface SeqParams {
   fps: number;
-  startNumber: number;
   /** source（要求同尺寸）| first | max | fixed */
   sizeMode: "source" | "first" | "max" | "fixed";
   width: number;

@@ -42,7 +42,6 @@ function OutDirBar({
 
 const DEFAULT_SEQ: SeqParams = {
   fps: 24,
-  startNumber: 1,
   sizeMode: "source",
   width: 1920,
   height: 1080,
@@ -65,7 +64,7 @@ const DEFAULT_COLLAGE: CollageParams = {
   quality: 90,
 };
 
-/** 图片序列 → 视频：帧率、起始编号、尺寸统一策略、编码器。 */
+/** 图片序列 → 视频：帧率、尺寸统一策略、编码器（起始编号按文件名自动推导）。 */
 export function SequencePanel({ outputDir, ffmpegReady, onChangeOutputDir, onEnqueued, toast, onBack }: CommonProps) {
   const { files, busy, notice, pick, remove, clear } = useMediaFiles("image");
   const [params, setParams] = useState<SeqParams>(() => loadPanelPrefs("seq:params", DEFAULT_SEQ));
@@ -125,17 +124,11 @@ export function SequencePanel({ outputDir, ffmpegReady, onChangeOutputDir, onEnq
         <div className="inspector-head"><Icon name="film" size={15} /><b>视频参数</b><span className="sub">{files.length} 张图片</span></div>
         <div className="inspector-body">
           <Group title="帧率与编号" icon="film">
-            <div className="row2">
-              <Field label="帧率（fps）">
-                <input className="input" type="number" min={1} max={60} value={params.fps}
-                  onChange={(event) => set("fps", Number(event.target.value))} />
-              </Field>
-              <Field label="起始编号">
-                <input className="input" type="number" min={1} value={params.startNumber}
-                  onChange={(event) => set("startNumber", Number(event.target.value))} />
-              </Field>
-            </div>
-            <div className="note">起始编号与文件名自动推导；若选择的文件编号不连续，任务会在入队阶段被拒绝并指出缺哪一张。</div>
+            <Field label="帧率（fps）">
+              <input className="input" type="number" min={1} max={60} value={params.fps}
+                onChange={(event) => set("fps", Number(event.target.value))} />
+            </Field>
+            <div className="note">起始编号由所选文件名自动推导（首个文件的编号就是起始编号），不提供手动输入。若选择的文件编号不连续，任务会在入队阶段被拒绝并指出缺哪一张。</div>
           </Group>
           <Group title="尺寸统一" icon="resize">
             <Field label="策略">

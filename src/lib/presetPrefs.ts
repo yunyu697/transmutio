@@ -19,7 +19,7 @@ const FIELDS: Record<string, string[]> = {
   merge: ["mode", "resolution", "fps", "audioMode", "codec", "quality", "bitrateKbps"],
   mux: ["mode", "audioMode", "audioBitrateKbps", "audioRateMode"],
   gif: ["fps", "width", "startSec", "durationSec", "optimize"],
-  seq: ["fps", "startNumber", "sizeMode", "width", "height", "encoder", "quality", "bitrateKbps"],
+  seq: ["fps", "sizeMode", "width", "height", "encoder", "quality", "bitrateKbps"],
   frames: ["fps", "width", "format", "quality"],
   collage: ["cols", "rows", "cellWidth", "cellHeight", "gap", "background", "fit", "format", "quality"],
   pdf: ["mergeMode", "splitMode", "ranges", "imageFormat", "dpi"],
@@ -45,8 +45,8 @@ const APPLY_TARGETS: Record<string, { panelKeys: string[]; namingMethods: string
     namingMethods: ["video-mp4", "video-compress", "video-crop"],
   },
   audio: {
-    panelKeys: ["audio:audio-mp3", "audio:audio-aac", "audio:audio-volume"],
-    namingMethods: ["audio-mp3", "audio-aac", "audio-volume"],
+    panelKeys: ["audio:audio-mp3", "audio:audio-aac", "audio:audio-volume", "audio:audio-merge"],
+    namingMethods: ["audio-mp3", "audio-aac", "audio-volume", "audio-merge", "audio-trim"],
   },
   image: {
     panelKeys: ["image:image-convert", "image:image-resize", "image:image-crop"],
@@ -128,11 +128,22 @@ export function collectPreset(afterAction: string): CollectedPreset {
   return { panels, output };
 }
 
+export type AfterAction = "none" | "open-folder" | "shutdown";
+
+const AFTER_ACTIONS: AfterAction[] = ["none", "open-folder", "shutdown"];
+
+export interface AppliedPreset {
+  /** 写回成功、需要重新打开面板才生效的类别。 */
+  applied: string[];
+  /** 预设里的「批次完成后」动作；未提供或非法时为 null（保持当前设置）。 */
+  afterAction: AfterAction | null;
+}
+
 /** 把校验通过的预设写回本地面板参数；返回写入的面板名称，便于提示。 */
 export function applyPreset(preset: {
   panels: Record<string, unknown>;
   output: Record<string, unknown>;
-}): string[] {
+}): AppliedPreset {
   const applied: string[] = [];
   for (const [name, value] of Object.entries(preset.panels)) {
     if (!value || typeof value !== "object" || Array.isArray(value)) continue;
@@ -158,5 +169,10 @@ export function applyPreset(preset: {
   for (const method of namingMethods) {
     writeObject(`naming:${method}`, { template, conflict });
   }
-  return applied;
+  const rawAction = preset.output.afterAction;
+  const afterAction =
+    typeof rawAction === "string" && (AFTER_ACTIONS as string[]).includes(rawAction)
+      ? (rawAction as AfterAction)
+      : null;
+  return { applied, afterAction };
 }

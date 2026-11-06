@@ -150,6 +150,9 @@ async function waitForAll(send, timeoutMs = 300_000) {
 }
 
 async function main() {
+  // 每轮从空目录开始：上一轮残留的 ui-base.mp4 会让本轮两个同名任务一起拿到 (1)/(2)，
+  // 从而把「本地残留」误判成冲突改名缺陷。
+  fs.rmSync(outDir, { recursive: true, force: true });
   ensureDir(outDir);
   if (!fs.existsSync(exe)) {
     console.error(`找不到应用二进制：${exe}\n请先执行 npx tauri build --debug --no-bundle`);

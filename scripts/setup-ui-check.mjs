@@ -197,6 +197,7 @@ async function mockTauri(page, cfg) {
     let callbackSeq = 0;
     const immediate = (value) => Promise.resolve(value);
 
+    window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
     window.__TAURI_INTERNALS__ = {
       metadata: {
         currentWindow: { label: "main" },
@@ -291,7 +292,7 @@ async function scenarioMissing(browser, origin, results) {
   const note = await text(page, ".setup-head + .note");
   add("缺失原因文案", note.includes("未找到可用的 ffmpeg / ffprobe"), note);
 
-  const sourceInput = page.locator(".setup-steps > li:nth-child(1) .setup-row input");
+  const sourceInput = page.locator(".setup-steps > li:nth-child(2) .setup-row input");
   const placeholder = await sourceInput.getAttribute("placeholder");
   add("下载源输入可配置（默认值）", placeholder === "https://ffmpeg.org/download.html", `placeholder=${placeholder}`);
 
@@ -300,7 +301,7 @@ async function scenarioMissing(browser, origin, results) {
   const stored = await page.evaluate(() => globalThis.localStorage.getItem("transmutio:settings") || "");
   add("下载源修改后持久化", stored.includes(customUrl), `localStorage 已写入自定义地址=${stored.includes(customUrl)}`);
 
-  await page.locator(".setup-steps > li:nth-child(1) .setup-row button").click();
+  await page.locator(".setup-steps > li:nth-child(2) .setup-row button").click();
   const openerCall = await page
     .waitForFunction(
       () => window.__FF_MOCK__.calls.filter((call) => call.cmd === "plugin:opener|open_url").pop(),
@@ -316,7 +317,7 @@ async function scenarioMissing(browser, origin, results) {
       (await page.evaluate(() => document.querySelector(".setup-card > .note.danger")?.textContent ?? "")),
   );
 
-  await page.locator(".setup-steps > li:nth-child(2) .setup-row button").click();
+  await page.locator(".setup-steps > li:nth-child(3) .setup-row button").click();
   await page.waitForSelector(".setup-inspect", { timeout: 10000 });
   const inspectBox = await text(page, ".setup-inspect");
   add("选文件后展示校验结果", inspectBox.includes("LGPL") && inspectBox.includes("SHA-256"), inspectBox.split("\n").slice(0, 6).join(" / "));
@@ -376,7 +377,7 @@ async function scenarioNonfree(browser, origin, results) {
   const note = await text(page, ".setup-head + .note");
   add("说明为何被接管", note.includes("nonfree") && note.includes(NONFREE_PATH), note);
 
-  await page.locator(".setup-steps > li:nth-child(2) .setup-row button").click();
+  await page.locator(".setup-steps > li:nth-child(3) .setup-row button").click();
   await page.waitForSelector(".setup-inspect", { timeout: 10000 });
   const inspectBox = await text(page, ".setup-inspect");
   add("nonfree 校验结果标红拒绝", inspectBox.includes("nonfree"), inspectBox.split("\n").slice(0, 5).join(" / "));
@@ -388,7 +389,7 @@ async function scenarioNonfree(browser, origin, results) {
   const innerNote = await text(page, ".setup-inspect .note.danger");
   add("GPL 默认拒绝提示", innerNote.includes("GPL"), innerNote);
 
-  add("提供仅本机开发的显式开关", (await count(page, ".setup-steps > li:nth-child(3)")) === 1, "开发覆盖入口存在");
+  add("提供仅本机开发的显式开关", (await count(page, ".setup-steps li:has-text('仅本机开发：允许 GPL')")) === 1, "开发覆盖入口存在");
   const status = await text(page, ".statusbar");
   add(
     "状态栏标注 nonfree 构建",
@@ -429,7 +430,7 @@ async function scenarioGplVariant(browser, origin, results) {
   add("GPL 版标题文案", title === "第一次使用：先准备 GPL 构建的 FFmpeg", title);
   const intro = await text(page, ".setup-head p");
   add("GPL 版说明文案", intro.includes("GPL 版") && intro.includes("libx264"), intro.replace(/\s+/g, " ").slice(0, 100));
-  const placeholder = await page.locator(".setup-steps > li:nth-child(1) .setup-row input").getAttribute("placeholder");
+  const placeholder = await page.locator(".setup-steps > li:nth-child(2) .setup-row input").getAttribute("placeholder");
   add("GPL 版默认下载源指向 gyan.dev", placeholder === "https://www.gyan.dev/ffmpeg/builds/", `placeholder=${placeholder}`);
   add(
     "GPL 版步骤标题区分",
@@ -448,7 +449,7 @@ async function scenarioGplVariant(browser, origin, results) {
   );
 
   // 第一次选 LGPL 构建：应拒绝并禁用安装
-  await page.locator(".setup-steps > li:nth-child(2) .setup-row button").click();
+  await page.locator(".setup-steps > li:nth-child(3) .setup-row button").click();
   await page.waitForSelector(".setup-inspect", { timeout: 10000 });
   const installButton = page.locator(".setup-inspect button").filter({ hasText: /落位/ });
   const rejectNote = await text(page, ".setup-inspect .note.danger");
@@ -459,7 +460,7 @@ async function scenarioGplVariant(browser, origin, results) {
   );
 
   // 第二次选 GPL 构建：应放行，且安装调用固定 allowGpl=true
-  await page.locator(".setup-steps > li:nth-child(2) .setup-row button").click();
+  await page.locator(".setup-steps > li:nth-child(3) .setup-row button").click();
   await page.waitForFunction(
     () => document.querySelector(".setup-inspect .setup-kv b")?.textContent?.includes("GPL"),
     undefined,

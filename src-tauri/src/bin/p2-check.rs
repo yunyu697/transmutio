@@ -1523,7 +1523,6 @@ fn image_sequence_to_video(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &m
     }
     let params = args::SeqParams {
         fps: 10,
-        start_number: start,
         size_mode: "source".into(),
         width: 0,
         height: 0,
@@ -1542,6 +1541,7 @@ fn image_sequence_to_video(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &m
         &params,
         target,
         count,
+        start,
     );
     if let Err(e) = run(ffmpeg, &argv) {
         return report.fail(name, format!("ffmpeg 失败：{e}"));

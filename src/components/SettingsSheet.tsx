@@ -59,17 +59,7 @@ export function SettingsSheet({
                 ]}
               />
             </Field>
-            <Field label="界面语言">
-              <select
-                className="select"
-                value={settings.locale}
-                onChange={(event) => onPatch({ locale: event.target.value as Settings["locale"] })}
-              >
-                <option value="zh-CN">简体中文</option>
-                <option value="en-US">English（骨架，未完整翻译）</option>
-              </select>
-            </Field>
-            <div className="note">本版界面以中文为准；en-US 词条仅覆盖框架文案，未逐条翻译。</div>
+            <div className="note">界面语言：本版仅提供简体中文。en-US 词典仅为未完成骨架，暂不提供切换。</div>
           </Group>
 
           <Group title="任务与输出" icon="folder">
@@ -335,11 +325,15 @@ export function SettingsSheet({
                   if (typeof path !== "string") return;
                   try {
                     const preset = await api.importPreset(path);
-                    const applied = applyPreset(preset);
+                    const { applied, afterAction } = applyPreset(preset);
+                    if (afterAction) onPatch({ afterAction });
+                    const parts: string[] = [];
+                    if (applied.length) {
+                      parts.push(`已导入 ${applied.length} 个面板参数（${applied.join(" / ")}），重新打开对应面板后生效`);
+                    }
+                    if (afterAction) parts.push("批次完成后的动作已同步");
                     toast(
-                      applied.length
-                        ? `已导入 ${applied.length} 个面板参数（${applied.join(" / ")}），重新打开对应面板后生效`
-                        : "预设校验通过，但没有可应用的面板参数",
+                      parts.length ? `预设导入完成：${parts.join("；")}` : "预设校验通过，但没有可应用的参数",
                       "ok",
                     );
                   } catch (error) {
@@ -351,7 +345,7 @@ export function SettingsSheet({
               </button>
             </div>
             <div className="note">
-              预设包含面板参数与输出命名策略，不含本机路径、输出目录或凭据。导入时会校验版本、字段白名单与字段类型，
+              预设包含面板参数、输出命名策略与「批次完成后」动作，不含本机路径、输出目录或凭据。导入时会校验版本、字段白名单与字段类型，
               非法字段会逐条报错，不会被静默忽略。
             </div>
           </Group>

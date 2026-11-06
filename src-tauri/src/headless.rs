@@ -123,6 +123,38 @@ fn mean_volume_db(ffmpeg: &str, path: &Path) -> Result<f64, String> {
         .ok_or_else(|| format!("无法解析 mean_volume：{}", marker.trim()))
 }
 
+/// 解码首帧并返回 framemd5 哈希，用于证明两个输出的画面确实不同（如水印真的烧进去了）。
+fn first_frame_hash(ffmpeg: &str, path: &Path) -> Result<String, String> {
+    let out = std::process::Command::new(ffmpeg)
+        .args([
+            "-hide_banner",
+            "-v",
+            "error",
+            "-i",
+            &path.to_string_lossy(),
+            "-frames:v",
+            "1",
+            "-f",
+            "framemd5",
+            "-",
+        ])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|e| format!("启动 ffmpeg 失败：{e}"))?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let line = text
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .next_back()
+        .ok_or_else(|| "framemd5 未输出帧哈希".to_string())?;
+    line.split(',')
+        .next_back()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "framemd5 输出中没有哈希字段".to_string())
+}
+
 fn run_ffmpeg(ffmpeg: &str, args: &[String]) -> Result<(), String> {
     let out = std::process::Command::new(ffmpeg)
         .args(args)
@@ -1051,6 +1083,138 @@ pub async fn run_checks(report_path: &str) -> i32 {
             );
         }
 
+        // 0) 文字水印：真实 drawtext（中文 + 系统字体 + filtergraph 特殊字符）
+        let out_wm = workspace.join("out-watermark");
+        let _ = std::fs::create_dir_all(&out_wm);
+        let font = ["C:\\Windows\\Fonts\\msyh.ttc", "C:\\Windows\\Fonts\\simhei.ttf"]
+            .into_iter()
+            .find(|p| Path::new(p).is_file());
+        match font {
+            None => fail(
+                &mut results,
+                "文字水印：中文 drawtext 真实烧入",
+                "本机缺少中文字体 C:\\Windows\\Fonts\\msyh.ttc / simhei.ttf".into(),
+            ),
+            Some(font_path) => {
+                let mut wm_params = video_params(false);
+                wm_params["watermark"] = json!({
+                    "enabled": true,
+                    "mode": "text",
+                    "text": "中文水印:测试[FF],2026",
+                    "fontPath": font_path,
+                    "fontSizePercent": 6,
+                    "fontColor": "#FFFFFF",
+                    "borderWidth": 2,
+                    "borderColor": "#000000",
+                    "position": "se",
+                    "margin": 24,
+                    "opacity": 0.9,
+                    "scalePercent": 15,
+                    "rotation": 0,
+                    "x": 0,
+                    "y": 0
+                });
+                let baseline = JobSpec {
+                    kind: "video-mp4".into(),
+                    input: src_short.to_string_lossy().to_string(),
+                    inputs: Vec::new(),
+                    output_dir: out_wm.to_string_lossy().to_string(),
+                    output_stem: Some("水印-基线".into()),
+                    name_template: None,
+                    conflict: None,
+                    params: video_params(false),
+                };
+                let watermarked = JobSpec {
+                    output_stem: Some("水印-文字".into()),
+                    params: wm_params,
+                    ..baseline.clone()
+                };
+                match (run_one(&ctx, baseline, 120).await, run_one(&ctx, watermarked, 120).await) {
+                    (Ok(base), Ok(wm)) if base.status == "done" && wm.status == "done" => {
+                        let base_hash = first_frame_hash(&ffmpeg_path, Path::new(&base.output));
+                        let wm_hash = first_frame_hash(&ffmpeg_path, Path::new(&wm.output));
+                        match (base_hash, wm_hash) {
+                            (Ok(b), Ok(w)) if b != w => pass(
+                                &mut results,
+                                "文字水印：中文 drawtext 真实烧入",
+                                format!(
+                                    "font={font_path}；首帧哈希 基线={b} 水印={w}（画面确已改变）；输出={}",
+                                    wm.output
+                                ),
+                            ),
+                            (Ok(b), Ok(_w)) => fail(
+                                &mut results,
+                                "文字水印：中文 drawtext 真实烧入",
+                                format!("首帧哈希相同（{b}），水印未真正烧入；输出={}", wm.output),
+                            ),
+                            (a, b) => fail(
+                                &mut results,
+                                "文字水印：中文 drawtext 真实烧入",
+                                format!("首帧哈希读取失败：{a:?} / {b:?}"),
+                            ),
+                        }
+                    }
+                    (a, b) => fail(
+                        &mut results,
+                        "文字水印：中文 drawtext 真实烧入",
+                        format!(
+                            "status={:?}/{:?} message={:?}/{:?}",
+                            a.as_ref().map(|j| j.status.clone()),
+                            b.as_ref().map(|j| j.status.clone()),
+                            a.as_ref().ok().and_then(|j| j.message.clone()),
+                            b.as_ref().ok().and_then(|j| j.message.clone())
+                        ),
+                    ),
+                }
+
+                // 缺字体必须在入队时就被拒绝，并给出可读原因（不能静默失败或产出一张原图）
+                let missing_font = JobSpec {
+                    output_stem: Some("水印-缺字体".into()),
+                    params: json!({
+                        "codec": "h264", "encoder": "auto", "rateMode": "quality", "quality": 26,
+                        "bitrateKbps": 6000, "resolution": "720", "fps": "source",
+                        "audioMode": "none", "audioBitrateKbps": 128,
+                        "hwDecode": false, "faststart": true,
+                        "watermark": {
+                            "enabled": true, "mode": "text", "text": "缺字体",
+                            "fontPath": out_wm.join("no-such-font.ttf").to_string_lossy(),
+                            "fontSizePercent": 6, "fontColor": "#FFFFFF",
+                            "borderWidth": 2, "borderColor": "#000000",
+                            "position": "se", "margin": 24, "opacity": 0.9,
+                            "scalePercent": 15, "rotation": 0, "x": 0, "y": 0
+                        }
+                    }),
+                    ..JobSpec {
+                        kind: "video-mp4".into(),
+                        input: src_short.to_string_lossy().to_string(),
+                        inputs: Vec::new(),
+                        output_dir: out_wm.to_string_lossy().to_string(),
+                        output_stem: None,
+                        name_template: None,
+                        conflict: None,
+                        params: Value::Null,
+                    }
+                };
+                match jobs::enqueue(&ctx, vec![missing_font]).await {
+                    Err(e) if e.contains("字体文件不存在") => pass(
+                        &mut results,
+                        "文字水印：缺字体明确报错",
+                        format!("入队即拒绝：{e}"),
+                    ),
+                    Err(e) => fail(
+                        &mut results,
+                        "文字水印：缺字体明确报错",
+                        format!("被拒绝但原因不明确：{e}"),
+                    ),
+                    Ok(_) => fail(
+                        &mut results,
+                        "文字水印：缺字体明确报错",
+                        "缺字体竟然入队成功（会静默失败）".into(),
+                    ),
+                }
+            }
+        }
+
         let merge_params = json!({
             "mode": "auto", "resolution": "source", "fps": "source",
             "audioMode": "none", "codec": "h264", "quality": 26, "bitrateKbps": 0
@@ -1327,7 +1491,122 @@ pub async fn run_checks(report_path: &str) -> i32 {
             Err(e) => fail(&mut results, "混流：copy 拒绝不兼容音频", e),
         }
 
-        // 6) GIF：调色板优化
+        // 6) 音频合并：两种采样率/声道不同的素材，统一后按顺序拼接
+        let merge_audio_a = workspace.join("audio-merge-a-2s.wav");
+        let merge_audio_b = workspace.join("audio-merge-b-3s.wav");
+        let make_merge_a: Vec<String> = vec![
+            "-hide_banner".into(), "-loglevel".into(), "error".into(), "-y".into(),
+            "-f".into(), "lavfi".into(), "-i".into(),
+            "sine=frequency=440:sample_rate=44100:duration=2".into(),
+            "-ar".into(), "44100".into(), "-ac".into(), "2".into(),
+            merge_audio_a.to_string_lossy().to_string(),
+        ];
+        let make_merge_b: Vec<String> = vec![
+            "-hide_banner".into(), "-loglevel".into(), "error".into(), "-y".into(),
+            "-f".into(), "lavfi".into(), "-i".into(),
+            "sine=frequency=660:sample_rate=48000:duration=3".into(),
+            "-ar".into(), "48000".into(), "-ac".into(), "1".into(),
+            merge_audio_b.to_string_lossy().to_string(),
+        ];
+        if let Err(e) = run_ffmpeg(&ffmpeg_path, &make_merge_a)
+            .and_then(|_| run_ffmpeg(&ffmpeg_path, &make_merge_b))
+        {
+            fail(&mut results, "音频合并", format!("生成素材失败：{e}"));
+        } else {
+            let out_am = workspace.join("out-audio-merge");
+            let _ = std::fs::create_dir_all(&out_am);
+            let spec = JobSpec {
+                kind: "audio-merge".into(),
+                input: merge_audio_a.to_string_lossy().to_string(),
+                inputs: vec![merge_audio_b.to_string_lossy().to_string()],
+                output_dir: out_am.to_string_lossy().to_string(),
+                output_stem: Some("合并音频".into()),
+                name_template: None,
+                conflict: None,
+                params: json!({
+                    "format": "mp3", "bitrateKbps": 128, "rateMode": "bitrate",
+                    "sampleRate": "44100", "channels": "stereo", "normalize": false
+                }),
+            };
+            match run_one(&ctx, spec, 120).await {
+                Ok(job) => {
+                    let info_out = crate::probe::probe_media(&probe_bin, &job.output).await;
+                    let duration = info_out.duration_sec.unwrap_or(0.0);
+                    let channels = info_out.channels.unwrap_or(0);
+                    let rate = info_out.sample_rate.unwrap_or(0);
+                    if job.status == "done"
+                        && (duration - 5.0).abs() < 0.35
+                        && channels == 2
+                        && rate == 44100
+                    {
+                        pass(
+                            &mut results,
+                            "音频合并：统一采样率/声道后按顺序拼接",
+                            format!(
+                                "duration={duration:.3}s（期望 5.000）sample_rate={rate} channels={channels} codec={:?}",
+                                info_out.audio_codec
+                            ),
+                        );
+                    } else {
+                        fail(
+                            &mut results,
+                            "音频合并：统一采样率/声道后按顺序拼接",
+                            format!(
+                                "status={} duration={duration:.3}s sample_rate={rate} channels={channels} msg={:?}",
+                                job.status, job.message
+                            ),
+                        );
+                    }
+                }
+                Err(e) => fail(&mut results, "音频合并", e),
+            }
+        }
+
+        // 7) 音频截取：3 秒素材取 [0.5, 2.5)，期望 2.000 秒
+        let out_at = workspace.join("out-audio-trim");
+        let _ = std::fs::create_dir_all(&out_at);
+        let trim_spec = JobSpec {
+            kind: "audio-trim".into(),
+            input: merge_audio_b.to_string_lossy().to_string(),
+            inputs: Vec::new(),
+            output_dir: out_at.to_string_lossy().to_string(),
+            output_stem: Some("截取音频".into()),
+            name_template: None,
+            conflict: None,
+            params: json!({
+                "format": "mp3", "bitrateKbps": 128, "rateMode": "bitrate",
+                "sampleRate": "source", "channels": "source", "normalize": false,
+                "startSec": 0.5, "endSec": 2.5
+            }),
+        };
+        match run_one(&ctx, trim_spec, 120).await {
+            Ok(job) => {
+                let info_out = crate::probe::probe_media(&probe_bin, &job.output).await;
+                let duration = info_out.duration_sec.unwrap_or(0.0);
+                if job.status == "done" && (duration - 2.0).abs() < 0.25 {
+                    pass(
+                        &mut results,
+                        "音频截取：按时间区间准确截断",
+                        format!(
+                            "duration={duration:.3}s（期望 2.000）sample_rate={:?} codec={:?}",
+                            info_out.sample_rate, info_out.audio_codec
+                        ),
+                    );
+                } else {
+                    fail(
+                        &mut results,
+                        "音频截取：按时间区间准确截断",
+                        format!(
+                            "status={} duration={duration:.3}s msg={:?}",
+                            job.status, job.message
+                        ),
+                    );
+                }
+            }
+            Err(e) => fail(&mut results, "音频截取", e),
+        }
+
+        // 8) GIF：调色板优化
         let gif_spec = JobSpec {
             kind: "video-gif".into(),
             input: src_short.to_string_lossy().to_string(),
@@ -1535,6 +1814,16 @@ pub async fn run_checks(report_path: &str) -> i32 {
         }
 
         // 8) 命名模板 + 三种冲突策略
+        // 先用例自己的产物（上一轮残留或并发运行可能留下 模板-1.mp4），
+        // 否则 {index} 会撞号变成「模板-1 (1).mp4」，把本地残留误判成功能缺陷。
+        if let Ok(entries) = std::fs::read_dir(&out_name) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with("模板-") && name.ends_with(".mp4") {
+                    let _ = std::fs::remove_file(entry.path());
+                }
+            }
+        }
         match jobs::enqueue(
             &ctx,
             vec![

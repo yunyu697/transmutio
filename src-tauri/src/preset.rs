@@ -151,7 +151,6 @@ fn validate_panel(panel: &Value, name: &str) -> Result<(), String> {
         "gif" => &["fps", "width", "startSec", "durationSec", "optimize"],
         "seq" => &[
             "fps",
-            "startNumber",
             "sizeMode",
             "width",
             "height",

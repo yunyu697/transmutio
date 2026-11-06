@@ -16,7 +16,7 @@ import {
   type NamingPrefs,
 } from "./shared";
 import { loadPanelPrefs, savePanelPrefs } from "../lib/panelPrefs";
-import { WATERMARK_DEFAULTS, normalizeWatermark, pickWatermarkImage } from "../lib/watermark";
+import { WATERMARK_DEFAULTS, normalizeWatermark, pickFontFile, pickWatermarkImage } from "../lib/watermark";
 import {
   SUBTITLE_DEFAULTS,
   SUBTITLE_SOFT_CONTAINERS,
@@ -285,9 +285,20 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
       toast("分段格式应为逐行「开始-结束」（秒），例如 0-30；开始时间 ≥ 0 且结束必须大于开始", "error");
       return;
     }
-    if (isWatermark && params.watermark.enabled && !params.watermark.path.trim()) {
-      toast("水印已开启，请先选择水印图片（png / jpg / jpeg / webp）", "error");
-      return;
+    if (isWatermark && params.watermark.enabled) {
+      if (params.watermark.mode === "text") {
+        if (!params.watermark.text.trim()) {
+          toast("文字水印已开启，请填写水印文字", "error");
+          return;
+        }
+        if (!params.watermark.fontPath.trim()) {
+          toast("文字水印已开启，请先选择字体文件（ttf / otf / ttc）", "error");
+          return;
+        }
+      } else if (!params.watermark.path.trim()) {
+        toast("水印已开启，请先选择水印图片（png / jpg / jpeg / webp）", "error");
+        return;
+      }
     }
     if (isSubtitle && params.subtitle.enabled) {
       if (!params.subtitle.path.trim()) {
@@ -569,27 +580,142 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
             <Group title="水印" icon="watermark">
               <SwitchRow
                 label="启用水印"
-                hint="叠加一张图片水印；关闭时不向 ffmpeg 传任何水印参数"
+                hint="叠加图片或文字水印；关闭时不向 ffmpeg 传任何水印参数"
                 on={params.watermark.enabled}
                 onChange={(value) => setWatermark("enabled", value)}
               />
               {params.watermark.enabled ? (
                 <>
-                  <Field label="水印图片" tag="png / jpg / jpeg / webp">
-                    <button
-                      className="btn small"
-                      type="button"
-                      onClick={async () => {
-                        const picked = await pickWatermarkImage();
-                        if (picked) setWatermark("path", picked);
-                      }}
-                    >
-                      选择水印图片
-                    </button>
-                    <div className="note" title={params.watermark.path} style={{ wordBreak: "break-all" }}>
-                      {params.watermark.path || "尚未选择水印图片"}
-                    </div>
+                  <Field
+                    label="水印类型"
+                    tag={params.watermark.mode === "text" ? "drawtext 文字" : "图片叠加"}
+                  >
+                    <Segmented
+                      value={params.watermark.mode}
+                      onChange={(value) =>
+                        setParams((prev) => ({
+                          ...prev,
+                          watermark: {
+                            ...prev.watermark,
+                            mode: value as "image" | "text",
+                            // drawtext 不支持旋转：切到文字时强制归零，避免参数被静默忽略。
+                            rotation: value === "text" ? 0 : prev.watermark.rotation,
+                          },
+                        }))
+                      }
+                      options={[
+                        { value: "image", label: "图片水印" },
+                        { value: "text", label: "文字水印" },
+                      ]}
+                    />
                   </Field>
+                  {params.watermark.mode === "text" ? (
+                    <>
+                      <Field label="水印文字" tag="单行，最多 200 字">
+                        <input
+                          className="input"
+                          type="text"
+                          maxLength={200}
+                          placeholder="例如：Transmutio 2026"
+                          value={params.watermark.text}
+                          onChange={(event) => setWatermark("text", event.target.value)}
+                        />
+                      </Field>
+                      <Field label="字体文件" tag="ttf / otf / ttc（使用系统字体）">
+                        <button
+                          className="btn small"
+                          type="button"
+                          onClick={async () => {
+                            const picked = await pickFontFile();
+                            if (picked) setWatermark("fontPath", picked);
+                          }}
+                        >
+                          选择字体文件
+                        </button>
+                        <div className="note" title={params.watermark.fontPath} style={{ wordBreak: "break-all" }}>
+                          {params.watermark.fontPath ||
+                            "尚未选择字体（中文建议 C:\\Windows\\Fonts\\msyh.ttc，缺失时任务会明确失败）"}
+                        </div>
+                      </Field>
+                      <div className="row2">
+                        <Field label={`字号 ${params.watermark.fontSizePercent}%`} tag="画面高度 %">
+                          <input
+                            className="input"
+                            type="number"
+                            min={1}
+                            max={20}
+                            step={0.5}
+                            value={params.watermark.fontSizePercent}
+                            onChange={(event) => {
+                              const next = Number(event.target.value);
+                              if (Number.isFinite(next)) setWatermark("fontSizePercent", next);
+                            }}
+                          />
+                        </Field>
+                        <Field label="描边宽度（px）" tag="0–20">
+                          <input
+                            className="input"
+                            type="number"
+                            min={0}
+                            max={20}
+                            step={1}
+                            value={params.watermark.borderWidth}
+                            onChange={(event) => {
+                              const next = Number(event.target.value);
+                              if (Number.isFinite(next)) setWatermark("borderWidth", Math.round(next));
+                            }}
+                          />
+                        </Field>
+                      </div>
+                      <div className="row2">
+                        <Field label="字体颜色" tag="#RRGGBB">
+                          <input
+                            className="input"
+                            type="color"
+                            value={params.watermark.fontColor}
+                            onChange={(event) => setWatermark("fontColor", event.target.value)}
+                          />
+                        </Field>
+                        <Field label="描边颜色" tag="#RRGGBB">
+                          <input
+                            className="input"
+                            type="color"
+                            value={params.watermark.borderColor}
+                            onChange={(event) => setWatermark("borderColor", event.target.value)}
+                          />
+                        </Field>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <Field label="水印图片" tag="png / jpg / jpeg / webp">
+                        <button
+                          className="btn small"
+                          type="button"
+                          onClick={async () => {
+                            const picked = await pickWatermarkImage();
+                            if (picked) setWatermark("path", picked);
+                          }}
+                        >
+                          选择水印图片
+                        </button>
+                        <div className="note" title={params.watermark.path} style={{ wordBreak: "break-all" }}>
+                          {params.watermark.path || "尚未选择水印图片"}
+                        </div>
+                      </Field>
+                      <Field label={`缩放 ${params.watermark.scalePercent}%`} tag="相对短边 %">
+                        <input
+                          className="slider"
+                          type="range"
+                          min={5}
+                          max={50}
+                          step={1}
+                          value={params.watermark.scalePercent}
+                          onChange={(event) => setWatermark("scalePercent", Number(event.target.value))}
+                        />
+                      </Field>
+                    </>
+                  )}
                   <Field label="位置" tag={params.watermark.position === "custom" ? "自定义坐标" : "九宫格"}>
                     {WATERMARK_ROWS.map((row) => (
                       <Segmented
@@ -638,19 +764,35 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
                       onChange={(event) => setWatermark("opacity", Number(event.target.value))}
                     />
                   </Field>
-                  <Field label={`缩放 ${params.watermark.scalePercent}%`} tag="相对短边 %">
-                    <input
-                      className="slider"
-                      type="range"
-                      min={5}
-                      max={50}
-                      step={1}
-                      value={params.watermark.scalePercent}
-                      onChange={(event) => setWatermark("scalePercent", Number(event.target.value))}
-                    />
-                  </Field>
-                  <div className="row2">
-                    <Field label="边距（px）">
+                  {params.watermark.mode === "image" ? (
+                    <div className="row2">
+                      <Field label="边距（px）">
+                        <input
+                          className="input"
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={params.watermark.margin}
+                          onChange={(event) => setWatermark("margin", Math.max(0, Math.round(Number(event.target.value) || 0)))}
+                        />
+                      </Field>
+                      <Field label={`旋转 ${params.watermark.rotation}°`} tag="-180–180">
+                        <input
+                          className="input"
+                          type="number"
+                          min={-180}
+                          max={180}
+                          step={1}
+                          value={params.watermark.rotation}
+                          onChange={(event) => {
+                            const next = Number(event.target.value);
+                            if (Number.isFinite(next) && next >= -180 && next <= 180) setWatermark("rotation", Math.round(next));
+                          }}
+                        />
+                      </Field>
+                    </div>
+                  ) : (
+                    <Field label="边距（px）" tag="距画面边缘">
                       <input
                         className="input"
                         type="number"
@@ -660,23 +802,11 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
                         onChange={(event) => setWatermark("margin", Math.max(0, Math.round(Number(event.target.value) || 0)))}
                       />
                     </Field>
-                    <Field label={`旋转 ${params.watermark.rotation}°`} tag="-180–180">
-                      <input
-                        className="input"
-                        type="number"
-                        min={-180}
-                        max={180}
-                        step={1}
-                        value={params.watermark.rotation}
-                        onChange={(event) => {
-                          const next = Number(event.target.value);
-                          if (Number.isFinite(next) && next >= -180 && next <= 180) setWatermark("rotation", Math.round(next));
-                        }}
-                      />
-                    </Field>
-                  </div>
+                  )}
                   <div className="note">
-                    水印按输出画面短边百分比缩放，九宫格会自动留出边距；自定义坐标为水印左上角像素位置。水印图仅支持 png / jpg / jpeg / webp。
+                    {params.watermark.mode === "text"
+                      ? "文字水印由 ffmpeg drawtext 绘制：使用系统字体（不随应用打包），不支持换行与旋转；字体缺失或格式不支持时任务会直接失败并给出原因。"
+                      : "水印按输出画面短边百分比缩放，九宫格会自动留出边距；自定义坐标为水印左上角像素位置。水印图仅支持 png / jpg / jpeg / webp。"}
                   </div>
                 </>
               ) : null}
