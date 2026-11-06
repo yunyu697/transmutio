@@ -19,7 +19,11 @@ jobs:
   guard:
     runs-on: ubuntu-latest
     steps:
+      # alpha 序号要跟历史 tag 比较，必须取全量 tag（默认浅克隆拿不到）。
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
       - uses: actions/setup-node@v4
         with:
           node-version: 20
