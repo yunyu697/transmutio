@@ -132,13 +132,20 @@ jobs:
         shell: bash
         run: |
           shopt -s nullglob
+          # signer sign 直接读取 TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PASSWORD，
+          # 不走命令行参数，避免密钥出现在进程参数与日志里。
           for f in dist-flat/*.msi dist-flat/*.exe dist-flat/*.dmg dist-flat/*.deb dist-flat/*.AppImage; do
             echo "signing $f"
-            npx --yes @tauri-apps/cli@2 signer sign \
-              -f "$TAURI_SIGNING_PRIVATE_KEY" \
-              -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" "$f"
+            npx --yes @tauri-apps/cli@2 signer sign --app-version "${GITHUB_REF_NAME#v}" "$f"
           done
-      - name: 合并三平台 SHA256SUMS（文件名按 GitHub 资产名归一）
+          # 每个安装包都必须有 .sig，缺失即失败（不做"未签名照发"的降级）。
+          for f in dist-flat/*.msi dist-flat/*.exe dist-flat/*.dmg dist-flat/*.deb dist-flat/*.AppImage; do
+            test -f "$f.sig" || { echo "缺少签名：$f.sig"; exit 1; }
+          done
+      - name: 生成 updater 清单（latest.json / latest-gpl.json，含签名）
+        # 清单里的 signature 直接取 .sig 内容；缺签名或缺平台包时该步骤失败。
+        run: node scripts/release-manifest.mjs --flat dist-flat --tag "$GITHUB_REF_NAME"
+      - name: 合并三平台 SHA256SUMS（文件名按 GitHub 资产名归一，含 .sig）
         run: node scripts/release-checksums.mjs --flat dist-flat --normalize-names dist-release/SHA256SUMS
       - name: 确认本版本 Release 说明存在
         run: test -f "release-notes/${GITHUB_REF_NAME}.md" || { echo "缺少 release-notes/${GITHUB_REF_NAME}.md"; exit 1; }
@@ -155,5 +162,7 @@ jobs:
             dist-flat/*.deb
             dist-flat/*.AppImage
             dist-flat/*.sig
+            dist-flat/latest.json
+            dist-flat/latest-gpl.json
             dist-release/SHA256SUMS
           fail_on_unmatched_files: true

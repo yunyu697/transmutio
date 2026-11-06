@@ -34,6 +34,7 @@ samples/
 .env.*
 *.pem
 *.key
+*.key.pub
 *.p12
 *.pfx
 *.cer
@@ -41,6 +42,11 @@ samples/
 *.sig
 secrets/
 .tauri-signing/
+# 更新器私钥、密码短语与签名临时文件
+transmutio-updater.key*
+password.txt
+signing/
+*.key.backup
 
 # 编辑器 / 系统
 .vscode/

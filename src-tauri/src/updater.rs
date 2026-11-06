@@ -11,6 +11,7 @@
 //! 公钥为空时不做任何降级：可以检查/下载，但安装被明确拒绝。
 
 use crate::flavor::Flavor;
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -366,12 +367,38 @@ pub fn signature_note() -> String {
     }
 }
 
+/// 解析公钥：Tauri 的 `.pub` 是"整段 base64（内含 untrusted comment 与密钥行）"，
+/// minisign.pub 则是两行明文；两种都要支持。
+fn decode_public_key(text: &str) -> Result<minisign_verify::PublicKey, String> {
+    if let Ok(pk) = minisign_verify::PublicKey::from_base64(text.trim()) {
+        return Ok(pk);
+    }
+    let compact: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(compact.as_bytes())
+        .map_err(|e| format!("公钥既不是密钥行也不是 base64 包裹文本：{e}"))?;
+    let inner = String::from_utf8(decoded).map_err(|e| format!("公钥内容不是 UTF-8：{e}"))?;
+    minisign_verify::PublicKey::decode(&inner).map_err(|e| format!("公钥无法解析：{e}"))
+}
+
+/// 解析签名文本：minisign 明文格式，或 Tauri signer 产出的 base64 包裹格式。
+fn decode_signature(sig_text: &str) -> Result<minisign_verify::Signature, String> {
+    if let Ok(sig) = minisign_verify::Signature::decode(sig_text.trim()) {
+        return Ok(sig);
+    }
+    // Tauri signer 写出的 `.sig` 是"整段 minisign 文本再做 base64"，必须解开再解析。
+    let compact: String = sig_text.chars().filter(|c| !c.is_whitespace()).collect();
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(compact.as_bytes())
+        .map_err(|e| format!("签名文件既不是 minisign 文本也不是 base64：{e}"))?;
+    let text = String::from_utf8(decoded).map_err(|e| format!("签名内容不是 UTF-8：{e}"))?;
+    minisign_verify::Signature::decode(&text).map_err(|e| format!("签名文件无法解析：{e}"))
+}
+
 /// 用指定公钥验证 minisign 签名；流式优先，旧格式回退到整文件读取。
 pub fn verify_signature_with(pubkey_b64: &str, path: &Path, sig_text: &str) -> Result<(), String> {
-    let pk = minisign_verify::PublicKey::from_base64(pubkey_b64)
-        .map_err(|e| format!("公钥无法解析：{e}"))?;
-    let sig = minisign_verify::Signature::decode(sig_text)
-        .map_err(|e| format!("签名文件无法解析：{e}"))?;
+    let pk = decode_public_key(pubkey_b64)?;
+    let sig = decode_signature(sig_text)?;
     match pk.verify_stream(&sig) {
         Ok(mut verifier) => {
             let mut file = std::fs::File::open(path).map_err(|e| format!("打开更新包失败：{e}"))?;
@@ -1319,9 +1346,35 @@ wLMDjy9FLAuxZ3q4NlEvkgtyhrr0gtTu6KC4KBJdITbbOeAi1zBIYo0v4iTgt8jJpIidRJnp94ABQkJA
         let file = dir.join("test.bin");
         std::fs::write(&file, b"test").unwrap();
         assert!(verify_signature_with(pk, &file, sig).is_ok());
+        // Tauri signer 的 .sig 是 base64 包裹，必须同样通过。
+        let wrapped = base64::engine::general_purpose::STANDARD.encode(sig.as_bytes());
+        assert!(verify_signature_with(pk, &file, &wrapped).is_ok());
+        assert!(verify_signature_with(pk, &file, "not-a-signature").is_err());
         std::fs::write(&file, b"tampered").unwrap();
         assert!(verify_signature_with(pk, &file, sig).is_err());
+        assert!(verify_signature_with(pk, &file, &wrapped).is_err());
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn real_configured_key_verifies_tauri_base64_signature() {
+        // 用仓库公钥校验一条真实 Tauri signer 产生的签名（签的是 4 字节常量 "test"）。
+        let pk = pubkey_text().expect("src-tauri/updater.pub 必须配置公钥");
+        let sig = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRZmM2NGl2TEZacWptUHpWSFBYbElEUnJKQjlCTlVIb2p2NTNidU1NUDdUVHJHUEhvdTBvaUtxNDRtcmxVbHNhMnd6RGZMNEN6Nlc3QXBXSEZYem1MT1JQNGsrVWh2T1FBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzOTQ5OTA2CWZpbGU6dGVzdApLbGpVb05id281c0V0ZWpBRmlEVWFjU3ZQYmE5dFNwTUNocTROY2VVbXl1SnJ6ZGhpZnlRWkkzL3VrRjZ0NTUvWVE2MjByUHp4WDJwQXkwR1lJVWZCZz09Cg==";
+        let dir = std::env::temp_dir().join(format!("transmutio-real-sig-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("test");
+        std::fs::write(&file, b"test").unwrap();
+        assert!(verify_signature_with(&pk, &file, sig).is_ok());
+        assert!(invoke_without_pubkey_is_closed());
+        std::fs::write(&file, b"test-tampered").unwrap();
+        assert!(verify_signature_with(&pk, &file, sig).is_err());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 公钥为空时 fail-closed：不存在"跳过校验"的入口。
+    fn invoke_without_pubkey_is_closed() -> bool {
+        verify_signature_with("", Path::new("nonexistent"), "untrusted comment: x").is_err()
     }
 
     #[test]

@@ -1,3 +1,5 @@
-# 更新签名公钥（minisign 格式，base64 一行）
-# 生成方式见 UPDATER.md；私钥绝不入库。
-# 留空 = 未配置：更新器可以检查与下载，但会按 fail-closed 拒绝安装（不做"跳过校验"降级）。
+# 更新签名公钥（minisign 格式，Tauri signer 生成，base64 一行）
+# 私钥绝不入库：存放于仓库外 Documents\Trae-CN\transmutio-signing\，密码短语另存并只进 CI secret。
+# 校验口径：安装前必须通过 大小 + SHA-256 + minisign 签名；公钥缺失时 fail-closed 拒绝安装。
+# 对应私钥指纹：minisign public key A A59B1BC22AE731F
+dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFBNTlCMUJDMjJBRTczMUYKUldRZmM2NGl2TEZacXBTUVNDOEhUb1J3Y0hJVHVURHYxR055b3dJUTR0NVk3N09RNTA2bldMTUEK

@@ -13,7 +13,8 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, extname } from "node:path";
 
-const INSTALLER_EXT = new Set([".msi", ".exe", ".dmg", ".deb", ".rpm", ".appimage", ".gz"]);
+// `.sig` 也纳入校验清单：下载签名文件后可独立核对，避免"签名与包不配套"。
+const INSTALLER_EXT = new Set([".msi", ".exe", ".dmg", ".deb", ".rpm", ".appimage", ".gz", ".sig"]);
 const args = process.argv.slice(2);
 const flatIndex = args.indexOf("--flat");
 const flatDir = flatIndex >= 0 ? args[flatIndex + 1] : null;
