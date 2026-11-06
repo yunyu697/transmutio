@@ -99,8 +99,12 @@ jobs:
         with:
           path: dist-release
           merge-multiple: true
+      - name: 展平产物目录（artifact 保留了 lgpl/gpl 子目录）
+        run: |
+          mkdir -p dist-flat
+          find dist-release -type f ! -name 'SHA256SUMS' -exec mv -t dist-flat {} +
       - name: 合并三平台 SHA256SUMS（文件名按 GitHub 资产名归一）
-        run: node scripts/release-checksums.mjs --flat dist-release --normalize-names dist-release/SHA256SUMS
+        run: node scripts/release-checksums.mjs --flat dist-flat --normalize-names dist-release/SHA256SUMS
       - name: 确认本版本 Release 说明存在
         run: test -f "release-notes/${GITHUB_REF_NAME}.md" || { echo "缺少 release-notes/${GITHUB_REF_NAME}.md"; exit 1; }
       - name: 创建 / 更新 Release
@@ -110,10 +114,10 @@ jobs:
           name: Transmutio ${{ github.ref_name }}
           body_path: release-notes/${{ github.ref_name }}.md
           files: |
-            dist-release/*.msi
-            dist-release/*.exe
-            dist-release/*.dmg
-            dist-release/*.deb
-            dist-release/*.AppImage
+            dist-flat/*.msi
+            dist-flat/*.exe
+            dist-flat/*.dmg
+            dist-flat/*.deb
+            dist-flat/*.AppImage
             dist-release/SHA256SUMS
           fail_on_unmatched_files: true
