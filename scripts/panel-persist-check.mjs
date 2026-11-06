@@ -250,7 +250,7 @@ async function main() {
     await page.locator(".wb-head .btn").first().click();
     await page.waitForSelector(".method-grid", { timeout: 10000 });
     await openMethod(page, "音频", "音频转码");
-    await field(page, "码率").locator("select").selectOption("320");
+    await field(page, "码率").locator("select").selectOption("max");
     await field(page, "采样率").locator(".segmented button").filter({ hasText: "48 kHz" }).click();
     await field(page, "声道").locator(".segmented button").filter({ hasText: "立体声" }).click();
     const audioStored = await readStorage(page, "transmutio:panel:audio:audio-aac");
@@ -311,7 +311,7 @@ async function main() {
     add(
       "panel-persist",
       "重载后音频面板恢复",
-      audioRestored.bitrate === "320" && audioRestored.sampleRate === "48 kHz" && audioRestored.channels === "立体声",
+      audioRestored.bitrate === "max" && audioRestored.sampleRate === "48 kHz" && audioRestored.channels === "立体声",
       JSON.stringify(audioRestored),
     );
 

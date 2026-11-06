@@ -2763,8 +2763,14 @@ mod tests {
         p.audio_mode = "aac".into();
         p.audio_rate_mode = "default".into();
         let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
-        assert!(args.iter().all(|a| a != "-crf" && a != "-b:v"), "默认模式不应传码控参数：{args:?}");
-        assert!(args.iter().all(|a| a != "-b:a"), "默认音频不应传 -b:a：{args:?}");
+        assert!(
+            args.iter().all(|a| a != "-crf" && a != "-b:v"),
+            "默认模式不应传码控参数：{args:?}"
+        );
+        assert!(
+            args.iter().all(|a| a != "-b:a"),
+            "默认音频不应传 -b:a：{args:?}"
+        );
     }
 
     #[test]
@@ -2788,7 +2794,10 @@ mod tests {
         p.rate_mode = "source".into();
         p.source_video_kbps = 0;
         let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
-        assert!(args.iter().all(|a| a != "-b:v" && a != "-crf"), "探测不到源码率时不应硬编码：{args:?}");
+        assert!(
+            args.iter().all(|a| a != "-b:v" && a != "-crf"),
+            "探测不到源码率时不应硬编码：{args:?}"
+        );
     }
 
     #[test]
@@ -2798,7 +2807,10 @@ mod tests {
             p.rate_mode = legacy.into();
             p.source_video_kbps = 4200;
             let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
-            let pos = args.iter().position(|a| a == "-b:v").unwrap_or_else(|| panic!("{legacy} 未映射为保持原始"));
+            let pos = args
+                .iter()
+                .position(|a| a == "-b:v")
+                .unwrap_or_else(|| panic!("{legacy} 未映射为保持原始"));
             assert_eq!(args[pos + 1], "4200k", "{legacy}");
         }
     }
@@ -2813,7 +2825,10 @@ mod tests {
         p.audio_rate_mode = "source".into();
         p.source_audio_kbps = 96;
         let args = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
-        let pos = args.iter().position(|a| a == "-b:a").expect("保持原始应传 -b:a");
+        let pos = args
+            .iter()
+            .position(|a| a == "-b:a")
+            .expect("保持原始应传 -b:a");
         assert_eq!(args[pos + 1], "96k");
     }
 
