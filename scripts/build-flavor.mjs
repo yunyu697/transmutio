@@ -126,6 +126,7 @@ if (process.platform === "linux" && /-alpha\d+$/.test(pkgVersion)) {
   const merged = flavor === "gpl" ? JSON.parse(readFileSync(join(root, overlayPath), "utf8")) : {};
   merged.version = pkgVersion.replace(/-alpha(\d+)$/, "~alpha$1");
   const linuxConfig = join(root, "samples", "linux-bundle-version.json");
+  mkdirSync(join(root, "samples"), { recursive: true });
   writeFileSync(linuxConfig, JSON.stringify(merged, null, 2), "utf8");
   configPaths = [linuxConfig];
   console.log(`[build] Linux 打包版本使用 ${merged.version}（Debian/RPM 不允许 '-'）`);
