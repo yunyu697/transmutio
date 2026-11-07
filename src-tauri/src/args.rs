@@ -4712,7 +4712,12 @@ mod tests {
         let err = validate_watermark(&w).unwrap_err();
         assert!(err.contains("字体文件不存在"), "{err}");
 
-        w.font_path = "C:\\Windows\\Fonts\\msyh.ttc".into();
+        // 字体存在性检查排在字号/颜色/旋转之前，这里必须用真实存在的文件；
+        // 不依赖 Windows 字体路径（CI 在 Linux 上跑）。
+        let font =
+            std::env::temp_dir().join(format!("transmutio-wm-test-{}.ttf", std::process::id()));
+        std::fs::write(&font, b"").unwrap();
+        w.font_path = font.to_string_lossy().into_owned();
         w.text.clear();
         assert!(validate_watermark(&w).unwrap_err().contains("不能为空"));
 
@@ -4735,6 +4740,7 @@ mod tests {
         assert!(validate_watermark(&w).unwrap_err().contains("描边颜色"));
         w.border_color = "#000000".into();
         assert!(validate_watermark(&w).is_ok());
+        let _ = std::fs::remove_file(&font);
     }
 
     #[test]
