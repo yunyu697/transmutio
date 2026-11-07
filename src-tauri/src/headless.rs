@@ -1351,17 +1351,21 @@ pub async fn run_checks(report_path: &str) -> i32 {
         // 0) 文字水印：真实 drawtext（中文 + 系统字体 + filtergraph 特殊字符）
         let out_wm = workspace.join("out-watermark");
         let _ = std::fs::create_dir_all(&out_wm);
-        let font = [
+        // Windows / Linux（CI 安装 fonts-noto-cjk）/ macOS 的常见中文字体。
+        const CJK_FONTS: [&str; 6] = [
             "C:\\Windows\\Fonts\\msyh.ttc",
             "C:\\Windows\\Fonts\\simhei.ttf",
-        ]
-        .into_iter()
-        .find(|p| Path::new(p).is_file());
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+            "/System/Library/Fonts/PingFang.ttc",
+            "/System/Library/Fonts/STHeiti Medium.ttc",
+        ];
+        let font = CJK_FONTS.into_iter().find(|p| Path::new(p).is_file());
         match font {
             None => fail(
                 &mut results,
                 "文字水印：中文 drawtext 真实烧入",
-                "本机缺少中文字体 C:\\Windows\\Fonts\\msyh.ttc / simhei.ttf".into(),
+                format!("本机缺少中文字体（已查找 {}）", CJK_FONTS.join(" / ")),
             ),
             Some(font_path) => {
                 let mut wm_params = video_params(false);
