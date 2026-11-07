@@ -621,7 +621,7 @@ identifier（dark 反编译 `ShortcutProperty System.AppUserModel.ID`）、NSIS 
 
 ### 本轮未验证
 
-- 设置页「选择 PDF 工具目录」的真实 GUI 点击链路（本轮只验证了环境变量与便携目录解析）；
+- 设置页「PDF 工具目录」输入框的真实 GUI 点击链路：1.1.0 时该控件尚不存在；1.1.1 补齐后只做 headless 渲染与写入验证，未在可见窗口点击；
 - 自动重试未在真实硬件编码故障（驱动崩溃 / GPU 被独占）下触发，只有类别映射单测；
 - 加密 PDF、扫描件（纯图片页）与超大页面的栅格化未实测；
 - 序列 → 视频在 GPL 包下走 libx264 的真实转码（本轮用 LGPL 包 + libopenh264 实测）。
@@ -732,7 +732,7 @@ identifier（dark 反编译 `ShortcutProperty System.AppUserModel.ID`）、NSIS 
 | P1 | 命名模板 / 冲突策略 | 各面板底部「输出命名」 | 一致 |
 | P1 | 完成后动作 | 设置页 | 一致 |
 | P1 | 面板参数持久化 | 无显式入口（自动生效） | 预期 |
-| P2 | PDF 合并 / 拆分 / 转图片 | 文档分区三张卡片 | 一致；转图片依赖 `pdftoppm`，缺失时灰显 |
+| P2 | PDF 合并 / 拆分 / 转图片 / 转文本 | 文档分区四张卡片 | 一致；转图片依赖 `pdftoppm`、转文本依赖 `pdftotext`，缺失时入口可点、面板提示、开始按钮禁用、后端入队拒绝 |
 | P2 | 图片序列 → 视频 / 视频 → 序列 | 视频 › 两张卡片 | 一致 |
 | P2 | 图片裁剪 / 拼图 | 图片 › 图片裁剪、图片拼图 | 一致 |
 | P2 | 预设导入 / 导出 | 设置页 | 一致 |
@@ -769,7 +769,7 @@ identifier（dark 反编译 `ShortcutProperty System.AppUserModel.ID`）、NSIS 
 | --- | --- | --- |
 | 音频入口合并 | 删除重复的 `audio-mp3` 卡片，保留 `audio-aac` 卡片并改名「音频转码」，描述「MP3 / AAC(m4a) / FLAC / WAV / OGG / Opus，默认 AAC」；面板逻辑不变（默认 AAC） | `src/catalog.ts`、`src/lib/presetPrefs.ts`、`src/components/MethodGrid.tsx` |
 | localStorage 前缀 | ~~迁移到 `transmutio:*`~~ 已整体移除（alpha12）：`src/lib/storage.ts` 只读写 `transmutio:*`，旧 `formatforge:*` 键不读取、不迁移、不删除，也不再有迁移标记与双写 | `src/lib/storage.ts`、`src/lib/settings.ts`、`panelPrefs.ts`、`presetPrefs.ts` |
-| pdftoppm 缺失 | 「PDF 转图片」不再置灰：入口可点、进入面板后显示「缺 pdftoppm（Poppler）/ 设置页『PDF 工具目录』填 `Library\bin` / `PDFTOPPM_PATH=...\pdftoppm.exe` / 查找顺序 PDFTOPPM_PATH → 设置目录 → `TRANSMUTIO_PDF_TOOLS` → PATH」，并提供「重新检测」（调用 `pdf_tools_status` 刷新，无需改 Rust 查找逻辑） | `src/App.tsx`、`src/panels/AdvancedPanels.tsx` |
+| pdftoppm 缺失 | 「PDF 转图片」不再置灰：入口可点、进入面板后显示「缺 pdftoppm（Poppler）/ 设置页『PDF 工具目录』填 `Library\bin` / `PDFTOPPM_PATH=...\pdftoppm.exe` / 查找顺序 PDFTOPPM_PATH → 设置目录 → `TRANSMUTIO_PDF_TOOLS` → PATH」，并提供「重新检测」（调用 `pdf_tools_status` 刷新，无需改 Rust 查找逻辑）。该设置项在 1.1.0 时未落地，1.1.1 补齐（见 §4.27） | `src/App.tsx`、`src/panels/AdvancedPanels.tsx` |
 
 > 历史说明：§4.13 当时实现的「读旧 → 写新 → 删旧 + 双写」方案已在 alpha12 整体删除，
 > 现行行为见 §4.9 与 `src/lib/storage.ts` 注释。
@@ -1472,6 +1472,26 @@ docker run --rm --shm-size=1g -v "$PWD/samples/release-alpha3:/p" ubuntu:22.04 s
 
 ---
 
+## 4.27 `1.1.1` 补丁：两处「提示指向不存在的控件」
+
+`1.1.0` 发布后发现四个问题，本版修正（不新增功能）：
+
+| 问题 | `1.1.0` 实际行为 | `1.1.1` 修复 |
+| --- | --- | --- |
+| PDF 工具目录 | 「PDF 转图片 / 转文本」面板让用户去设置页填「PDF 工具目录」，但设置页没有该输入框；`pdfToolsDir` 只由自动下载写入 | 设置页新增「PDF 工具目录（Poppler）」输入框，`Library\bin` 与 `bin` 子目录均可；修改后立即重新检测；自动下载仍会写入该设置 |
+| 引导页 GPL 提示 | 发布版仍提示「开启下方开关」，但 `devOverrideAvailable=false` 时按钮不渲染 | 按 `devOverrideAvailable` 条件渲染：发布版只提示改用 GPL 版，debug 构建才提示点击「仅本机开发：允许 GPL」按钮 |
+| 设置页 GPL 开关 | LGPL 发布版显示「允许 GPL / nonfree 编码器」开关，但编译期固定拒绝，拨动无效 | 发布版改为静态「发布版固定拒绝」说明；debug 构建保留开关 |
+| 首页副标题 | 「本版实现：视频转码 · 音频转码 · 图片批量转换/缩放」与实际能力不符 | 改为「视频 · 音频 · 图片 · 序列 · PDF（合并 / 拆分 / 转图片 / 转文本）」 |
+
+验证结果见 `README.md` 的「`1.1.1` 实测摘要」与 §9 已知限制。
+
+### 仍未验证
+
+- 设置页「PDF 工具目录」输入框在可见窗口内的点击与保存：只做了 headless 渲染、`onPatch` 写入与重新检测断言；
+- macOS / Linux 仍未实机运行，与 `1.1.0` 一致。
+
+---
+
 ## 5. 应用级链路（`scripts/app-e2e.mjs`）与已知问题
 
 该脚本启动真实 Tauri 应用，经 WebView2 CDP 调用命令完成全链路。
@@ -1567,8 +1587,9 @@ docker run --rm --shm-size=1g -v "$PWD/samples/release-alpha3:/p" ubuntu:22.04 s
    VAAPI 设备/权限/`hwupload` 仍按文档接入、未在真实 GPU 上实测，多 render 节点选择未实现。
 7. **图片编码器**未逐项试编，缺 libwebp 时任务失败并给出原因（不会静默成功）。
 8. **`hw-memory` / `invalid-params` 错误分类**：规则已写，未构造真实故障逐条复现。
-9. **自动更新**：只有接口与 Null 实现，无端点与密钥；两个变体的更新通道字段已区分（`transmutio-lgpl-stable` / `transmutio-gpl-stable`）。
-10. **签名**：脚本就绪，未实际签名/公证；无证书时脚本只打印流程并退出 0。
+9. **自动更新**：Rust 更新器已实装并按 `1.1.0` 实测（检查 / 下载 / minisign 校验通过）；仍未验证：
+   真实升级失败后的回滚与降级（不提供降级/回滚按钮）。
+10. **签名**：发布流水线已为 `1.1.0` 生成 minisign `.sig` 并实测校验；Authenticode 与 Apple 公证仍未做。
 11. 默认包**不含 FFmpeg**；未放置合规构建时无法转换（有意设计，不伪造成功）。
 12. **启动期验收**：加载层（manifest/入口点）与启动层（panic/闪退）都已在独立桌面复验
     （§4.4、§4.5，两变体存活 12s + 有窗口）。**可见窗口内的主界面渲染与操作仍未验收**

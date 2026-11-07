@@ -80,8 +80,8 @@ GPU 能力矩阵与实测/文档/待验证标注见 [GPU-能力矩阵.md](GPU-�
   （可用 libx264 / libx265）。Poppler 为 GPL-2.0+，仅在「PDF 转图片」「PDF 转文本」中作为外部工具使用。
   第三方许可证全文保持原样，位于 `licenses/`。
 
-- 发布页：<https://github.com/yunyu697/transmutio/releases>（当前正式版 `1.1.0`，2026-11-07 发布；
-  `1.0.0` 为上一正式版，`0.1.0` 为历史版本）
+- 发布页：<https://github.com/yunyu697/transmutio/releases>（当前正式版 `1.1.1`，2026-11-07 发布；
+  `1.1.0` 为上一正式版，`1.0.0` 为更早正式版，`0.1.0` 为历史版本）
 - **安装包不包含 FFmpeg / Poppler 二进制**。仓库与 Release 附件都不分发这两个二进制：
   FFmpeg 由用户自行准备并在首次启动时经引导页校验（版本 / 构建配置 / SHA-256）后落位到
   应用数据目录；「PDF 转图片」需要 Poppler 的 `pdftoppm`，「PDF 转文本」需要同一套件里的
@@ -152,8 +152,8 @@ Poppler（同时提供 `pdftoppm` 与 `pdftotext`）。**macOS / Linux 没有可
 4. 落位后复核哈希并持久化路径，随后重新探测能力表
 
 明确不做：不静默下载可执行文件、不代替用户接受许可、不接受 nonfree 组件；
-GPL 构建不被默认包接受：LGPL 发布版在编译期强制拒绝（只有 debug 构建可用设置页「允许 GPL」临时放行），
-GPL 变体则只接受 GPL 构建。引导页在无 FFmpeg 时也能正常展示，
+GPL 构建不被默认包接受：LGPL 发布版在编译期强制拒绝，设置页只显示「发布版固定拒绝」说明，
+不提供可切换的开关；只有 debug 构建才有「允许 GPL」开关（临时放行）。GPL 变体则只接受 GPL 构建。引导页在无 FFmpeg 时也能正常展示，
 任何转换入口都不会伪造成功。
 
 也可以手动放置（任选其一）：
@@ -195,8 +195,8 @@ npm run check:ffmpeg-license
 | `pdftoppm` | `PDFTOPPM_PATH`（直接指向 exe）→ 设置页 PDF 工具目录（同时查找 `<dir>\Library\bin` 与 `<dir>\bin`）→ `TRANSMUTIO_PDF_TOOLS`（目录列表）→ 系统 `PATH` |
 | `pdftotext` | `PDFTOTEXT_PATH`（直接指向 exe）→ 设置页 PDF 工具目录（同上两个子目录）→ `TRANSMUTIO_PDF_TOOLS` → 系统 `PATH` |
 
-`1.1.0` 安装包内设置页**还没有**这个目录输入框（发布后才补齐，随后续版本发布）；
-在 `1.1.0` 中请用环境变量或「自动下载 Poppler」配置，自动下载会把目录写进该设置项。
+`1.1.1` 起设置页提供「PDF 工具目录」输入框（自动下载 Poppler 也会写入这里）；
+`1.1.0` 及更早版本没有该控件，只能用环境变量或「自动下载 Poppler」配置。
 
 仓库与安装包**不分发** Poppler。Windows 上可在「PDF 转图片」或「PDF 转文本」面板点
 **自动下载 Poppler**：走同一份内置清单（固定版本 + 内置 SHA-256 + 镜像回退），校验通过后

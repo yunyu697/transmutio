@@ -1,18 +1,18 @@
 # @formatforge/updater
 
-自动更新适配层。当前为 **契约 + 空实现**，未接入真实更新服务（如实标注，不假装可用）。
+自动更新适配层（前端包）。本包只保留 `UpdaterAdapter` 契约与 Null 实现；
+**应用实际使用的更新器在 `src-tauri/src/updater.rs`**（检查 / 下载 / 校验 / 安装全部在 Rust 内完成），
+不经过本包。
 
 ## 接口
 
 - `UpdaterAdapter`：`check()` / `downloadAndInstall(info, onProgress)`
-- `createNullUpdater(reason)`：明确失败原因，UI 显示"未启用"
+- `createNullUpdater(reason)`：明确失败原因
 - `createUpdaterController(adapter, { enabled, disabledReason })` → 状态机 `idle / checking / up-to-date / available / downloading / error`
 
-## 后续接入步骤（未执行）
+## 现状
 
-1. 在 `src-tauri` 增加 `tauri-plugin-updater`，配置 `plugins.updater.endpoints` + `pubkey`。
-2. 在 `src/lib/updater.ts` 用 `@tauri-apps/plugin-updater` 实现 `UpdaterAdapter`。
-3. 三个平台产出安装包后上传到更新端点，并在 `tauri.conf.json` 里填写公钥。
-4. macOS 需签名 + 公证的 `.app`/`.dmg`；Windows 需签名的 `.msi`/`.exe`，否则更新校验会失败。
-
-签名密钥与端点均未配置，因此设置页"检查更新"按钮当前给出明确提示而不是报成功。
+- 设置页「诊断与更新」使用 Rust 更新器：多源按序回退、断点续传、大小 + SHA-256（配置公钥时另加
+  minisign）校验、Windows 为「检查 + 安装」、macOS 与 Linux deb 为「检查 + 下载」。详见根目录
+  `UPDATER.md`。
+- 本包的 Null 适配器仍保留，作为契约测试与未来前端接入的占位；应用内未启用。
