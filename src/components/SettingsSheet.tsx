@@ -197,6 +197,22 @@ export function SettingsSheet({
             )}
           </Group>
 
+          <Group title="PDF 工具目录（Poppler）" icon="pdf">
+            <Field label="工具目录（需包含 pdftoppm / pdftotext）">
+              <input
+                className="input"
+                value={settings.pdfToolsDir}
+                onChange={(event) => onPatch({ pdfToolsDir: event.target.value })}
+                placeholder="例如 C:\poppler\Library\bin"
+              />
+            </Field>
+            <div className="note">
+              查找顺序：<code>PDFTOPPM_PATH</code> / <code>PDFTOTEXT_PATH</code> → 本目录 →{" "}
+              <code>TRANSMUTIO_PDF_TOOLS</code> → 系统 PATH。留空则只用环境变量与系统 PATH；
+              自动下载 Poppler 会把解压目录写入这里。
+            </div>
+          </Group>
+
           <Group title="硬件能力探测" icon="gpu">
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ fontSize: 10.5, color: "var(--ff-fg3)" }}>
