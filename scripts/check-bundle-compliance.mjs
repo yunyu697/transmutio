@@ -273,16 +273,6 @@ function checkFlavor(flavor) {
       detail: ffBinaries.length === 0 ? "未发现 ffmpeg.exe/ffprobe.exe" : `发现 ${ffBinaries.map((f) => f.rel).join(", ")}`,
       evidence: { ffBinaries: ffBinaries.map((f) => f.rel) },
     });
-    // PDF 合并/拆分内置，转图片依赖外部 pdftoppm；安装包不得夹带 Poppler。
-    const pdfBins = files.filter(
-      (f) => /^(pdftoppm|pdftocairo|pdfinfo)\.(exe|dll)$/i.test(f.name) || /poppler/i.test(f.name),
-    );
-    results.push({
-      name: `${flavor}：${name} 未随包分发 Poppler（PDF 转图片依赖用户自备）`,
-      status: pdfBins.length === 0 ? "pass" : "fail",
-      detail: pdfBins.length === 0 ? "未发现 pdftoppm/pdfinfo/Poppler" : `发现 ${pdfBins.map((f) => f.rel).join(", ")}`,
-      evidence: { pdfBins: pdfBins.map((f) => f.rel) },
-    });
     const devBins = files.filter((f) => /-(check|report)\.exe$/i.test(f.name));
     results.push({
       name: `${flavor}：${name} 未混入验证用二进制（dev-tools 未进包）`,

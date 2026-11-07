@@ -76,16 +76,42 @@ export function SettingsSheet({
                 ))}
               </select>
             </Field>
-            <Field label="默认输出目录">
-              <div style={{ display: "flex", gap: 6 }}>
+            <Field label="输出位置">
+              <div className="radio-group">
+                <label className="radio">
+                  <input
+                    type="radio"
+                    name="output-mode"
+                    checked={settings.outputDirMode === "source"}
+                    onChange={() => onPatch({ outputDirMode: "source" })}
+                  />
+                  与源文件相同目录
+                </label>
+                <label className="radio">
+                  <input
+                    type="radio"
+                    name="output-mode"
+                    checked={settings.outputDirMode === "custom"}
+                    onChange={() => onPatch({ outputDirMode: "custom" })}
+                  />
+                  自定义目录
+                </label>
+              </div>
+              <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
                 <input
                   className="input"
                   value={settings.outputDir}
+                  disabled={settings.outputDirMode !== "custom"}
                   onChange={(event) => onPatch({ outputDir: event.target.value })}
-                  placeholder="留空则使用系统下载目录"
+                  placeholder={
+                    settings.outputDirMode === "custom"
+                      ? "选择或填写输出目录"
+                      : "当前写回每个源文件所在目录"
+                  }
                 />
                 <button
                   className="btn"
+                  disabled={settings.outputDirMode !== "custom"}
                   onClick={async () => {
                     const picked = await import("@tauri-apps/plugin-dialog").then((m) =>
                       m.open({ directory: true, multiple: false }),
@@ -195,22 +221,6 @@ export function SettingsSheet({
             ) : (
               <div className="note warn">尚未解析 FFmpeg 位置。</div>
             )}
-          </Group>
-
-          <Group title="PDF 工具目录（Poppler）" icon="pdf">
-            <Field label="工具目录（需包含 pdftoppm / pdftotext）">
-              <input
-                className="input"
-                value={settings.pdfToolsDir}
-                onChange={(event) => onPatch({ pdfToolsDir: event.target.value })}
-                placeholder="例如 C:\poppler\Library\bin"
-              />
-            </Field>
-            <div className="note">
-              查找顺序：<code>PDFTOPPM_PATH</code> / <code>PDFTOTEXT_PATH</code> → 本目录 →{" "}
-              <code>TRANSMUTIO_PDF_TOOLS</code> → 系统 PATH。留空则只用环境变量与系统 PATH；
-              自动下载 Poppler 会把解压目录写入这里。
-            </div>
           </Group>
 
           <Group title="硬件能力探测" icon="gpu">

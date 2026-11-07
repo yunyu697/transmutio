@@ -64,26 +64,6 @@
       ],
       "extractTrees": [],
       "land": "ffmpeg"
-    },
-    {
-      "id": "poppler-windows-x64",
-      "kind": "poppler",
-      "platform": "windows",
-      "arch": "x86_64",
-      "flavor": "any",
-      "version": "26.09.0-0",
-      "buildLabel": "Poppler for Windows（GPL-2.0+，外部工具）",
-      "archive": "zip",
-      "file": "Release-26.09.0-0.zip",
-      "size": 43709956,
-      "sha256": "7a6f256a0ddf7536182246a5733331bf4677cbcc34f4663774947ad34556c8d0",
-      "url": "https://github.com/oschwartz10612/poppler-windows/releases/download/v26.09.0-0/Release-26.09.0-0.zip",
-      "extract": [],
-      "extractTrees": [
-        { "marker": "Library/bin/", "to": "Library/bin" },
-        { "marker": "Library/share/poppler/", "to": "Library/share/poppler" }
-      ],
-      "land": "poppler"
     }
   ],
   "manual": [
@@ -118,22 +98,6 @@
       "label": "Linux：使用发行版 ffmpeg 或手动选择",
       "url": "https://ffmpeg.org/download.html#build-linux",
       "reason": "内置清单没有可固定 SHA-256 的 Linux GPL 发布包，因此不提供自动下载。可直接用发行版仓库安装（apt/dnf install ffmpeg），连同 ffprobe；应用会在 PATH 中找到并校验构建配置。"
-    },
-    {
-      "kind": "poppler",
-      "platform": "macos",
-      "flavor": "any",
-      "label": "macOS：brew install poppler",
-      "url": "https://poppler.freedesktop.org/",
-      "reason": "内置清单没有可固定 SHA-256 的 macOS Poppler 发布包，因此不提供自动下载。可执行 brew install poppler，应用会在 PATH 中找到 pdftoppm。"
-    },
-    {
-      "kind": "poppler",
-      "platform": "linux",
-      "flavor": "any",
-      "label": "Linux：apt install poppler-utils",
-      "url": "https://poppler.freedesktop.org/",
-      "reason": "内置清单没有可固定 SHA-256 的 Linux Poppler 发布包，因此不提供自动下载。可执行 apt install poppler-utils（或发行版对应包），应用会在 PATH 中找到 pdftoppm。"
     }
   ]
 }

@@ -3,8 +3,10 @@ import { formatBytes, formatDuration } from "@formatforge/design-tokens";
 import { api, type CompressParams, type ImageGifParams, type ImageParams, type Job, type WatermarkParams } from "../lib/api";
 import { DropZone, Field, FileTable, Group, OutputNaming, Segmented, SwitchRow, useMediaFiles, type NamingPrefs } from "./shared";
 import { loadPanelPrefs, savePanelPrefs } from "../lib/panelPrefs";
+import { findMethod } from "../catalog";
 import { WATERMARK_DEFAULTS, normalizeWatermark, pickWatermarkImage } from "../lib/watermark";
 import { Icon } from "../components/Icon";
+import { PresetBar } from "../components/PresetBar";
 
 const DEFAULT_PARAMS: ImageParams = {
   format: "jpg",
@@ -740,6 +742,7 @@ export function ImagePanel({
       </aside>
 
       <div className="bottombar">
+        <PresetBar methodId={methodId} title={findMethod(methodId)?.title ?? methodId} />
         <div className="outdir">
           <Icon name="folder" size={14} />
           <code title={outputDir}>{outputDir || "未设置输出目录"}</code>

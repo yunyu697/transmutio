@@ -10,8 +10,6 @@ pub mod flavor;
 pub mod flavor_check;
 pub mod headless;
 mod jobs;
-pub mod pdf;
-pub mod pdf_tools;
 pub mod preset;
 pub mod probe;
 mod setup;
@@ -173,18 +171,6 @@ async fn set_job_concurrency(app: AppHandle, value: usize) -> usize {
 #[tauri::command]
 async fn set_job_paused(app: AppHandle, paused: bool) -> bool {
     jobs::set_paused(&job_ctx(&app), paused).await
-}
-
-#[tauri::command]
-async fn pdf_tools_status(
-    state: State<'_, Arc<AppState>>,
-    custom_dir: Option<String>,
-) -> Result<pdf_tools::PdfToolsInfo, String> {
-    if let Some(dir) = custom_dir.as_deref() {
-        *state.pdf_tools_dir.lock().await = Some(dir.to_string());
-    }
-    let stored = state.pdf_tools_dir.lock().await.clone();
-    Ok(pdf_tools::resolve(stored.as_deref()))
 }
 
 #[tauri::command]
@@ -418,7 +404,6 @@ pub fn run() {
             set_job_concurrency,
             set_job_paused,
             get_job_paused,
-            pdf_tools_status,
             export_preset,
             import_preset,
             set_after_action,

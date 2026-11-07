@@ -14,11 +14,17 @@ export interface Settings {
   ffmpegSourceUrl: string;
   /** 内置下载器使用的来源 id；空 = 官方优先、失败按清单顺序回退 */
   ffmpegDownloadSource: string;
-  /** Poppler 落位目录（自动下载后写入；空 = 只按环境变量 / PATH 查找） */
-  pdfToolsDir: string;
   allowGplEncoders: boolean;
   taskCenterOpen: boolean;
   lastSection: string;
+  /** 左栏折叠态（64px rail）；持久化，重启后保持。 */
+  navCollapsed: boolean;
+  /** 最近使用的方法 id，最新在前，最多 4 条。 */
+  recentMethods: string[];
+  /** 每个方法上次使用的预设 id（按方法粒度记忆）。 */
+  lastPresetId: Record<string, string>;
+  /** 输出位置模式：source = 与源文件相同目录；custom = 自定义目录。 */
+  outputDirMode: "source" | "custom";
   /** 批次全部完成后的动作；shutdown 还需环境变量才真正执行。 */
   afterAction: "none" | "open-folder" | "shutdown";
   /** 队列级暂停（重启后仍保持暂停，避免用户以为暂停只是当前会话）。 */
@@ -32,9 +38,6 @@ export const zhCatalog: MessageCatalogs["zh-CN"] = {
   "nav.video": "视频",
   "nav.audio": "音频",
   "nav.image": "图片",
-  "nav.document": "文档",
-  "nav.disc": "光盘 · DVD · ISO",
-  "nav.tools": "工具集",
   "top.search": "搜索转换方法…",
   "top.addFiles": "添加文件",
   "top.tasks": "任务中心",
@@ -63,9 +66,6 @@ export const enCatalog: MessageCatalogs["en-US"] = {
   "nav.video": "Video",
   "nav.audio": "Audio",
   "nav.image": "Image",
-  "nav.document": "Document",
-  "nav.disc": "Disc · DVD · ISO",
-  "nav.tools": "Toolbox",
   "top.search": "Search methods…",
   "top.addFiles": "Add files",
   "top.tasks": "Tasks",
@@ -103,10 +103,13 @@ export const settingsStore = createSettingsStore<Settings>({
     ffmpegPath: "",
     ffmpegSourceUrl: "",
     ffmpegDownloadSource: "",
-    pdfToolsDir: "",
     allowGplEncoders: false,
     taskCenterOpen: true,
     lastSection: "video",
+    navCollapsed: false,
+    recentMethods: [],
+    lastPresetId: {},
+    outputDirMode: "source",
     afterAction: "none",
     queuePaused: false,
   },

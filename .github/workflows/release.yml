@@ -2,7 +2,7 @@ name: Release（CI 出包，三平台）
 
 # 唯一发布路径：推送 v* 标签即由 CI 构建三平台安装包、生成 SHA256SUMS 并创建 Release。
 # 不再手工上传同名附件（手工 Release 与工作流并存会出现两个 Release 或附件被覆盖）。
-# 安装包不包含 FFmpeg / Poppler 二进制；正文必须如实写「未签名」。
+# 安装包不包含 FFmpeg 二进制；正文必须如实写「未签名」。
 on:
   push:
     tags: ["v*"]

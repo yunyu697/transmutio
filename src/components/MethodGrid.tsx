@@ -28,7 +28,7 @@ export function MethodGrid({
         </div>
         <div className="spacer" />
         <div className="muted" style={{ fontSize: 10.5, color: "var(--ff-fg3)" }}>
-          本版实现：视频 · 音频 · 图片 · 序列 · PDF（合并 / 拆分 / 转图片 / 转文本）
+          本版实现：视频 · 音频 · 图片
         </div>
       </div>
       <div className="method-scroll">

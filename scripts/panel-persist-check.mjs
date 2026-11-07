@@ -205,19 +205,6 @@ async function mockTauri(page, cfg = {}) {
             return immediate(null);
           case "list_device_presets":
             return immediate(config.presets ?? []);
-          case "pdf_tools_status":
-            return immediate(
-              config.pdfTools ?? {
-                pdftoppm: "C:\\poppler\\pdftoppm.exe",
-                pdftotext: "C:\\poppler\\pdftotext.exe",
-                source: "path",
-                available: true,
-                reason: null,
-                textAvailable: true,
-                textReason: null,
-                note: "mock",
-              },
-            );
           default:
             return immediate(null);
         }
@@ -232,7 +219,7 @@ const field = (page, label) =>
 const switchRow = (page, label) => page.locator(".switchrow").filter({ hasText: label }).first();
 
 async function openMethod(page, section, title) {
-  const nav = page.locator(".navitem").filter({ has: page.locator("b").filter({ hasText: section }) }).first();
+  const nav = page.locator(".grow").filter({ hasText: section }).first();
   await nav.click();
   await page.waitForSelector(".method-grid .card", { timeout: 10000 });
   await page.locator(".method-grid .card").filter({ hasText: title }).first().click();
@@ -261,7 +248,7 @@ async function main() {
     page.on("pageerror", (error) => pageErrors.push(String(error)));
     await mockTauri(page);
     await page.goto(origin, { waitUntil: "domcontentloaded" });
-    await page.waitForSelector(".method-grid", { timeout: 10000 });
+    await page.waitForSelector(".method-grid, .overviews", { timeout: 10000 });
 
     // 视频面板
     await openMethod(page, "视频", "视频转码");
@@ -299,7 +286,7 @@ async function main() {
 
     // 音频面板
     await page.locator(".wb-head .btn").first().click();
-    await page.waitForSelector(".method-grid", { timeout: 10000 });
+    await page.waitForSelector(".method-grid, .overviews", { timeout: 10000 });
     await openMethod(page, "音频", "音频转码");
     await field(page, "码率").locator("select").selectOption("max");
     await field(page, "采样率").locator(".segmented button").filter({ hasText: "48 kHz" }).click();
@@ -314,7 +301,7 @@ async function main() {
 
     // 图片面板
     await page.locator(".wb-head .btn").first().click();
-    await page.waitForSelector(".method-grid", { timeout: 10000 });
+    await page.waitForSelector(".method-grid, .overviews", { timeout: 10000 });
     await openMethod(page, "图片", "图片批量转换");
     await field(page, "格式").locator(".segmented button").filter({ hasText: "WebP" }).click();
     await field(page, "最长边上限").locator("select").selectOption("1920");
@@ -330,7 +317,7 @@ async function main() {
 
     // ---------- reload（同一 WebView，等价于保留数据的重启）----------
     await page.reload({ waitUntil: "domcontentloaded" });
-    await page.waitForSelector(".method-grid", { timeout: 10000 });
+    await page.waitForSelector(".method-grid, .overviews", { timeout: 10000 });
 
     await openMethod(page, "视频", "视频转码");
     const videoRestored = {
@@ -352,7 +339,7 @@ async function main() {
     );
 
     await page.locator(".wb-head .btn").first().click();
-    await page.waitForSelector(".method-grid", { timeout: 10000 });
+    await page.waitForSelector(".method-grid, .overviews", { timeout: 10000 });
     await openMethod(page, "音频", "音频转码");
     const audioRestored = {
       bitrate: await field(page, "码率").locator("select").inputValue(),
@@ -367,7 +354,7 @@ async function main() {
     );
 
     await page.locator(".wb-head .btn").first().click();
-    await page.waitForSelector(".method-grid", { timeout: 10000 });
+    await page.waitForSelector(".method-grid, .overviews", { timeout: 10000 });
     await openMethod(page, "图片", "图片批量转换");
     const imageRestored = {
       format: (await field(page, "格式").locator(".segmented button.on").innerText()).trim(),
@@ -413,7 +400,7 @@ async function main() {
     page2.on("pageerror", (error) => pageErrors.push(String(error)));
     await mockTauri(page2, { prefs: injected });
     await page2.goto(origin, { waitUntil: "domcontentloaded" });
-    await page2.waitForSelector(".method-grid", { timeout: 10000 });
+    await page2.waitForSelector(".method-grid, .overviews", { timeout: 10000 });
     await openMethod(page2, "视频", "视频转码");
     const injectedRestored = {
       codec: (await field(page2, "视频编码").locator(".segmented button.on").innerText()).trim(),
@@ -499,7 +486,7 @@ async function main() {
     }, legacyInjected);
     await mockTauri(page3);
     await page3.goto(origin, { waitUntil: "domcontentloaded" });
-    await page3.waitForSelector(".method-grid", { timeout: 10000 });
+    await page3.waitForSelector(".method-grid, .overviews", { timeout: 10000 });
 
     const legacyPrefixKeys = Object.keys(legacyInjected).filter((k) => k.startsWith("formatforge:"));
     const migrationKeys = [
@@ -550,7 +537,7 @@ async function main() {
 
     const legacyAccessBefore = await page3.evaluate(() => window.__legacyAccessLog || []);
     await page3.reload({ waitUntil: "domcontentloaded" });
-    await page3.waitForSelector(".method-grid", { timeout: 10000 });
+    await page3.waitForSelector(".method-grid, .overviews", { timeout: 10000 });
     const legacyAccessAfter = await page3.evaluate(() => window.__legacyAccessLog || []);
     const legacyAccess = [...legacyAccessBefore, ...legacyAccessAfter];
     add(
@@ -581,42 +568,122 @@ async function main() {
       `markerWrites=${cleanupWrites}（首次启动应写 1 次，刷新后不应增加）`,
     );
 
-    // ---------- 场景 4：缺少 pdftotext 时，入口直接给出可操作指引且不可入队 ----------
+    // ---------- 场景 5：v4 界面改版的 DOM 断言（首页 / 图标 / 折叠 / 状态栏 / 预设） ----------
     const page4 = await browser.newPage({ viewport: { width: 1440, height: 960 } });
     page4.on("pageerror", (error) => pageErrors.push(String(error)));
-    await mockTauri(page4, {
-      pdfTools: {
-        pdftoppm: "C:\\poppler\\pdftoppm.exe",
-        pdftotext: null,
-        source: "path",
-        available: true,
-        reason: null,
-        textAvailable: false,
-        textReason: "未找到 pdftotext（Poppler）。「PDF 转文本」需要它提取文字；合并/拆分不受影响。",
-        note: "mock",
-      },
-    });
+    await mockTauri(page4);
     await page4.goto(origin, { waitUntil: "domcontentloaded" });
-    await page4.waitForSelector(".method-grid", { timeout: 10000 });
-    await openMethod(page4, "文档", "PDF 转文本");
-    const guardText = await page4.locator(".note.warn").first().innerText();
-    const guardButton = page4.locator(".bottombar .btn.primary");
-    const guardDisabled = await guardButton.isDisabled();
-    const guardLabel = (await guardButton.innerText()).trim();
-    const enqueueCalls = await page4.evaluate(() =>
-      window.__FF_MOCK__.calls.filter((call) => call.cmd === "enqueue_jobs").length,
+    await page4.waitForSelector(".overviews .ov", { timeout: 10000 });
+
+    const home = await page4.evaluate(() => {
+      const cards = Array.from(document.querySelectorAll(".overviews .ov"));
+      return {
+        count: cards.length,
+        chips: cards.map((c) => c.querySelectorAll(".chips .chip").length),
+        metalines: cards.map((c) => c.querySelectorAll(".ovmetaline").length),
+        go: cards.map((c) => Boolean(c.querySelector(".go"))),
+      };
+    });
+    add(
+      "ui-redesign",
+      "首页速览卡 3 张：方法 chips + 格式 / 场景 / 上次 + 继续入口",
+      home.count === 3 &&
+        home.chips.every((n) => n >= 2) &&
+        home.metalines.every((n) => n >= 2) &&
+        home.go.every(Boolean),
+      JSON.stringify(home),
+    );
+
+    const brand = await page4.evaluate(() => {
+      const mark = document.querySelector(".sidenav .appmark:not(.rail-mark)");
+      const img = mark?.querySelector("img");
+      if (!mark || !img) return null;
+      const ms = getComputedStyle(mark);
+      const is = getComputedStyle(img);
+      return {
+        src: img.getAttribute("src"),
+        box: `${ms.width}x${ms.height}`,
+        overflow: ms.overflow,
+        radius: ms.borderRadius,
+        inset: ms.boxShadow.includes("inset"),
+        img: parseFloat(is.width),
+        offset: `${is.left}/${is.top}`,
+      };
+    });
+    add(
+      "ui-redesign",
+      "品牌图标：真实 PNG + 24px 取景盒（34.03px 渲染 / −5.02px 偏移 / 圆角 6 / 内描边）",
+      Boolean(brand) &&
+        brand.src.includes("128x128") &&
+        brand.box === "24pxx24px" &&
+        brand.overflow === "hidden" &&
+        brand.radius === "6px" &&
+        brand.inset &&
+        Math.abs(brand.img - 34.03) < 0.05 &&
+        brand.offset === "-5.02px/-5.02px",
+      JSON.stringify(brand),
+    );
+
+    const statusGroups = await page4.evaluate(
+      () => document.querySelectorAll(".statusbar > span:not(.spacer)").length,
+    );
+    add("ui-redesign", "状态栏仅 5 组", statusGroups === 5, `groups=${statusGroups}`);
+
+    const bodyText = await page4.evaluate(() => document.body.innerText);
+    add(
+      "ui-redesign",
+      "界面无 PDF / Poppler 残留文案",
+      !/pdf|poppler|pdftoppm|pdftotext/i.test(bodyText),
+      `matches=${(bodyText.match(/pdf|poppler|pdftoppm|pdftotext/gi) || []).join(",") || "无"}`,
+    );
+
+    await page4.locator(".collapse").click();
+    await page4.waitForSelector(".sidenav.rail", { timeout: 5000 });
+    const collapsedSettings = await readStorage(page4, "transmutio:settings");
+    await page4.reload({ waitUntil: "domcontentloaded" });
+    await page4.waitForSelector(".sidenav.rail", { timeout: 10000 });
+    add(
+      "ui-redesign",
+      "侧栏折叠为 64px rail 且折叠态持久化",
+      collapsedSettings?.data?.navCollapsed === true,
+      `navCollapsed=${collapsedSettings?.data?.navCollapsed} rail=可见`,
+    );
+
+    await page4.locator('.rail-foot button[aria-label="展开侧栏"]').click();
+    await page4.waitForSelector(".sidenav:not(.rail) .grow", { timeout: 5000 });
+    await openMethod(page4, "视频", "视频转码");
+    await field(page4, "分辨率").locator("select").selectOption("720");
+    await page4.locator(".presetbar > button").click();
+    await page4.locator(".preset-save input").fill("验收预设");
+    await page4.locator(".preset-save .btn.primary").click();
+    const presetStore = await readStorage(page4, "transmutio:presets:v1");
+    const saved = presetStore?.presets?.find((p) => p.name === "验收预设");
+    const savedKeys = saved ? Object.keys(saved.params || {}) : [];
+    add(
+      "ui-redesign",
+      "保存为预设：写入 transmutio:presets:v1 且不含路径 / 凭据字段",
+      Boolean(saved) &&
+        saved.methodId === "video-mp4" &&
+        saved.params?.resolution === "720" &&
+        !savedKeys.some((k) => /path|dir|token|secret|password|credential/i.test(k)),
+      `presets=${presetStore?.presets?.length ?? 0} keys=${savedKeys.join(",")}`,
+    );
+
+    await field(page4, "分辨率").locator("select").selectOption("1080");
+    await page4.locator(".wb-head .btn").first().click();
+    await page4.waitForSelector(".method-grid, .overviews", { timeout: 10000 });
+    await openMethod(page4, "视频", "视频转码");
+    const restored = await field(page4, "分辨率").locator("select").inputValue();
+    const toastText = await page4.evaluate(
+      () => document.querySelector(".toast")?.textContent ?? "",
     );
     add(
-      "pdf-text-guard",
-      "缺少 pdftotext 时入口给出指引且按钮禁用",
-      guardText.includes("pdftotext") &&
-        guardText.includes("PDFTOTEXT_PATH") &&
-        guardText.includes("自动下载 Poppler") &&
-        guardDisabled &&
-        guardLabel.includes("缺少 pdftotext") &&
-        enqueueCalls === 0,
-      `warning=${JSON.stringify(guardText.split("\n")[0])} disabled=${guardDisabled} label=${guardLabel} enqueueCalls=${enqueueCalls}`,
+      "ui-redesign",
+      "再次进入方法自动载入上次预设（分辨率回到 720，并有提示）",
+      restored === "720" && toastText.includes("已载入上次预设"),
+      `resolution=${restored} toast=${toastText.replace(/\s+/g, " ").slice(0, 60)}`,
     );
+
     await page4.close();
 
     add("panel-persist", "页面无未捕获异常", pageErrors.length === 0, pageErrors.join("; ") || "无");

@@ -8,7 +8,7 @@
 //!   不会静默回退成「假装成功」；
 //! - 不把二进制提交进仓库，安装包也不包含它们。
 
-use crate::{flavor::Flavor, pdf_tools, setup, tools};
+use crate::{flavor::Flavor, setup, tools};
 use fs2::available_space;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -67,7 +67,7 @@ pub struct ExtractTreeRule {
 #[serde(rename_all = "camelCase")]
 pub struct Package {
     pub id: String,
-    /// ffmpeg | poppler
+    /// ffmpeg
     pub kind: String,
     pub platform: String,
     pub arch: String,
@@ -84,7 +84,7 @@ pub struct Package {
     pub extract: Vec<ExtractRule>,
     #[serde(default)]
     pub extract_trees: Vec<ExtractTreeRule>,
-    /// 落位目录前缀：ffmpeg | poppler
+    /// 落位目录前缀：ffmpeg
     pub land: String,
 }
 
@@ -370,7 +370,6 @@ pub struct LandedTool {
     pub version: String,
     pub archive_sha256: String,
     pub tools: Option<tools::ToolsInfo>,
-    pub pdf: Option<pdf_tools::PdfToolsInfo>,
 }
 
 static CANCEL: AtomicBool = AtomicBool::new(false);
@@ -785,21 +784,6 @@ fn extract(archive: &Path, staging: &Path, pkg: &Package) -> Result<(), String> 
     Ok(())
 }
 
-fn copy_tree(src: &Path, dest: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(dest).map_err(|e| format!("创建落位目录失败：{e}"))?;
-    for entry in std::fs::read_dir(src).map_err(|e| format!("读取暂存目录失败：{e}"))? {
-        let entry = entry.map_err(|e| format!("读取暂存目录失败：{e}"))?;
-        let from = entry.path();
-        let to = dest.join(entry.file_name());
-        if from.is_dir() {
-            copy_tree(&from, &to)?;
-        } else {
-            std::fs::copy(&from, &to).map_err(|e| format!("复制文件失败：{e}"))?;
-        }
-    }
-    Ok(())
-}
-
 #[cfg(unix)]
 fn make_executable(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
@@ -897,34 +881,6 @@ fn land_inner(
                 version: pkg.version.clone(),
                 archive_sha256: digest.to_string(),
                 tools: Some(info),
-                pdf: None,
-            })
-        }
-        "poppler" => {
-            let staged = staging
-                .join("Library")
-                .join("bin")
-                .join(exe_name("pdftoppm"));
-            if !staged.is_file() {
-                return Err("压缩包内缺少 Library/bin/pdftoppm，已拒绝落位".into());
-            }
-            let dest =
-                unique_dir(&tools_dir.join(format!("poppler-{}", safe_version(&pkg.version))));
-            copy_tree(&staging.join("Library"), &dest.join("Library"))?;
-            make_executable(&dest.join("Library").join("bin").join(exe_name("pdftoppm")));
-            let info = pdf_tools::resolve(Some(&dest.to_string_lossy()));
-            if !info.available {
-                std::fs::remove_dir_all(&dest).ok();
-                return Err("落位后仍未检测到 pdftoppm，已回滚".into());
-            }
-            std::fs::remove_dir_all(staging).ok();
-            Ok(LandedTool {
-                kind: pkg.kind.clone(),
-                dir: dest.to_string_lossy().to_string(),
-                version: pkg.version.clone(),
-                archive_sha256: digest.to_string(),
-                tools: None,
-                pdf: Some(info),
             })
         }
         other => Err(format!("未知的工具类型：{other}")),
@@ -1012,7 +968,7 @@ mod tests {
                 "{} 的 URL 必须指向清单里的文件名",
                 pkg.id
             );
-            assert!(matches!(pkg.kind.as_str(), "ffmpeg" | "poppler"));
+            assert!(matches!(pkg.kind.as_str(), "ffmpeg"));
             assert!(matches!(pkg.flavor.as_str(), "lgpl" | "gpl" | "any"));
             assert!(
                 !pkg.extract.is_empty() || !pkg.extract_trees.is_empty(),
@@ -1047,9 +1003,6 @@ mod tests {
             .entries
             .iter()
             .any(|e| e.package_id == "ffmpeg-windows-x64-lgpl"));
-        // Poppler 与变体无关，两个计划里都应出现。
-        assert!(lgpl.entries.iter().any(|e| e.kind == "poppler"));
-        assert!(gpl.entries.iter().any(|e| e.kind == "poppler"));
         for entry in &lgpl.entries {
             assert!(
                 entry.sources.len() >= 2,
@@ -1090,10 +1043,6 @@ mod tests {
         assert!(err.contains("不匹配"));
         // 平台不符也必须在下载前拒绝。
         assert!(check_package(lgpl, Flavor::Lgpl, "linux", "x86_64").is_err());
-        // Poppler 与变体无关。
-        let pop = package_by_id(m, "poppler-windows-x64").unwrap();
-        assert!(check_package(pop, Flavor::Lgpl, "windows", "x86_64").is_ok());
-        assert!(check_package(pop, Flavor::Gpl, "windows", "x86_64").is_ok());
     }
 
     #[test]

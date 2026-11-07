@@ -79,5 +79,5 @@ jobs:
       - name: 面板持久化 / 旧前缀不读取（headless，无可见窗口）
         run: node scripts/panel-persist-check.mjs
 
-  # 依赖真实 FFmpeg / Poppler 的用例（verify:core / p2-check / flavor 真实转码）
-  # 依赖本机或自托管 runner 上的 FFmpeg 与 Poppler，GitHub 默认 runner 不执行。
+  # 依赖真实 FFmpeg 的用例（verify:core / p2-check / flavor 真实转码）
+  # 依赖本机或自托管 runner 上的 FFmpeg，GitHub 默认 runner 不执行。

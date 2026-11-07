@@ -3,6 +3,7 @@ import { formatBytes, formatDuration } from "@formatforge/design-tokens";
 import { api, type AudioMergeParams, type AudioParams, type AudioTrimParams, type Capabilities, type Job } from "../lib/api";
 import { AudioBitrateField, DropZone, Field, FileTable, Group, OutputNaming, Segmented, SwitchRow, useMediaFiles, type NamingPrefs } from "./shared";
 import { loadPanelPrefs, savePanelPrefs } from "../lib/panelPrefs";
+import { findMethod } from "../catalog";
 import {
   AUDIO_FORMATS,
   audioFormatAvailable,
@@ -10,6 +11,7 @@ import {
   formatProbeNotice,
 } from "../lib/formats";
 import { Icon } from "../components/Icon";
+import { PresetBar } from "../components/PresetBar";
 import { SPEED_MAX, SPEED_MIN, SPEED_PRESETS, SPEED_STEP, speedLabel } from "../lib/speed";
 
 const DEFAULT_PARAMS: AudioParams = {
@@ -396,6 +398,7 @@ function AudioTranscode({
       </aside>
 
       <div className="bottombar">
+        <PresetBar methodId={methodId} title={findMethod(methodId)?.title ?? methodId} />
         <div className="outdir">
           <Icon name="folder" size={14} />
           <code title={outputDir}>{outputDir || "未设置输出目录"}</code>
@@ -527,6 +530,7 @@ function AudioOutputSettings({
 }
 
 function AudioBottomBar({
+  methodId,
   outputDir,
   onChangeOutputDir,
   hint,
@@ -535,6 +539,7 @@ function AudioBottomBar({
   label,
   onStart,
 }: {
+  methodId: string;
   outputDir: string;
   onChangeOutputDir: (dir: string) => void;
   hint: ReactNode;
@@ -545,6 +550,7 @@ function AudioBottomBar({
 }) {
   return (
     <div className="bottombar">
+      <PresetBar methodId={methodId} title={findMethod(methodId)?.title ?? methodId} />
       <div className="outdir">
         <Icon name="folder" size={14} />
         <code title={outputDir}>{outputDir || "未设置输出目录"}</code>
@@ -696,6 +702,7 @@ function AudioMergePanel({
       </aside>
 
       <AudioBottomBar
+        methodId={key}
         outputDir={outputDir}
         onChangeOutputDir={onChangeOutputDir}
         canStart={usable.length >= 2}
@@ -878,6 +885,7 @@ function AudioTrimPanel({
       </aside>
 
       <AudioBottomBar
+        methodId="audio-trim"
         outputDir={outputDir}
         onChangeOutputDir={onChangeOutputDir}
         canStart={usable.length > 0 && rangeOk && !tooLong}

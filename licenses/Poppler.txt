@@ -1,5 +1,8 @@
-Poppler —— GNU GPL v2.0 或更高版本
+Poppler —— GNU GPL v2.0 或更高版本（历史声明）
 ==================================
+
+说明：当前版本（v1.1.1 起）已移除全部 PDF 功能，不再调用 pdftoppm / pdftotext，
+也不再检测或下载 Poppler。此文件仅作历史声明保留。
 
 本仓库与 Release 附件均不分发 Poppler 二进制。Transmutio 的「PDF 转图片」功能
 调用用户自行安装的 pdftoppm。Poppler 以 GNU GPL v2.0-or-later 发布。

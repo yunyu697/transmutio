@@ -13,7 +13,8 @@ dist-artifacts/
 *.rpm
 *.app/
 
-# 第三方二进制与解压目录（FFmpeg / Poppler / 便携工具链）
+# 第三方二进制与解压目录（FFmpeg / 便携工具链）
+# vendor/poppler/ 仅用于忽略历史遗留目录，PDF 功能已下线，不再产生新内容
 samples/_dl/
 samples/setup-check/appdata/
 samples/setup-check/out/

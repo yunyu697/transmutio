@@ -1,4 +1,4 @@
-use crate::{args, containers, pdf, probe, tools};
+use crate::{args, containers, probe, tools};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
@@ -138,8 +138,6 @@ pub struct AppState {
     pub log_dir: Mutex<Option<PathBuf>>,
     /// 批次全部结束后的动作：none | open-folder | shutdown。
     pub after_action: Mutex<String>,
-    /// 用户在设置里指定的 PDF 工具目录（影响 pdftoppm / pdftotext 查找）。
-    pub pdf_tools_dir: Mutex<Option<String>>,
 }
 
 impl Default for AppState {
@@ -150,7 +148,6 @@ impl Default for AppState {
             tools: Mutex::new(None),
             log_dir: Mutex::new(None),
             after_action: Mutex::new("none".into()),
-            pdf_tools_dir: Mutex::new(None),
         }
     }
 }
@@ -283,19 +280,6 @@ fn kind_ext(kind: &str, params: &Value) -> String {
             containers::container_ext(container)
                 .unwrap_or("mp4")
                 .to_string()
-        }
-        "pdf-merge" | "pdf-split" => "pdf".into(),
-        "pdf-text" => "txt".into(),
-        "pdf-image" => {
-            let format = params
-                .get("format")
-                .and_then(Value::as_str)
-                .unwrap_or("png");
-            if format == "jpg" {
-                "jpg".into()
-            } else {
-                "png".into()
-            }
         }
         "video-frames" => {
             let format = params
@@ -497,12 +481,7 @@ async fn remove_temp_file(path: &Path) {
 }
 
 /// 入队前的参数校验。任何非法输入都直接拒绝，不创建「点进去才失败」的任务。
-fn precheck_spec(
-    kind: &str,
-    inputs: &[String],
-    params: &Value,
-    pdf_dir: Option<&str>,
-) -> Result<(), String> {
+fn precheck_spec(kind: &str, inputs: &[String], params: &Value) -> Result<(), String> {
     match kind {
         "video-mp4" => {
             let p: args::VideoParams = serde_json::from_value(params.clone())
@@ -619,72 +598,8 @@ fn precheck_spec(
             // 用真实的构建函数做一次干跑，确保网格容量/颜色/单元尺寸都合法。
             args::build_collage(inputs, "precheck.out", &p).map(|_| ())
         }
-        "pdf-merge" => {
-            if inputs.len() < 2 {
-                return Err("PDF 合并至少需要 2 个文件".into());
-            }
-            for input in inputs {
-                let ext = Path::new(input)
-                    .extension()
-                    .map(|e| e.to_string_lossy().to_ascii_lowercase())
-                    .unwrap_or_default();
-                if ext != "pdf" {
-                    return Err(format!("{input} 不是 PDF 文件"));
-                }
-            }
-            Ok(())
-        }
-        "pdf-split" => {
-            let mode = params.get("mode").and_then(Value::as_str).unwrap_or("per-page");
-            if mode != "per-page" && mode != "ranges" {
-                return Err(format!("不支持的拆分模式「{mode}」，可选 per-page / ranges"));
-            }
-            let total = pdf::page_count(&inputs[0])?;
-            if mode == "ranges" {
-                let ranges = params.get("ranges").and_then(Value::as_str).unwrap_or("");
-                pdf::parse_ranges(ranges, total)?;
-            }
-            Ok(())
-        }
-        "pdf-image" => {
-            let format = params.get("format").and_then(Value::as_str).unwrap_or("png");
-            if !["png", "jpg"].contains(&format) {
-                return Err(format!("不支持的图片格式「{format}」，可选 png / jpg"));
-            }
-            let dpi = params.get("dpi").and_then(Value::as_u64).unwrap_or(96);
-            if !(36..=600).contains(&dpi) {
-                return Err("DPI 必须在 36..600 之间".into());
-            }
-            let tools = crate::pdf_tools::resolve(pdf_dir);
-            if !tools.available {
-                return Err(tools.reason.unwrap_or_else(|| "未找到 pdftoppm".into()));
-            }
-            // 提前读一遍页数，损坏/加密文件在入队阶段就拒绝。
-            pdf::page_count(&inputs[0])?;
-            Ok(())
-        }
-        "pdf-text" => {
-            if inputs.len() != 1 {
-                return Err("PDF 转文本一次只能处理 1 个文件".into());
-            }
-            let ext = Path::new(&inputs[0])
-                .extension()
-                .map(|e| e.to_string_lossy().to_ascii_lowercase())
-                .unwrap_or_default();
-            if ext != "pdf" {
-                return Err(format!("{} 不是 PDF 文件", inputs[0]));
-            }
-            let tools = crate::pdf_tools::resolve(pdf_dir);
-            if !tools.text_available {
-                return Err(tools
-                    .text_reason
-                    .unwrap_or_else(|| "未找到 pdftotext（Poppler）".into()));
-            }
-            pdf::page_count(&inputs[0])?;
-            Ok(())
-        }
         other => Err(format!(
-            "未知任务类型「{other}」；支持 video-mp4 / video-split / video-merge / video-mux / video-gif / image-gif / audio-mp3 / audio-aac / audio-merge / audio-trim / image / image-compress / image-seq-video / video-frames / image-collage / pdf-merge / pdf-split / pdf-image / pdf-text"
+            "未知任务类型「{other}」；支持 video-mp4 / video-split / video-merge / video-mux / video-gif / image-gif / audio-mp3 / audio-aac / audio-merge / audio-trim / image / image-compress / image-seq-video / video-frames / image-collage"
         )),
     }
 }
@@ -721,8 +636,7 @@ pub async fn enqueue(ctx: &Ctx, specs: Vec<JobSpec>) -> Result<Vec<Job>, String>
             inputs.insert(0, spec.input.clone());
         }
 
-        let pdf_dir = { state.pdf_tools_dir.lock().await.clone() };
-        precheck_spec(&spec.kind, &inputs, &spec.params, pdf_dir.as_deref())?;
+        precheck_spec(&spec.kind, &inputs, &spec.params)?;
 
         let mut info = match ffprobe.as_deref() {
             Some(probe_bin) => probe::probe_media(probe_bin, &spec.input).await,
@@ -854,7 +768,19 @@ pub async fn enqueue(ctx: &Ctx, specs: Vec<JobSpec>) -> Result<Vec<Job>, String>
             );
         }
 
-        let dir = PathBuf::from(&spec.output_dir);
+        // 输出位置：`@source` 表示写回每个输入文件所在目录；空值明确报错，不静默回落。
+        if spec.output_dir.trim().is_empty() {
+            return Err("未设置输出目录：请在设置里选择「自定义目录」或改用「与源文件相同目录」".into());
+        }
+        let dir = if spec.output_dir == "@source" {
+            Path::new(&spec.input)
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty())
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| PathBuf::from("."))
+        } else {
+            PathBuf::from(&spec.output_dir)
+        };
         std::fs::create_dir_all(&dir)
             .map_err(|e| format!("无法创建输出目录 {}：{e}", dir.display()))?;
 
@@ -2268,278 +2194,6 @@ async fn run_composite(
     finish_slot(&ctx, &id).await;
 }
 
-struct PdfOutcome {
-    first_output: PathBuf,
-    bytes: u64,
-    message: String,
-}
-
-fn pdf_error_kind(message: &str) -> &'static str {
-    if message.contains("pdftoppm") || message.contains("外部工具") {
-        "external-tool"
-    } else if message.contains("页码")
-        || message.contains("至少需要")
-        || message.contains("不支持")
-        || message.contains("超出")
-        || message.contains("加密")
-        || message.contains("没有页面")
-    {
-        "invalid-params"
-    } else {
-        "input"
-    }
-}
-
-/// PDF 合并 / 拆分 / 转图片。合并与拆分完全本地；转图片要求 pdftoppm。
-async fn run_pdf(ctx: Ctx, id: String, job: Job, dir: PathBuf, temp: PathBuf) {
-    let kind = job.kind.clone();
-    let _ = set_job(&ctx, &id, |job| {
-        job.message = Some(match kind.as_str() {
-            "pdf-merge" => "正在合并 PDF…".into(),
-            "pdf-split" => "正在拆分 PDF…".into(),
-            "pdf-text" => "正在提取 PDF 文本…".into(),
-            _ => "正在把 PDF 渲染成图片…".into(),
-        });
-    })
-    .await;
-
-    let pdf_dir = { ctx.state.pdf_tools_dir.lock().await.clone() };
-    let job2 = job.clone();
-    let dir2 = dir.clone();
-    let temp2 = temp.clone();
-    let id2 = id.clone();
-    let result: Result<PdfOutcome, String> =
-        tokio::task::spawn_blocking(move || -> Result<PdfOutcome, String> {
-            let stem = file_stem(&job2.output);
-            match kind.as_str() {
-                "pdf-merge" => {
-                    let total = pdf::merge(&job2.inputs, &temp2)?;
-                    let overwrite = conflict_policy(Some(&job2.conflict)) == "overwrite";
-                    let (target, size) = if overwrite {
-                        let size = rename_overwrite(&temp2, Path::new(&job2.output))
-                            .map_err(|e| format!("写入输出失败：{e}"))?;
-                        (PathBuf::from(&job2.output), size)
-                    } else {
-                        match rename_atomic(&temp2, Path::new(&job2.output)) {
-                            Ok(size) => (PathBuf::from(&job2.output), size),
-                            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
-                                let target = unique_output(&dir2, &stem, "pdf", &[]);
-                                let size = rename_atomic(&temp2, &target)
-                                    .map_err(|e| format!("写入输出失败：{e}"))?;
-                                (target, size)
-                            }
-                            Err(err) => return Err(format!("写入输出失败：{err}")),
-                        }
-                    };
-                    Ok(PdfOutcome {
-                        first_output: target,
-                        bytes: size,
-                        message: format!("已合并 {total} 页 PDF"),
-                    })
-                }
-                "pdf-split" => {
-                    let tmpdir = dir2.join(format!(".ff-tmp-split-{id2}"));
-                    let _ = std::fs::remove_dir_all(&tmpdir);
-                    let per_page = job2
-                        .params
-                        .get("mode")
-                        .and_then(Value::as_str)
-                        .unwrap_or("per-page")
-                        == "per-page";
-                    let ranges = job2
-                        .params
-                        .get("ranges")
-                        .and_then(Value::as_str)
-                        .map(str::to_string);
-                    let produced =
-                        pdf::split(&job2.inputs[0], &tmpdir, &stem, per_page, ranges.as_deref())?;
-                    let mut used: Vec<PathBuf> = Vec::new();
-                    let mut bytes = 0u64;
-                    let mut first: Option<PathBuf> = None;
-                    for file in produced {
-                        let ext = file
-                            .extension()
-                            .map(|e| e.to_string_lossy().to_string())
-                            .unwrap_or_else(|| "pdf".into());
-                        let target = unique_output(
-                            &dir2,
-                            &file_stem(file.to_string_lossy().as_ref()),
-                            &ext,
-                            &used,
-                        );
-                        std::fs::rename(&file, &target).map_err(|e| {
-                            format!("写入拆分结果失败（{}）：{e}", target.display())
-                        })?;
-                        bytes += std::fs::metadata(&target).map(|m| m.len()).unwrap_or(0);
-                        used.push(target.clone());
-                        first.get_or_insert(target);
-                    }
-                    let _ = std::fs::remove_dir_all(&tmpdir);
-                    Ok(PdfOutcome {
-                        first_output: first.ok_or("拆分没有产生任何文件")?,
-                        bytes,
-                        message: format!("已拆分为 {} 个 PDF", used.len()),
-                    })
-                }
-                "pdf-text" => {
-                    let tools = crate::pdf_tools::resolve(pdf_dir.as_deref());
-                    let pdftotext = tools.pdftotext.clone().ok_or_else(|| {
-                        tools
-                            .text_reason
-                            .clone()
-                            .unwrap_or_else(|| "未找到 pdftotext（Poppler）".into())
-                    })?;
-                    let layout = job2
-                        .params
-                        .get("layout")
-                        .and_then(Value::as_bool)
-                        .unwrap_or(true);
-                    let total = pdf::page_count(&job2.inputs[0])?;
-                    let tmp_txt = dir2.join(format!(".ff-tmp-pdftxt-{id2}.txt"));
-                    let _ = std::fs::remove_file(&tmp_txt);
-                    let mut cmd = std::process::Command::new(&pdftotext);
-                    cmd.arg("-enc").arg("UTF-8");
-                    if layout {
-                        cmd.arg("-layout");
-                    }
-                    cmd.arg(&job2.inputs[0]).arg(&tmp_txt);
-                    #[cfg(windows)]
-                    {
-                        use std::os::windows::process::CommandExt;
-                        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-                        cmd.creation_flags(CREATE_NO_WINDOW);
-                    }
-                    let output = cmd
-                        .output()
-                        .map_err(|e| format!("无法启动 pdftotext：{e}"))?;
-                    if !output.status.success() {
-                        let _ = std::fs::remove_file(&tmp_txt);
-                        let tail: String = String::from_utf8_lossy(&output.stderr)
-                            .lines()
-                            .rev()
-                            .take(3)
-                            .collect::<Vec<_>>()
-                            .into_iter()
-                            .rev()
-                            .collect::<Vec<_>>()
-                            .join(" | ");
-                        return Err(format!("pdftotext 失败：{tail}"));
-                    }
-                    let overwrite = conflict_policy(Some(&job2.conflict)) == "overwrite";
-                    let (target, size) = if overwrite {
-                        let size = rename_overwrite(&tmp_txt, Path::new(&job2.output))
-                            .map_err(|e| format!("写入输出失败：{e}"))?;
-                        (PathBuf::from(&job2.output), size)
-                    } else {
-                        match rename_atomic(&tmp_txt, Path::new(&job2.output)) {
-                            Ok(size) => (PathBuf::from(&job2.output), size),
-                            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
-                                let target = unique_output(&dir2, &stem, "txt", &[]);
-                                let size = rename_atomic(&tmp_txt, &target)
-                                    .map_err(|e| format!("写入输出失败：{e}"))?;
-                                (target, size)
-                            }
-                            Err(err) => return Err(format!("写入输出失败：{err}")),
-                        }
-                    };
-                    Ok(PdfOutcome {
-                        first_output: target,
-                        bytes: size,
-                        message: format!(
-                            "已提取 {total} 页文本（UTF-8{}）",
-                            if layout { "，保留版面" } else { "" }
-                        ),
-                    })
-                }
-                _ => {
-                    let tools = crate::pdf_tools::resolve(pdf_dir.as_deref());
-                    let pdftoppm = tools.pdftoppm.clone().ok_or_else(|| {
-                        tools
-                            .reason
-                            .clone()
-                            .unwrap_or_else(|| "未找到 pdftoppm".into())
-                    })?;
-                    let format = job2
-                        .params
-                        .get("format")
-                        .and_then(Value::as_str)
-                        .unwrap_or("png")
-                        .to_string();
-                    let dpi = job2.params.get("dpi").and_then(Value::as_u64).unwrap_or(96) as u32;
-                    let total = pdf::page_count(&job2.inputs[0])?;
-                    let tmpdir = dir2.join(format!(".ff-tmp-pdfimg-{id2}"));
-                    let _ = std::fs::remove_dir_all(&tmpdir);
-                    let produced = pdf::rasterize(
-                        &pdftoppm,
-                        &job2.inputs[0],
-                        &tmpdir,
-                        "page",
-                        &format,
-                        dpi,
-                        1,
-                        total.max(1) as u32,
-                    )?;
-                    let ext = if format == "jpg" { "jpg" } else { "png" };
-                    let mut used: Vec<PathBuf> = Vec::new();
-                    let mut bytes = 0u64;
-                    let mut first: Option<PathBuf> = None;
-                    for (index, file) in produced.iter().enumerate() {
-                        let target =
-                            unique_output(&dir2, &format!("{stem}-p{:04}", index + 1), ext, &used);
-                        std::fs::rename(file, &target)
-                            .map_err(|e| format!("写入图片失败（{}）：{e}", target.display()))?;
-                        bytes += std::fs::metadata(&target).map(|m| m.len()).unwrap_or(0);
-                        used.push(target.clone());
-                        first.get_or_insert(target);
-                    }
-                    let _ = std::fs::remove_dir_all(&tmpdir);
-                    Ok(PdfOutcome {
-                        first_output: first.ok_or("PDF 渲染没有产生图片")?,
-                        bytes,
-                        message: format!(
-                            "已输出 {} 张图片（{} DPI，{} 页）",
-                            used.len(),
-                            dpi,
-                            total
-                        ),
-                    })
-                }
-            }
-        })
-        .await
-        .unwrap_or_else(|e| Err(format!("PDF 任务执行失败：{e}")));
-
-    match result {
-        Ok(outcome) => {
-            let path_text = outcome.first_output.to_string_lossy().to_string();
-            let _ = set_job(&ctx, &id, |job| {
-                job.status = "done".into();
-                job.progress = 1.0;
-                job.output = path_text.clone();
-                job.output_size = Some(outcome.bytes);
-                job.message = Some(outcome.message.clone());
-                job.finished_at = Some(now_ms());
-                job.encoder_used = Some("native".into());
-            })
-            .await;
-            write_job_log(&ctx, &id, "done", &[], &outcome.message).await;
-        }
-        Err(message) => {
-            let kind = pdf_error_kind(&message);
-            let _ = set_job(&ctx, &id, |job| {
-                job.status = "failed".into();
-                job.error_kind = Some(kind.into());
-                job.message = Some(message.clone());
-                job.finished_at = Some(now_ms());
-                job.progress = 0.0;
-            })
-            .await;
-            write_job_log(&ctx, &id, "failed", &[], &message).await;
-            maybe_auto_retry(&ctx, &id, kind).await;
-        }
-    }
-    finish_slot(&ctx, &id).await;
-}
 
 /// 视频 → 图片序列。先写临时目录，成功后再逐帧移入输出目录，失败不留半套。
 async fn run_frames(ctx: Ctx, id: String, job: Job, ffmpeg: String, dir: PathBuf) {
@@ -3417,22 +3071,6 @@ async fn run_job(ctx: Ctx, id: String) {
         return;
     }
 
-    // PDF 任务：合并/拆分在进程内完成，转图片调用外部 pdftoppm，转文本调用 pdftotext。
-    if matches!(
-        job.kind.as_str(),
-        "pdf-merge" | "pdf-split" | "pdf-image" | "pdf-text"
-    ) {
-        run_pdf(
-            ctx.clone(),
-            id.clone(),
-            job.clone(),
-            dir.clone(),
-            temp.clone(),
-        )
-        .await;
-        return;
-    }
-
     // 视频 → 图片序列是多文件产物，单独走一个执行器。
     if job.kind == "video-frames" {
         run_frames(
@@ -4280,16 +3918,15 @@ mod tests {
             "video-mp4",
             &[],
             &json!({ "container": "mp4", "codec": "vp9" }),
-            None,
         )
         .unwrap_err();
         assert!(
             err.contains("MP4") && err.contains("vp9"),
             "应拒绝 mp4+vp9：{err}"
         );
-        let err = precheck_spec("audio-mp3", &[], &json!({ "format": "amr" }), None).unwrap_err();
+        let err = precheck_spec("audio-mp3", &[], &json!({ "format": "amr" })).unwrap_err();
         assert!(err.contains("amr"), "应拒绝未知音频格式：{err}");
-        assert!(precheck_spec("audio-mp3", &[], &json!({ "format": "opus" }), None).is_ok());
+        assert!(precheck_spec("audio-mp3", &[], &json!({ "format": "opus" })).is_ok());
     }
 
     #[test]
@@ -4349,7 +3986,7 @@ mod tests {
             "audioMode": "copy",
             "volume": { "enabled": true, "gainDb": 6.0, "mute": false }
         });
-        let err = precheck_spec("video-mp4", &["in.mp4".into()], &params, None).unwrap_err();
+        let err = precheck_spec("video-mp4", &["in.mp4".into()], &params).unwrap_err();
         assert!(err.contains("原样复制"), "{err}");
         assert!(err.contains("无法应用滤镜"), "{err}");
 
@@ -4360,7 +3997,7 @@ mod tests {
             "codec": "h264",
             "volume": { "enabled": false, "gainDb": 6.0, "mute": false }
         });
-        assert!(precheck_spec("video-mp4", &["in.mp4".into()], &params, None).is_ok());
+        assert!(precheck_spec("video-mp4", &["in.mp4".into()], &params).is_ok());
     }
 
     #[test]
@@ -4370,7 +4007,7 @@ mod tests {
             "normalize": true,
             "volume": { "enabled": true, "gainDb": 6.0, "mute": false }
         });
-        let err = precheck_spec("audio-mp3", &["in.wav".into()], &params, None).unwrap_err();
+        let err = precheck_spec("audio-mp3", &["in.wav".into()], &params).unwrap_err();
         assert!(err.contains("-16 LUFS"), "{err}");
         assert!(err.contains("请二选一"), "{err}");
     }
@@ -4386,39 +4023,39 @@ mod tests {
                 "endSec": 30.0
             }
         });
-        assert!(precheck_spec("video-split", &["in.mp4".into()], &params, None).is_ok());
+        assert!(precheck_spec("video-split", &["in.mp4".into()], &params).is_ok());
 
         params["split"]["mode"] = json!("bad");
-        let err = precheck_spec("video-split", &["in.mp4".into()], &params, None).unwrap_err();
+        let err = precheck_spec("video-split", &["in.mp4".into()], &params).unwrap_err();
         assert!(err.contains("分割模式"), "{err}");
 
         params["split"]["mode"] = json!("copy");
         params["split"]["endSec"] = json!(0.0);
-        let err = precheck_spec("video-split", &["in.mp4".into()], &params, None).unwrap_err();
+        let err = precheck_spec("video-split", &["in.mp4".into()], &params).unwrap_err();
         assert!(err.contains("大于开始时间"), "{err}");
 
         params["split"]["endSec"] = json!(30.0);
         params["split"]["container"] = json!("flv");
-        let err = precheck_spec("video-split", &["in.mp4".into()], &params, None).unwrap_err();
+        let err = precheck_spec("video-split", &["in.mp4".into()], &params).unwrap_err();
         assert!(err.contains("分割输出容器"), "{err}");
     }
 
     #[test]
     fn precheck_image_gif_requires_two_images_and_valid_fps() {
         let params = json!({ "fps": 10, "loopCount": 0, "maxWidth": 0, "dither": true });
-        let err = precheck_spec("image-gif", &["a.png".into()], &params, None).unwrap_err();
+        let err = precheck_spec("image-gif", &["a.png".into()], &params).unwrap_err();
         assert!(err.contains("至少需要 2 张"), "{err}");
 
         let inputs = vec!["a.png".to_string(), "b.png".to_string()];
         let bad = json!({ "fps": 0, "loopCount": 0, "maxWidth": 0, "dither": true });
-        let err = precheck_spec("image-gif", &inputs, &bad, None).unwrap_err();
+        let err = precheck_spec("image-gif", &inputs, &bad).unwrap_err();
         assert!(err.contains("1–30"), "{err}");
 
         let high = json!({ "fps": 31, "loopCount": 0, "maxWidth": 0, "dither": true });
-        let err = precheck_spec("image-gif", &inputs, &high, None).unwrap_err();
+        let err = precheck_spec("image-gif", &inputs, &high).unwrap_err();
         assert!(err.contains("1–30"), "{err}");
 
-        assert!(precheck_spec("image-gif", &inputs, &params, None).is_ok());
+        assert!(precheck_spec("image-gif", &inputs, &params).is_ok());
     }
 
     #[test]

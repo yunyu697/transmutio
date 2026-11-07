@@ -4,6 +4,8 @@ import { api, type GifParams, type Job, type MergeParams, type MuxParams } from 
 import { AudioBitrateField, DropZone, Field, FileTable, Group, OutputNaming, QualityTierField, Segmented, SwitchRow, useMediaFiles } from "./shared";
 import { loadPanelPrefs, savePanelPrefs } from "../lib/panelPrefs";
 import { Icon } from "../components/Icon";
+import { PresetBar } from "../components/PresetBar";
+import { findMethod } from "../catalog";
 
 export interface CompositePanelProps {
   methodId: string;
@@ -43,6 +45,7 @@ async function pickDir(onChangeOutputDir: (dir: string) => void) {
 }
 
 function BottomBar({
+  methodId,
   outputDir,
   onChangeOutputDir,
   hint,
@@ -50,6 +53,7 @@ function BottomBar({
   starting,
   onStart,
 }: {
+  methodId: string;
   outputDir: string;
   onChangeOutputDir: (dir: string) => void;
   hint: React.ReactNode;
@@ -59,6 +63,7 @@ function BottomBar({
 }) {
   return (
     <div className="bottombar">
+      <PresetBar methodId={methodId} title={findMethod(methodId)?.title ?? methodId} />
       <div className="outdir">
         <Icon name="folder" size={14} />
         <code title={outputDir}>{outputDir || "未设置输出目录"}</code>
@@ -225,6 +230,7 @@ export function MergePanel({ methodId, outputDir, ffmpegReady, onChangeOutputDir
       </aside>
 
       <BottomBar
+        methodId={methodId}
         outputDir={outputDir}
         onChangeOutputDir={onChangeOutputDir}
         hint={
@@ -388,6 +394,7 @@ export function MuxPanel({ methodId, outputDir, ffmpegReady, onChangeOutputDir, 
       </aside>
 
       <BottomBar
+        methodId={methodId}
         outputDir={outputDir}
         onChangeOutputDir={onChangeOutputDir}
         hint={videoFile?.durationSec ? `视频时长 ${formatDuration(videoFile.durationSec)}` : "选择视频后显示时长"}
@@ -524,6 +531,7 @@ export function GifPanel({ methodId, outputDir, ffmpegReady, onChangeOutputDir, 
       </aside>
 
       <BottomBar
+        methodId={methodId}
         outputDir={outputDir}
         onChangeOutputDir={onChangeOutputDir}
         hint={

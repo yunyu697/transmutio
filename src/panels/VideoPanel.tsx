@@ -33,6 +33,8 @@ import {
 } from "../lib/formats";
 import { GifPanel, MergePanel, MuxPanel } from "./CompositePanels";
 import { Icon } from "../components/Icon";
+import { PresetBar } from "../components/PresetBar";
+import { findMethod } from "../catalog";
 import { SPEED_MAX, SPEED_MIN, SPEED_PRESETS, SPEED_STEP, speedLabel } from "../lib/speed";
 
 const DEFAULT_PARAMS: VideoParams = {
@@ -1528,6 +1530,7 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
       </aside>
 
       <div className="bottombar">
+        <PresetBar methodId={methodId} title={findMethod(methodId)?.title ?? methodId} />
         <div className="outdir">
           <Icon name="folder" size={14} />
           <code title={outputDir}>{outputDir || "未设置输出目录"}</code>

@@ -1,27 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import { createTaskQueue } from "@formatforge/task-queue";
-import { api, type Capabilities, type FlavorInfo, type Job, type PdfToolsInfo, type ToolsInfo } from "./lib/api";
+import { api, type Capabilities, type FlavorInfo, type Job, type ToolsInfo } from "./lib/api";
 import { settingsStore, syncTheme, type Settings } from "./lib/settings";
 import { createTauriTransport } from "./lib/tauriTransport";
 import { crashReporter, logger } from "./lib/telemetry";
-import { sections, type MethodDef, type SectionDef } from "./catalog";
-import { TopBar } from "./components/TopBar";
+import { findMethod, sections, type MethodDef, type SectionDef } from "./catalog";
 import { SideNav } from "./components/SideNav";
 import { MethodGrid } from "./components/MethodGrid";
+import { HomeView } from "./components/HomeView";
 import { TaskCenter } from "./components/TaskCenter";
 import { SettingsSheet } from "./components/SettingsSheet";
 import { SetupWizard } from "./components/SetupWizard";
 import { VideoPanel } from "./panels/VideoPanel";
 import { AudioPanel } from "./panels/AudioPanel";
 import { ImagePanel } from "./panels/ImagePanel";
-import { AvifPanel, CollagePanel, ExifPanel, FramesPanel, PdfPanel, SequencePanel } from "./panels/AdvancedPanels";
-import { Icon } from "./components/Icon";
+import { AvifPanel, CollagePanel, ExifPanel, FramesPanel, SequencePanel } from "./panels/AdvancedPanels";
+import { applyPreset, lastPresetFor, panelKeyFor } from "./lib/presets";
+import { readNamespaced, writeNamespaced } from "./lib/storage";
 
 type ToastKind = "ok" | "error" | "info";
 interface Toast {
   id: number;
   text: string;
   kind: ToastKind;
+  action?: { label: string; run: () => void };
 }
 
 const DEFAULT_SECTION = sections[0];
@@ -33,16 +36,19 @@ export default function App() {
     return sections.some((section) => section.id === saved) ? saved : DEFAULT_SECTION.id;
   });
   const [activeMethod, setActiveMethod] = useState<MethodDef | null>(null);
+  const [home, setHome] = useState(true);
   const [search, setSearch] = useState("");
   const [tasksOpen, setTasksOpen] = useState(() => settingsStore.get().taskCenterOpen);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [tools, setTools] = useState<ToolsInfo | null>(null);
   const [caps, setCaps] = useState<Capabilities | null>(null);
   const [flavor, setFlavor] = useState<FlavorInfo | null>(null);
-  const [pdfTools, setPdfTools] = useState<PdfToolsInfo | null>(null);
+  const [appVersion, setAppVersion] = useState("");
   const [probing, setProbing] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const toastSeq = useRef(0);
+  /** 应用预设后递增，用于重建面板以读取新的 localStorage 参数。 */
+  const [presetNonce, setPresetNonce] = useState(0);
 
   const taskQueue = useMemo(() => createTaskQueue(createTauriTransport()), []);
   const taskState = useSyncExternalStore(
@@ -50,13 +56,19 @@ export default function App() {
     () => taskQueue.getState(),
   );
 
-  const toast = useCallback((text: string, kind: ToastKind = "info") => {
-    const id = ++toastSeq.current;
-    setToasts((prev) => [...prev.slice(-2), { id, text, kind }]);
-    window.setTimeout(() => {
-      setToasts((prev) => prev.filter((item) => item.id !== id));
-    }, kind === "error" ? 6000 : 4000);
-  }, []);
+  const toast = useCallback(
+    (text: string, kind: ToastKind = "info", action?: Toast["action"]) => {
+      const id = ++toastSeq.current;
+      setToasts((prev) => [...prev.slice(-2), { id, text, kind, action }]);
+      window.setTimeout(
+        () => {
+          setToasts((prev) => prev.filter((item) => item.id !== id));
+        },
+        kind === "error" ? 6000 : action ? 8000 : 4000,
+      );
+    },
+    [],
+  );
 
   const patchSettings = useCallback((patch: Partial<Settings>) => {
     settingsStore.set(patch);
@@ -101,6 +113,17 @@ export default function App() {
     return uninstall;
   }, []);
 
+  useEffect(() => {
+    void getVersion().then((value) => setAppVersion(value || "")).catch(() => setAppVersion(""));
+  }, []);
+
+  // 面板里应用预设后重建面板，让 useState 初始化读到新参数。
+  useEffect(() => {
+    const onApplied = () => setPresetNonce((value) => value + 1);
+    window.addEventListener("transmutio:preset-applied", onApplied);
+    return () => window.removeEventListener("transmutio:preset-applied", onApplied);
+  }, []);
+
   const bootTools = useCallback(
     async (customPath: string, force: boolean) => {
       setProbing(true);
@@ -109,10 +132,6 @@ export default function App() {
         setTools(info);
         const capabilities = await api.probeCapabilities(customPath || undefined, settingsStore.get().allowGplEncoders, force);
         setCaps(capabilities);
-        if (!customPath) {
-          const dir = settingsStore.get().outputDir || (await api.defaultOutputDir());
-          if (dir && dir !== settingsStore.get().outputDir) patchSettings({ outputDir: dir });
-        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         logger.error("tools probe failed", { message });
@@ -121,7 +140,7 @@ export default function App() {
         setProbing(false);
       }
     },
-    [patchSettings, toast],
+    [toast],
   );
 
   useEffect(() => {
@@ -129,44 +148,6 @@ export default function App() {
       .then(setFlavor)
       .catch((error) => logger.warn("flavor info failed", { error: String(error) }));
   }, []);
-
-  // PDF 外部渲染器检测：缺失时入口仍可进入，面板内说明如何配置并支持重新检测。
-  useEffect(() => {
-    void api
-      .pdfToolsStatus(settings.pdfToolsDir || undefined)
-      .then(setPdfTools)
-      .catch(() => setPdfTools(null));
-  }, [settings.pdfToolsDir]);
-
-  const redetectPdfTools = useCallback(async () => {
-    try {
-      const next = await api.pdfToolsStatus(settings.pdfToolsDir || undefined);
-      setPdfTools(next);
-      return next;
-    } catch {
-      setPdfTools(null);
-      return null;
-    }
-  }, [settings.pdfToolsDir]);
-
-  // 可选下载 Poppler（内置清单 + 哈希校验；当前只有 Windows 有可固定校验和的包）。
-  const downloadPoppler = useCallback(async () => {
-    try {
-      const plan = await api.toolsPlan();
-      const entry = plan.entries.find((item) => item.kind === "poppler");
-      if (!entry) {
-        const manual = plan.manual.find((item) => item.kind === "poppler");
-        throw new Error(manual?.reason ?? "当前平台没有内置的可下载 Poppler 包");
-      }
-      const landed = await api.downloadTool(entry.packageId);
-      if (!landed.pdf) throw new Error("下载完成但没有返回 Poppler 信息");
-      patchSettings({ pdfToolsDir: landed.dir });
-      setPdfTools(landed.pdf);
-      toast(`Poppler 已下载并按内置 SHA-256 校验（${landed.version}）`, "ok");
-    } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), "error");
-    }
-  }, [patchSettings, toast]);
 
   useEffect(() => {
     void bootTools(settingsStore.get().ffmpegPath, false);
@@ -197,8 +178,15 @@ export default function App() {
   const selectSection = (section: SectionDef) => {
     setActiveSection(section.id);
     setActiveMethod(null);
+    setHome(false);
     setSearch("");
     patchSettings({ lastSection: section.id });
+  };
+
+  const openHome = () => {
+    setActiveMethod(null);
+    setHome(true);
+    setSearch("");
   };
 
   const pickMethod = (method: MethodDef) => {
@@ -206,12 +194,42 @@ export default function App() {
       toast(`「${method.title}」本版尚未实现，已保留入口但不会执行转换。`, "info");
       return;
     }
+    setActiveSection(method.sectionId);
+    setHome(false);
+    patchSettings({
+      lastSection: method.sectionId,
+      recentMethods: [method.id, ...settings.recentMethods.filter((id) => id !== method.id)].slice(0, 4),
+    });
+
+    // 启动默认载入该「方法」上次用过的预设；带撤销，避免覆盖刚调好的参数。
+    const preset = lastPresetFor(method.id);
+    if (preset) {
+      const key = panelKeyFor(method.id);
+      const before = key ? readNamespaced("panel:" + key) : null;
+      applyPreset(preset);
+      setPresetNonce((value) => value + 1);
+      toast(`已载入上次预设「${preset.name}」`, "info", {
+        label: "撤销",
+        run: () => {
+          if (!key) return;
+          if (before === null) writeNamespaced("panel:" + key, "{}");
+          else writeNamespaced("panel:" + key, before);
+          setPresetNonce((value) => value + 1);
+        },
+      });
+    }
     setActiveMethod(method);
   };
 
   const enqueued = (jobs: Job[]) => {
     jobs.forEach((job) => taskQueue.track(job));
     void taskQueue.refresh();
+  };
+
+  const toggleTasks = () => {
+    const next = !tasksOpen;
+    setTasksOpen(next);
+    patchSettings({ taskCenterOpen: next });
   };
 
   const ffmpegReady = Boolean(tools?.ffmpeg?.exists);
@@ -225,65 +243,74 @@ export default function App() {
   const needsSetup = !ffmpegReady || gplBlocked || gplBuildMissing;
   const running = taskState.stats.running + taskState.stats.queued;
 
+  // 输出位置：默认写回源目录（后端以 @source 解析），自定义时使用表单路径。
+  const outputDir = settings.outputDirMode === "custom" ? settings.outputDir : "@source";
+
   const renderPanel = () => {
     if (!activeMethod) {
+      if (query) {
+        return (
+          <MethodGrid
+            title={`搜索：${search}`}
+            subtitle={`在所有分区中找到 ${visibleMethods.length} 个方法`}
+            methods={visibleMethods}
+            onPick={pickMethod}
+            onUnimplemented={pickMethod}
+          />
+        );
+      }
+      if (!query && home) {
+        return (
+          <HomeView recentMethods={settings.recentMethods} onPickSection={selectSection} onPickMethod={pickMethod} />
+        );
+      }
       return (
         <MethodGrid
-          title={query ? `搜索：${search}` : currentSection.name}
-          subtitle={query ? `在所有分区中找到 ${visibleMethods.length} 个方法` : currentSection.hint}
-          methods={visibleMethods}
+          title={currentSection.name}
+          subtitle={currentSection.hint}
+          methods={currentSection.methods}
           onPick={pickMethod}
           onUnimplemented={pickMethod}
         />
       );
     }
     const common = {
-      outputDir: settings.outputDir,
+      outputDir,
       ffmpegReady,
-      onChangeOutputDir: (dir: string) => patchSettings({ outputDir: dir }),
+      onChangeOutputDir: (dir: string) =>
+        patchSettings({ outputDir: dir, outputDirMode: "custom" }),
       onEnqueued: enqueued,
       toast,
       onBack: () => setActiveMethod(null),
     };
-    if (activeMethod.panel === "video") return <VideoPanel methodId={activeMethod.id} caps={caps} {...common} />;
-    if (activeMethod.panel === "audio") return <AudioPanel methodId={activeMethod.id} caps={caps} {...common} />;
-    if (activeMethod.panel === "image") return <ImagePanel methodId={activeMethod.id} {...common} />;
-    if (activeMethod.panel === "sequence") return <SequencePanel methodId={activeMethod.id} {...common} />;
-    if (activeMethod.panel === "frames") return <FramesPanel methodId={activeMethod.id} {...common} />;
-    if (activeMethod.panel === "collage") return <CollagePanel methodId={activeMethod.id} {...common} />;
-    if (activeMethod.panel === "exif") return <ExifPanel methodId={activeMethod.id} {...common} />;
-    if (activeMethod.panel === "avif") return <AvifPanel methodId={activeMethod.id} {...common} />;
-    if (activeMethod.panel === "pdf")
-      return (
-        <PdfPanel
-          methodId={activeMethod.id}
-          pdfTools={pdfTools}
-          onRedetectPdfTools={redetectPdfTools}
-          onDownloadPoppler={downloadPoppler}
-          {...common}
-        />
-      );
+    const panelKey = `${activeMethod.id}:${presetNonce}`;
+    if (activeMethod.panel === "video")
+      return <VideoPanel key={panelKey} methodId={activeMethod.id} caps={caps} {...common} />;
+    if (activeMethod.panel === "audio")
+      return <AudioPanel key={panelKey} methodId={activeMethod.id} caps={caps} {...common} />;
+    if (activeMethod.panel === "image") return <ImagePanel key={panelKey} methodId={activeMethod.id} {...common} />;
+    if (activeMethod.panel === "sequence")
+      return <SequencePanel key={panelKey} methodId={activeMethod.id} {...common} />;
+    if (activeMethod.panel === "frames") return <FramesPanel key={panelKey} methodId={activeMethod.id} {...common} />;
+    if (activeMethod.panel === "collage")
+      return <CollagePanel key={panelKey} methodId={activeMethod.id} {...common} />;
+    if (activeMethod.panel === "exif") return <ExifPanel key={panelKey} methodId={activeMethod.id} {...common} />;
+    if (activeMethod.panel === "avif") return <AvifPanel key={panelKey} methodId={activeMethod.id} {...common} />;
     return null;
   };
 
+  const softEncoders = caps
+    ? caps.videoEncoders
+        .filter((encoder) => encoder.available && encoder.allowed && !encoder.hardware)
+        .map((encoder) => encoder.id)
+        .join(" / ") || "无"
+    : "—";
+  const hardEncoders = caps
+    ? caps.videoEncoders.filter((encoder) => encoder.available && encoder.allowed && encoder.hardware).length
+    : 0;
+
   return (
     <div className="app">
-      <TopBar
-        theme={settings.theme}
-        search={search}
-        taskCount={running}
-        tasksOpen={tasksOpen}
-        ffmpegReady={ffmpegReady}
-        onSearch={setSearch}
-        onToggleTheme={() => patchSettings({ theme: settings.theme === "dark" ? "light" : "dark" })}
-        onToggleTasks={() => {
-          const next = !tasksOpen;
-          setTasksOpen(next);
-          patchSettings({ taskCenterOpen: next });
-        }}
-        onOpenSettings={() => setSettingsOpen(true)}
-      />
-
       <div className="body">
         {needsSetup ? (
           <SetupWizard
@@ -306,7 +333,26 @@ export default function App() {
           />
         ) : (
           <>
-            <SideNav activeSection={activeSection} tools={tools} onSelect={selectSection} />
+            <SideNav
+              activeSection={activeSection}
+              activeMethodId={activeMethod?.id ?? null}
+              collapsed={settings.navCollapsed}
+              search={search}
+              recentMethods={settings.recentMethods}
+              outputDir={settings.outputDir}
+              outputDirMode={settings.outputDirMode}
+              taskCount={running}
+              tasksOpen={tasksOpen}
+              theme={settings.theme}
+              onSelectSection={selectSection}
+              onPickMethod={pickMethod}
+              onHome={openHome}
+              onSearch={setSearch}
+              onToggleCollapsed={() => patchSettings({ navCollapsed: !settings.navCollapsed })}
+              onToggleTasks={toggleTasks}
+              onToggleTheme={() => patchSettings({ theme: settings.theme === "dark" ? "light" : "dark" })}
+              onOpenSettings={() => setSettingsOpen(true)}
+            />
             <main className="main">{renderPanel()}</main>
           </>
         )}
@@ -349,39 +395,37 @@ export default function App() {
           <span className={`dot ${ffmpegReady ? "" : "bad"}`} />
           {ffmpegReady ? `FFmpeg ${tools?.ffmpegVersion ?? "已就绪"}` : "未找到 FFmpeg"}
         </span>
-        <span className={`flavor-tag ${flavor?.id === "gpl" ? "gpl" : ""}`} title={
-          flavor
-            ? `${flavor.productName} · ${flavor.licenseLabel} · 更新通道 ${flavor.updateChannel}`
-            : "变体信息不可用"
-        }>
+        <span
+          className={`flavor-tag ${flavor?.id === "gpl" ? "gpl" : ""}`}
+          title={
+            flavor
+              ? `${flavor.productName} · ${flavor.licenseLabel} · 更新通道 ${flavor.updateChannel}`
+              : "变体信息不可用"
+          }
+        >
           {flavor ? (flavor.id === "gpl" ? `${flavor.productName} · GPL` : `${flavor.productName} · LGPL`) : "变体未知"}
-        </span>
-        <span className={tools?.build.nonfree ? "" : tools?.build.lgplOk ? "" : undefined} style={tools?.build.nonfree ? { color: "var(--ff-warn)" } : undefined}>
-          {tools
-            ? `FFmpeg 构建：${tools.build.nonfree ? "nonfree" : tools.build.gpl ? "GPL" : "LGPL"}${
-                tools.build.gpl ? "（含 libx264/libx265）" : "（无 libx264/libx265）"
-              }`
-            : "FFmpeg 构建：未知"}
-        </span>
-        {caps ? (
-          <span>
-            软编：{caps.videoEncoders.filter((encoder) => encoder.available && encoder.allowed && !encoder.hardware).map((encoder) => encoder.id).join(" / ") || "无"}
-            {" · "}硬编：{caps.videoEncoders.filter((encoder) => encoder.available && encoder.allowed && encoder.hardware).length} 个可用
+          <span
+            className="flavor-build"
+            style={tools?.build.nonfree ? { color: "var(--ff-warn)" } : undefined}
+          >
+            {tools
+              ? ` · FFmpeg 构建：${tools.build.nonfree ? "nonfree" : tools.build.gpl ? "GPL" : "LGPL"}${
+                  tools.build.gpl ? "（含 libx264/libx265）" : "（无 libx264/libx265）"
+                }`
+              : " · FFmpeg 构建：未知"}
           </span>
-        ) : null}
+        </span>
+        <span>
+          软编：{softEncoders} · 硬编：{hardEncoders} 个可用
+        </span>
         <span className="spacer" />
         <span>
           并发 {settings.concurrency} · 运行 {taskState.stats.running} · 排队 {taskState.stats.queued}
         </span>
         <span>
+          {appVersion ? `v${appVersion} · ` : ""}
           {tools?.platform ?? "—"}/{tools?.arch ?? "—"}
         </span>
-        {!tasksOpen ? (
-          <button className="btn small ghost" onClick={() => setTasksOpen(true)}>
-            <Icon name="grid" size={12} />
-            任务中心
-          </button>
-        ) : null}
       </div>
 
       <SettingsSheet
@@ -414,7 +458,19 @@ export default function App() {
         <div className="toasts">
           {toasts.map((item) => (
             <div key={item.id} className={`toast ${item.kind === "info" ? "" : item.kind}`}>
-              {item.text}
+              <span>{item.text}</span>
+              {item.action ? (
+                <button
+                  type="button"
+                  className="toast-action"
+                  onClick={() => {
+                    item.action?.run();
+                    setToasts((prev) => prev.filter((toastItem) => toastItem.id !== item.id));
+                  }}
+                >
+                  {item.action.label}
+                </button>
+              ) : null}
             </div>
           ))}
         </div>

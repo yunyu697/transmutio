@@ -1,10 +1,10 @@
-//! P2 真实产物检查（dev-tools）。不依赖 UI，直接调用产品内的参数构造与 PDF 模块，
-//! 用 ffmpeg/ffprobe 生成并校验真实文件；PDF 渲染另需 pdftoppm（缺失时验证拒绝路径）。
+//! P2 真实产物检查（dev-tools）。不依赖 UI，直接调用产品内的参数构造，
+//! 用 ffmpeg/ffprobe 生成并校验真实文件。
 //!
-//! 运行：设置 FFMPEG_PATH / FFPROBE_PATH（可选 PDFTOPPM_PATH），
+//! 运行：设置 FFMPEG_PATH / FFPROBE_PATH，
 //! `cargo run --features dev-tools --bin p2-check`。
 
-use formatforge_lib::{args, avif, compress, containers, exif_write, pdf, pdf_tools, preset};
+use formatforge_lib::{args, avif, compress, containers, exif_write, preset};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -161,45 +161,6 @@ fn ffmpeg_color(ffmpeg: &Path, output: &Path, size: &str, color: &str) -> Result
     .map(|_| ())
 }
 
-fn minimal_pdf(pages: usize) -> Vec<u8> {
-    let mut out = b"%PDF-1.4\n".to_vec();
-    let mut offsets: Vec<usize> = Vec::new();
-    offsets.push(out.len());
-    out.extend(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
-    let kids: Vec<String> = (0..pages).map(|i| format!("{} 0 R", 3 + i)).collect();
-    offsets.push(out.len());
-    out.extend(
-        format!(
-            "2 0 obj\n<< /Type /Pages /Kids [{}] /Count {} >>\nendobj\n",
-            kids.join(" "),
-            pages
-        )
-        .as_bytes(),
-    );
-    for i in 0..pages {
-        offsets.push(out.len());
-        out.extend(
-            format!(
-                "{} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >>\nendobj\n",
-                3 + i
-            )
-            .as_bytes(),
-        );
-    }
-    let xref = out.len();
-    out.extend(format!("xref\n0 {}\n0000000000 65535 f \n", pages + 3).as_bytes());
-    for offset in offsets {
-        out.extend(format!("{offset:010} 00000 n \n").as_bytes());
-    }
-    out.extend(
-        format!(
-            "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
-            pages + 3
-        )
-        .as_bytes(),
-    );
-    out
-}
 
 fn probe_codec(ffprobe: &Path, path: &Path) -> Result<String, String> {
     let json = run(
@@ -1445,12 +1406,6 @@ fn run_all() -> Result<(), String> {
     if keep("collage") {
         image_collage(&ffmpeg, &ffprobe, &dir, &mut report);
     }
-    if keep("pdf") {
-        pdf_merge_and_split(&dir, &mut report);
-    }
-    if keep("pdfimg") {
-        pdf_to_image(&dir, &ffprobe, &mut report);
-    }
     if keep("format") {
         format_matrix(&ffmpeg, &ffprobe, &dir, &mut report);
     }
@@ -1797,192 +1752,6 @@ fn image_collage(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report)
     }
 }
 
-fn pdf_merge_and_split(dir: &Path, report: &mut Report) {
-    let name = "pdf-merge-split";
-    let a = dir.join("pdf-a.pdf");
-    let b = dir.join("pdf-b.pdf");
-    std::fs::write(&a, minimal_pdf(2)).ok();
-    std::fs::write(&b, minimal_pdf(3)).ok();
-    let merged = dir.join("pdf-merged.pdf");
-    let inputs = vec![
-        a.to_string_lossy().to_string(),
-        b.to_string_lossy().to_string(),
-    ];
-    let total = match pdf::merge(&inputs, &merged) {
-        Ok(v) => v,
-        Err(e) => return report.fail(name, format!("合并失败：{e}")),
-    };
-    let merged_pages = pdf::page_count(&merged.to_string_lossy()).unwrap_or(0);
-    let per_dir = dir.join("pdf-per");
-    let per = pdf::split(&a.to_string_lossy(), &per_dir, "doc", true, None);
-    let range_dir = dir.join("pdf-ranges");
-    let ranges = pdf::split(&a.to_string_lossy(), &range_dir, "doc", false, Some("1-2"));
-    let invalid = pdf::parse_ranges("1-9", 5).unwrap_err();
-    match (per, ranges) {
-        (Ok(per_files), Ok(range_files)) => {
-            let per_pages: Vec<usize> = per_files
-                .iter()
-                .filter_map(|p| pdf::page_count(&p.to_string_lossy()).ok())
-                .collect();
-            let range_pages = range_files
-                .first()
-                .and_then(|p| pdf::page_count(&p.to_string_lossy()).ok())
-                .unwrap_or(0);
-            let bytes = std::fs::metadata(&merged).map(|m| m.len()).unwrap_or(0);
-            if total == 5
-                && merged_pages == 5
-                && per_files.len() == 2
-                && per_pages == vec![1, 1]
-                && range_files.len() == 1
-                && range_pages == 2
-                && invalid.contains("超出总页数")
-            {
-                report.pass(
-                    name,
-                    format!(
-                        "合并 {} 页/{} 字节；每页拆分 {} 个（页数 {:?}）；1-2 → {} 个/{} 页；越界拒绝",
-                        merged_pages, bytes, per_files.len(), per_pages, range_files.len(), range_pages
-                    ),
-                );
-            } else {
-                report.fail(
-                    name,
-                    format!(
-                        "merged={merged_pages} per={} {:?} range={} {range_pages}",
-                        per_files.len(),
-                        per_pages,
-                        range_files.len()
-                    ),
-                );
-            }
-        }
-        (Err(e), _) | (_, Err(e)) => report.fail(name, format!("拆分失败：{e}")),
-    }
-}
-
-fn pdf_to_image(dir: &Path, ffprobe: &Path, report: &mut Report) {
-    let name = "pdf-to-image";
-    let src = dir.join("pdf-src.pdf");
-    std::fs::write(&src, minimal_pdf(2)).ok();
-    let tools = pdf_tools::resolve(None);
-    let outdir = dir.join("pdf-images");
-    let _ = std::fs::remove_dir_all(&outdir);
-
-    // 先验证「缺失 → 明确不可用 + 明确拒绝」，再验证真实渲染。
-    let saved_path = std::env::var_os("PATH");
-    let saved_tool = std::env::var_os("PDFTOPPM_PATH");
-    let saved_dirs = std::env::var_os("TRANSMUTIO_PDF_TOOLS");
-    std::env::set_var("PATH", "");
-    std::env::remove_var("PDFTOPPM_PATH");
-    std::env::remove_var("TRANSMUTIO_PDF_TOOLS");
-    let missing = pdf_tools::resolve(None);
-    let missing_run = pdf::rasterize(
-        "definitely-not-pdftoppm",
-        &src.to_string_lossy(),
-        &outdir.join("missing"),
-        "page",
-        "png",
-        96,
-        1,
-        1,
-    )
-    .unwrap_err();
-    if let Some(value) = saved_path {
-        std::env::set_var("PATH", value);
-    }
-    if let Some(value) = saved_tool {
-        std::env::set_var("PDFTOPPM_PATH", value);
-    }
-    if let Some(value) = saved_dirs {
-        std::env::set_var("TRANSMUTIO_PDF_TOOLS", value);
-    }
-    let missing_ok = !missing.available
-        && missing
-            .reason
-            .as_deref()
-            .map(|r| r.contains("pdftoppm"))
-            .unwrap_or(false)
-        && missing_run.contains("pdftoppm");
-
-    if !tools.available {
-        if missing_ok {
-            report.pass(
-                name,
-                format!(
-                    "未安装 pdftoppm：入口不可用（available=false）且直接拒绝；原因：{}",
-                    missing.reason.unwrap_or_default()
-                ),
-            );
-        } else {
-            report.fail(name, "缺失路径没有给出明确原因/拒绝".into());
-        }
-        return;
-    }
-    let produced = match pdf::rasterize(
-        tools.pdftoppm.as_deref().unwrap(),
-        &src.to_string_lossy(),
-        &outdir,
-        "page",
-        "png",
-        96,
-        1,
-        2,
-    ) {
-        Ok(files) => files,
-        Err(e) => return report.fail(name, format!("pdftoppm 渲染失败：{e}")),
-    };
-    let first = produced.first().cloned();
-    let dims = first
-        .as_ref()
-        .and_then(|p| {
-            run(
-                ffprobe,
-                &[
-                    "-v".into(),
-                    "error".into(),
-                    "-select_streams".into(),
-                    "v:0".into(),
-                    "-show_entries".into(),
-                    "stream=width,height".into(),
-                    "-of".into(),
-                    "json".into(),
-                    p.to_string_lossy().to_string(),
-                ],
-            )
-            .ok()
-        })
-        .and_then(|json| {
-            let value: serde_json::Value = serde_json::from_str(&json).ok()?;
-            let stream = value.get("streams")?.get(0)?;
-            Some((
-                stream.get("width")?.as_u64()? as u32,
-                stream.get("height")?.as_u64()? as u32,
-            ))
-        });
-    let total_bytes: u64 = produced
-        .iter()
-        .filter_map(|p| std::fs::metadata(p).ok().map(|m| m.len()))
-        .sum();
-    let ok = produced.len() == 2 && dims == Some((267, 267)) && missing_ok;
-    if ok {
-        report.pass(
-            name,
-            format!(
-                "{} 张 PNG，首张 267x267（200pt@96DPI），合计 {} 字节；缺失时正确拒绝",
-                produced.len(),
-                total_bytes
-            ),
-        );
-    } else {
-        report.fail(
-            name,
-            format!(
-                "produced={} dims={dims:?} missing_ok={missing_ok}",
-                produced.len()
-            ),
-        );
-    }
-}
 
 fn probe_meta(ffprobe: &Path, path: &Path) -> Result<(String, String), String> {
     let json = run(
@@ -3074,8 +2843,7 @@ fn preset_roundtrip(dir: &Path, report: &mut Report) {
     let built = preset::build(
         json!({
             "video": { "codec": "h264", "quality": 23, "resolution": "1080" },
-            "image": { "format": "webp", "maxEdge": 1600, "cropMode": "ratio", "cropRatio": "1:1" },
-            "pdf": { "splitMode": "ranges", "ranges": "1-3", "dpi": 150 }
+            "image": { "format": "webp", "maxEdge": 1600, "cropMode": "ratio", "cropRatio": "1:1" }
         }),
         json!({ "conflict": "suffix", "nameTemplate": "{name}-{index}" }),
     );

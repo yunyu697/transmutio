@@ -10,8 +10,8 @@ pub const PRESET_KIND: &str = "transmutio-preset";
 pub const PRESET_VERSION: u64 = 1;
 
 const ROOT_KEYS: [&str; 5] = ["version", "kind", "createdAt", "panels", "output"];
-const PANEL_KEYS: [&str; 10] = [
-    "video", "audio", "image", "merge", "mux", "gif", "seq", "frames", "collage", "pdf",
+const PANEL_KEYS: [&str; 9] = [
+    "video", "audio", "image", "merge", "mux", "gif", "seq", "frames", "collage",
 ];
 const OUTPUT_KEYS: [&str; 3] = ["conflict", "nameTemplate", "afterAction"];
 
@@ -170,7 +170,6 @@ fn validate_panel(panel: &Value, name: &str) -> Result<(), String> {
             "format",
             "quality",
         ],
-        "pdf" => &["mergeMode", "splitMode", "ranges", "imageFormat", "dpi"],
         _ => unreachable!(),
     };
     check_keys(map, allowed, &format!("panels.{name}"))?;
@@ -204,7 +203,6 @@ fn validate_panel(panel: &Value, name: &str) -> Result<(), String> {
         "collage" => serde_json::from_value::<crate::args::CollageParams>(panel.clone())
             .map(|_| ())
             .map_err(|e| format!("panels.collage 字段类型错误：{e}")),
-        "pdf" => Ok(()),
         _ => unreachable!(),
     };
     typed
@@ -306,8 +304,7 @@ mod tests {
         let preset = build(
             json!({
                 "video": { "codec": "h264", "quality": 23, "resolution": "1080" },
-                "image": { "format": "webp", "maxEdge": 1600, "cropMode": "ratio", "cropRatio": "1:1" },
-                "pdf": { "splitMode": "ranges", "ranges": "1-3", "dpi": 150 }
+                "image": { "format": "webp", "maxEdge": 1600, "cropMode": "ratio", "cropRatio": "1:1" }
             }),
             json!({ "conflict": "suffix", "nameTemplate": "{name}-{index}" }),
         )

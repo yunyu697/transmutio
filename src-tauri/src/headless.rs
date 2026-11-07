@@ -66,16 +66,6 @@ fn fail(results: &mut Vec<Check>, name: &str, detail: String) {
     });
 }
 
-/// 依赖外部工具但当前环境未安装时使用：不计入 PASS/FAIL，报告里如实标注。
-fn skip(results: &mut Vec<Check>, name: &str, detail: String) {
-    results.push(Check {
-        name: name.into(),
-        status: "skip".into(),
-        detail,
-        level: LEVEL.into(),
-    });
-}
-
 /// 读取音频的最大音量（dBFS），用于验证混音后既没静音也没削波。
 fn max_volume_db(ffmpeg: &str, input: &Path) -> Result<f64, String> {
     let out = std::process::Command::new(ffmpeg)
@@ -104,76 +94,6 @@ fn max_volume_db(ffmpeg: &str, input: &Path) -> Result<f64, String> {
         .next()
         .and_then(|v| v.parse::<f64>().ok())
         .ok_or_else(|| format!("无法解析 max_volume：{}", marker.trim()))
-}
-
-/// 生成一个含可提取文字的最小 PDF（Helvetica 文本），供 PDF→TXT 真实用例使用。
-fn make_text_pdf(path: &Path, pages: usize) -> Result<(), String> {
-    let mut out = b"%PDF-1.4\n".to_vec();
-    let mut offsets: Vec<usize> = Vec::new();
-    let push = |out: &mut Vec<u8>, offsets: &mut Vec<usize>, body: String| {
-        offsets.push(out.len());
-        out.extend_from_slice(body.as_bytes());
-    };
-    push(
-        &mut out,
-        &mut offsets,
-        "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n".into(),
-    );
-    let kids: Vec<String> = (0..pages).map(|i| format!("{} 0 R", 3 + i)).collect();
-    push(
-        &mut out,
-        &mut offsets,
-        format!(
-            "2 0 obj\n<< /Type /Pages /Kids [{}] /Count {} >>\nendobj\n",
-            kids.join(" "),
-            pages
-        ),
-    );
-    let font_id = 3 + pages;
-    for i in 0..pages {
-        push(
-            &mut out,
-            &mut offsets,
-            format!(
-                "{} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 {font_id} 0 R >> >> /Contents {} 0 R >>\nendobj\n",
-                3 + i,
-                4 + pages + i
-            ),
-        );
-    }
-    push(
-        &mut out,
-        &mut offsets,
-        format!(
-            "{font_id} 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n"
-        ),
-    );
-    for i in 0..pages {
-        let content = format!(
-            "BT /F1 24 Tf 72 700 Td (FormatForge text page {}) Tj ET",
-            i + 1
-        );
-        push(
-            &mut out,
-            &mut offsets,
-            format!(
-                "{} 0 obj\n<< /Length {} >>\nstream\n{}\nendstream\nendobj\n",
-                4 + pages + i,
-                content.len(),
-                content
-            ),
-        );
-    }
-    let xref = out.len();
-    let size = 2 * pages + 4;
-    out.extend(format!("xref\n0 {size}\n0000000000 65535 f \n").as_bytes());
-    for offset in &offsets {
-        out.extend(format!("{offset:010} 00000 n \n").as_bytes());
-    }
-    out.extend(
-        format!("trailer\n<< /Size {size} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n").as_bytes(),
-    );
-    std::fs::write(path, out).map_err(|e| format!("写测试 PDF 失败：{e}"))
 }
 
 fn video_params(hw_decode: bool) -> Value {
@@ -1258,61 +1178,6 @@ pub async fn run_checks(report_path: &str) -> i32 {
             "设备预设模板：apple-1080p",
             format!("status={} message={:?}", j.status, j.message),
         ),
-    }
-
-    // 6e) PDF → 文本：真实 pdftotext 提取 2 页文字（未安装 Poppler 时如实 skip）
-    let pdf_tools = crate::pdf_tools::resolve(None);
-    if !pdf_tools.text_available {
-        skip(
-            &mut results,
-            "PDF 转文本（UTF-8）",
-            "未检测到 pdftotext（Poppler），跳过此用例；设置 PDFTOTEXT_PATH 或加入 PATH 后可复跑".into(),
-        );
-    } else {
-        let pdf_src = workspace.join("pdf-text-src.pdf");
-        let out_text = workspace.join("pdf-text");
-        match make_text_pdf(&pdf_src, 2) {
-            Err(e) => fail(&mut results, "PDF 转文本（UTF-8）", e),
-            Ok(_) => {
-                let _ = std::fs::create_dir_all(&out_text);
-                let spec = JobSpec {
-                    kind: "pdf-text".into(),
-                    input: pdf_src.to_string_lossy().to_string(),
-                    inputs: Vec::new(),
-                    output_dir: out_text.to_string_lossy().to_string(),
-                    name_template: None,
-                    conflict: None,
-                    output_stem: Some("pdf文本".into()),
-                    params: json!({ "layout": true }),
-                };
-                match run_one(&ctx, spec, 60).await {
-                    Err(e) => fail(&mut results, "PDF 转文本（UTF-8）", e),
-                    Ok(j) if j.status == "done" => {
-                        let text = std::fs::read_to_string(&j.output).unwrap_or_default();
-                        let pages_ok = text.contains("FormatForge text page 1")
-                            && text.contains("FormatForge text page 2");
-                        let size = std::fs::metadata(&j.output).map(|m| m.len()).unwrap_or(0);
-                        let detail = format!(
-                            "pdftotext 输出 {}，{} 字节，两页文字命中={}，首行={:?}",
-                            j.output,
-                            size,
-                            pages_ok,
-                            text.lines().next().unwrap_or("")
-                        );
-                        if pages_ok && size > 20 {
-                            pass(&mut results, "PDF 转文本（UTF-8）", detail);
-                        } else {
-                            fail(&mut results, "PDF 转文本（UTF-8）", detail);
-                        }
-                    }
-                    Ok(j) => fail(
-                        &mut results,
-                        "PDF 转文本（UTF-8）",
-                        format!("status={} message={:?} error={:?}", j.status, j.message, j.error_kind),
-                    ),
-                }
-            }
-        }
     }
 
     // 7) 响度归一化：-32 dB 左右的低音量素材应被拉到接近 -16 LUFS

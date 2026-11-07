@@ -22,7 +22,6 @@ const FIELDS: Record<string, string[]> = {
   seq: ["fps", "sizeMode", "width", "height", "encoder", "quality", "bitrateKbps"],
   frames: ["fps", "width", "format", "quality"],
   collage: ["cols", "rows", "cellWidth", "cellHeight", "gap", "background", "fit", "format", "quality"],
-  pdf: ["mergeMode", "splitMode", "ranges", "imageFormat", "dpi"],
 };
 
 /** 每类面板导出时读取的本地键；同一面板类型有多个入口时取第一个作为代表。 */
@@ -100,16 +99,6 @@ export function collectPreset(afterAction: string): CollectedPreset {
     const saved = readObject(key);
     if (saved) panels[name] = pickFields(saved, FIELDS[name]);
   }
-  const mode = readObject("pdf:mode")?.mode;
-  const ranges = readObject("pdf:ranges")?.ranges;
-  const imageFormat = readObject("pdf:format")?.format;
-  const dpi = readObject("pdf:dpi")?.dpi;
-  const pdf: Record<string, unknown> = {};
-  if (typeof mode === "string") pdf.splitMode = mode;
-  if (typeof ranges === "string") pdf.ranges = ranges;
-  if (typeof imageFormat === "string") pdf.imageFormat = imageFormat;
-  if (typeof dpi === "number") pdf.dpi = dpi;
-  if (Object.keys(pdf).length) panels.pdf = pdf;
 
   // 输出策略来自面板的「输出命名」；取第一个保存过命名的入口作为代表。
   let naming: { template?: unknown; conflict?: unknown } = {};
@@ -148,15 +137,6 @@ export function applyPreset(preset: {
   for (const [name, value] of Object.entries(preset.panels)) {
     if (!value || typeof value !== "object" || Array.isArray(value)) continue;
     const fields = pickFields(value as Record<string, unknown>, FIELDS[name] ?? []);
-    if (name === "pdf") {
-      const pdf = fields as Record<string, unknown>;
-      if (typeof pdf.splitMode === "string") writeObject("pdf:mode", { mode: pdf.splitMode });
-      if (typeof pdf.ranges === "string") writeObject("pdf:ranges", { ranges: pdf.ranges });
-      if (typeof pdf.imageFormat === "string") writeObject("pdf:format", { format: pdf.imageFormat });
-      if (typeof pdf.dpi === "number") writeObject("pdf:dpi", { dpi: pdf.dpi });
-      applied.push("pdf");
-      continue;
-    }
     const target = APPLY_TARGETS[name];
     if (!target) continue;
     for (const key of target.panelKeys) writeObject(key, fields);

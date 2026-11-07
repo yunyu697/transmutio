@@ -76,16 +76,6 @@ check(
   `audio-aac 标题=${audioAacLine.includes('"音频转码"') ? "音频转码" : "不匹配"}，旧标题残留=${oldTitleHits.join(", ") || "无"}`,
 );
 
-// PDF 缺工具提示：面板内给出完整配置说明与重新检测入口。
-const advancedPanels = readFileSync(join(root, "src/panels/AdvancedPanels.tsx"), "utf8");
-const pdfHintTokens = ["pdftoppm", "Poppler", "PDF 工具目录", "PDFTOPPM_PATH", "TRANSMUTIO_PDF_TOOLS", "重新检测"];
-const missingPdfTokens = pdfHintTokens.filter((token) => !advancedPanels.includes(token));
-check(
-  "PDF 缺工具提示含完整配置说明",
-  missingPdfTokens.length === 0,
-  missingPdfTokens.length ? `缺少 ${missingPdfTokens.join(", ")}` : "pdftoppm/Poppler/PDF 工具目录/PDFTOPPM_PATH/TRANSMUTIO_PDF_TOOLS/重新检测 均在面板中",
-);
-
 // 存储前缀：只读写 transmutio:*，不再迁移旧版 formatforge:*。
 const storageModule = readFileSync(join(root, "src/lib/storage.ts"), "utf8");
 check(

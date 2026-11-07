@@ -108,11 +108,7 @@ export type JobKind =
   | "image-compress"
   | "image-seq-video"
   | "video-frames"
-  | "image-collage"
-  | "pdf-merge"
-  | "pdf-split"
-  | "pdf-image"
-  | "pdf-text";
+  | "image-collage";
 
 export interface Job {
   id: string;
@@ -420,17 +416,6 @@ export interface CollageParams {
   quality: number;
 }
 
-export interface PdfToolsInfo {
-  pdftoppm: string | null;
-  pdftotext: string | null;
-  source: "env" | "path" | "custom" | string | null;
-  available: boolean;
-  reason: string | null;
-  textAvailable: boolean;
-  textReason: string | null;
-  note: string;
-}
-
 export interface PresetFile {
   version: number;
   kind: string;
@@ -494,7 +479,7 @@ export interface PlanSource {
 /** 当前平台/变体可自动下载的一个包；校验和来自内置清单。 */
 export interface PlanEntry {
   packageId: string;
-  kind: "ffmpeg" | "poppler";
+  kind: "ffmpeg";
   version: string;
   buildLabel: string;
   file: string;
@@ -576,7 +561,6 @@ export interface LandedTool {
   version: string;
   archiveSha256: string;
   tools: ToolsInfo | null;
-  pdf: PdfToolsInfo | null;
 }
 
 export interface AppInfo {
@@ -739,8 +723,6 @@ export const api = {
   appInfo: () => invoke<AppInfo>("app_info"),
   saveDiagnostics: (text: string) => invoke<string>("save_diagnostics", { text }),
   inspectFfmpeg: (path: string) => invoke<FfToolInspection>("inspect_ffmpeg_file", { path }),
-  pdfToolsStatus: (customDir?: string) =>
-    invoke<PdfToolsInfo>("pdf_tools_status", { customDir: customDir ?? null }),
   exportPreset: (path: string, panels: Record<string, unknown>, output: Record<string, unknown>) =>
     invoke<PresetFile>("export_preset", { path, panels, output }),
   importPreset: (path: string) => invoke<PresetFile>("import_preset", { path }),

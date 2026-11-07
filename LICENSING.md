@@ -7,13 +7,14 @@
 | 层 | 对象 | 许可 |
 | --- | --- | --- |
 | 应用代码 | 本仓库全部源码与随源码分发的资源（所有子目录，含 `src/`、`src-tauri/`、`scripts/`、`packages/`） | **MIT**，全文见根目录 `LICENSE` |
-| 第三方二进制 | FFmpeg / Poppler（**不随安装包分发**，由用户自行获取） | FFmpeg：LGPL 或 GPL（取决于用户选的构建与安装包变体）；Poppler：GPL-2.0+ |
+| 第三方二进制 | FFmpeg（**不随安装包分发**，由用户自行获取） | FFmpeg：LGPL 或 GPL（取决于用户选的构建与安装包变体）。PDF 功能已下线，不再调用 Poppler |
 
 - 应用代码以 MIT 授权：可自由使用、修改、再分发，保留版权与许可声明即可。
 - 「LGPL 版 / GPL 版安装包」指的是**所接受的 FFmpeg 构建**的许可路线，
   不是把应用代码分别按 LGPL / GPL 授权，也不存在「应用代码双许可」。
-- 第三方许可全文保持原样，不做改写：`licenses/FFmpeg-LGPL.txt`、`licenses/FFmpeg-GPL.txt`、
-  `licenses/Poppler.txt`（另含 LGPL-2.1 / GPL-2.0 全文，用于安装包合规物）。
+- 第三方许可全文保持原样，不做改写：`licenses/FFmpeg-LGPL.txt`、`licenses/FFmpeg-GPL.txt`
+  （另含 LGPL-2.1 / GPL-2.0 全文，用于安装包合规物）。`licenses/Poppler.txt` 仅作历史声明保留：
+  PDF 功能已从当前版本移除，不再调用 `pdftoppm` / `pdftotext`，也不再检测或下载 Poppler。
 
 
 ## 变体矩阵（LGPL 默认 / GPL 变体）

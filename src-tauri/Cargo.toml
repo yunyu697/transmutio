@@ -65,7 +65,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 tokio = { version = "1", features = ["process", "sync", "time", "io-util", "macros", "rt-multi-thread"] }
-lopdf = "0.47.0"
 # 首次启动可选下载：纯 Rust TLS（不依赖系统 OpenSSL）、zip 解压、磁盘剩余空间探测。
 ureq = { version = "2.12", default-features = false, features = ["tls"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
