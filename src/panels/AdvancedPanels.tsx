@@ -181,7 +181,7 @@ export function SequencePanel({ outputDir, ffmpegReady, onChangeOutputDir, onEnq
       <div className="bottombar">
         <PresetBar methodId="image-seq-video" title="图片序列转视频" />
         <OutDirBar outputDir={outputDir} onChangeOutputDir={onChangeOutputDir} />
-        <div style={{ fontSize: 10.5, color: "var(--ff-fg3)" }}>
+        <div style={{ fontSize: 12, color: "var(--ff-fg3)" }}>
           {files.length ? `${files.length} 张 · ${formatBytes(files.reduce((sum, f) => sum + f.sizeBytes, 0))}` : "添加图片后显示统计"}
         </div>
         <button className="btn primary" onClick={start} disabled={starting || !files.length}>
@@ -272,7 +272,7 @@ export function FramesPanel({ outputDir, ffmpegReady, onChangeOutputDir, onEnque
       <div className="bottombar">
         <PresetBar methodId="video-frames" title="视频转图片序列" />
         <OutDirBar outputDir={outputDir} onChangeOutputDir={onChangeOutputDir} />
-        <div style={{ fontSize: 10.5, color: "var(--ff-fg3)" }}>{video ? `${video.width ?? "?"}x${video.height ?? "?"} · ${video.durationSec?.toFixed(1) ?? "?"}s` : "添加视频后显示信息"}</div>
+        <div style={{ fontSize: 12, color: "var(--ff-fg3)" }}>{video ? `${video.width ?? "?"}x${video.height ?? "?"} · ${video.durationSec?.toFixed(1) ?? "?"}s` : "添加视频后显示信息"}</div>
         <button className="btn primary" onClick={start} disabled={starting || !video}>
           <Icon name="play" size={14} />{starting ? "正在入队…" : "开始抽帧"}
         </button>
@@ -402,7 +402,7 @@ export function CollagePanel({ outputDir, ffmpegReady, onChangeOutputDir, onEnqu
       <div className="bottombar">
         <PresetBar methodId="image-collage" title="图片拼图" />
         <OutDirBar outputDir={outputDir} onChangeOutputDir={onChangeOutputDir} />
-        <div style={{ fontSize: 10.5, color: "var(--ff-fg3)" }}>{files.length} 张 · 画布 {canvas.w}x{canvas.h}</div>
+        <div style={{ fontSize: 12, color: "var(--ff-fg3)" }}>{files.length} 张 · 画布 {canvas.w}x{canvas.h}</div>
         <button className="btn primary" onClick={start} disabled={starting || !files.length}>
           <Icon name="play" size={14} />{starting ? "正在入队…" : "生成拼图"}
         </button>
@@ -560,7 +560,7 @@ export function ExifPanel({ outputDir, onChangeOutputDir, toast, onBack }: Commo
       <div className="bottombar">
         <PresetBar methodId="image-exif" title="EXIF 元数据写入" />
         <OutDirBar outputDir={outputDir} onChangeOutputDir={onChangeOutputDir} />
-        <div style={{ fontSize: 10.5, color: "var(--ff-fg3)" }}>{files.length} 张 · 只写副本</div>
+        <div style={{ fontSize: 12, color: "var(--ff-fg3)" }}>{files.length} 张 · 只写副本</div>
         <button className="btn primary" onClick={start} disabled={running || !files.length}>
           <Icon name="play" size={14} />{running ? "正在写入…" : "写入 EXIF"}
         </button>
@@ -662,7 +662,7 @@ export function AvifPanel({ outputDir, onChangeOutputDir, toast, onBack }: Commo
       <div className="bottombar">
         <PresetBar methodId="image-avif" title="图片转 AVIF" />
         <OutDirBar outputDir={outputDir} onChangeOutputDir={onChangeOutputDir} />
-        <div style={{ fontSize: 10.5, color: "var(--ff-fg3)" }}>{files.length} 张 · 只写副本</div>
+        <div style={{ fontSize: 12, color: "var(--ff-fg3)" }}>{files.length} 张 · 只写副本</div>
         <button className="btn primary" onClick={start} disabled={running || !files.length}>
           <Icon name="play" size={14} />{running ? "正在编码…" : "编码 AVIF"}
         </button>

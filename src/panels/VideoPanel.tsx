@@ -1194,7 +1194,7 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
                         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                           {params.subtitle.extraPaths.map((path) => (
                             <div key={path} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                              <code style={{ flex: 1, fontSize: 10.5, wordBreak: "break-all" }} title={path}>
+                              <code style={{ flex: 1, fontSize: 12, wordBreak: "break-all" }} title={path}>
                                 {path}
                               </code>
                               <button
@@ -1544,7 +1544,7 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
             更改
           </button>
         </div>
-        <div style={{ fontSize: 10.5, color: "var(--ff-fg3)" }}>
+        <div style={{ fontSize: 12, color: "var(--ff-fg3)" }}>
           {estimate ? (
             <>
               粗估体积 <b style={{ color: "var(--ff-fg2)" }}>{formatBytes(estimate.bytes)}</b> · 时长{" "}

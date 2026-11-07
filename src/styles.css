@@ -15,7 +15,8 @@ body {
   background: var(--ff-bg);
   color: var(--ff-fg);
   font-family: var(--ff-font);
-  font-size: 12.5px;
+  font-size: 13px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
@@ -25,6 +26,7 @@ input,
 select {
   font-family: inherit;
   font-size: inherit;
+  line-height: inherit;
   color: inherit;
 }
 
@@ -93,7 +95,7 @@ select {
 .btn.small {
   height: 26px;
   padding: 0 9px;
-  font-size: 11px;
+  font-size: 12.5px;
   border-radius: 7px;
 }
 .btn.danger {
@@ -194,7 +196,7 @@ select {
   padding: 2px 2px 8px;
 }
 .side-brand-name {
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--ff-fg);
   background: none;
@@ -240,7 +242,7 @@ select {
   outline: 0;
   background: transparent;
   color: var(--ff-fg);
-  font-size: 11.5px;
+  font-size: 13px;
 }
 .searchbox input::placeholder {
   color: var(--ff-fg3);
@@ -253,7 +255,7 @@ select {
   padding: 0 0 8px;
 }
 .side-label {
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 0.9px;
   text-transform: uppercase;
   color: var(--ff-fg3);
@@ -270,7 +272,7 @@ select {
   border-radius: 7px;
   background: transparent;
   color: var(--ff-fg2);
-  font-size: 11.5px;
+  font-size: 13px;
   text-align: left;
   cursor: pointer;
 }
@@ -299,7 +301,7 @@ select {
   border-radius: 8px;
   background: transparent;
   color: var(--ff-fg2);
-  font-size: 12px;
+  font-size: 13px;
   text-align: left;
   cursor: pointer;
 }
@@ -313,7 +315,7 @@ select {
 }
 .grow .count {
   margin-left: auto;
-  font-size: 9.5px;
+  font-size: 11px;
   color: var(--ff-fg3);
   background: var(--ff-surf2);
   border-radius: 999px;
@@ -337,7 +339,7 @@ select {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  font-size: 11px;
+  font-size: 12.5px;
   color: var(--ff-fg3);
   cursor: pointer;
 }
@@ -362,19 +364,19 @@ select {
   border: 1px solid var(--ff-line);
   border-radius: 8px;
   padding: 6px 8px;
-  font-size: 10px;
+  font-size: 11.5px;
   color: var(--ff-fg3);
   line-height: 1.45;
 }
 .outsum b {
   display: block;
   color: var(--ff-fg2);
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 600;
 }
 .outsum .path {
   font-family: ui-monospace, Consolas, monospace;
-  font-size: 9.5px;
+  font-size: 11px;
   display: block;
   white-space: nowrap;
   overflow: hidden;
@@ -412,9 +414,9 @@ select {
   background: var(--ff-accent);
   color: #04110f;
   border-radius: 999px;
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 700;
-  padding: 0 3px;
+  padding: 0 4px;
   line-height: 1.5;
 }
 
@@ -488,14 +490,14 @@ select {
 }
 .page-head h1 {
   margin: 0;
-  font-size: 20px;
+  font-size: 21px;
   font-weight: 650;
   letter-spacing: -0.2px;
 }
 .page-head p {
   margin: 4px 0 0;
   color: var(--ff-fg3);
-  font-size: 11.5px;
+  font-size: 13px;
 }
 .page-head .spacer {
   margin-left: auto;
@@ -562,18 +564,18 @@ select {
 }
 .card h3 {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
 }
 .card p {
   margin: 0;
-  font-size: 11px;
+  font-size: 12.5px;
   line-height: 1.55;
   color: var(--ff-fg3);
 }
 .badge {
   margin-left: auto;
-  font-size: 9.5px;
+  font-size: 11px;
   letter-spacing: 0.3px;
   padding: 2px 7px;
   border-radius: 999px;
@@ -617,12 +619,12 @@ select {
 }
 .wb-head h1 {
   margin: 0;
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 650;
 }
 .wb-head p {
   margin: 3px 0 0;
-  font-size: 11px;
+  font-size: 12.5px;
   color: var(--ff-fg3);
 }
 
@@ -635,7 +637,7 @@ select {
   align-items: center;
   gap: 12px;
   color: var(--ff-fg3);
-  font-size: 11.5px;
+  font-size: 13px;
   background: var(--ff-surf);
 }
 .dropzone.over {
@@ -655,14 +657,14 @@ select {
 .filetable table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 11.5px;
+  font-size: 13px;
 }
 .filetable th {
   position: sticky;
   top: 0;
   text-align: left;
   font-weight: 500;
-  font-size: 10.5px;
+  font-size: 12px;
   color: var(--ff-fg3);
   background: var(--ff-surf2);
   padding: 8px 10px;
@@ -695,7 +697,7 @@ select {
   place-items: center;
   gap: 10px;
   color: var(--ff-fg3);
-  font-size: 12px;
+  font-size: 13px;
   padding: 40px 20px;
   text-align: center;
 }
@@ -724,10 +726,10 @@ select {
   gap: 8px;
 }
 .inspector-head b {
-  font-size: 13px;
+  font-size: 14px;
 }
 .inspector-head .sub {
-  font-size: 10.5px;
+  font-size: 12px;
   color: var(--ff-fg3);
   margin-left: auto;
 }
@@ -760,7 +762,7 @@ select {
   padding: 9px 12px;
   background: var(--ff-surf2);
   border-bottom: 1px solid var(--ff-line);
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--ff-fg2);
 }
@@ -777,14 +779,14 @@ select {
   gap: 6px;
 }
 .field > label {
-  font-size: 11px;
+  font-size: 12.5px;
   color: var(--ff-fg3);
   display: flex;
   align-items: center;
   gap: 6px;
 }
 .field > label .tag {
-  font-size: 9.5px;
+  font-size: 11px;
   padding: 1px 6px;
   border-radius: 999px;
   background: var(--ff-surf3);
@@ -817,19 +819,20 @@ select {
 
 .segmented {
   display: flex;
+  flex-wrap: wrap;
   border: 1px solid var(--ff-line);
   border-radius: 8px;
   overflow: hidden;
   background: var(--ff-surf2);
 }
 .segmented button {
-  flex: 1;
+  flex: 1 0 auto;
   height: 30px;
   border: 0;
   background: transparent;
   color: var(--ff-fg3);
   cursor: pointer;
-  font-size: 11px;
+  font-size: 12.5px;
   border-right: 1px solid var(--ff-line);
   white-space: nowrap;
 }
@@ -864,7 +867,7 @@ select {
   justify-content: space-between;
 }
 .switchrow .hint {
-  font-size: 10.5px;
+  font-size: 12px;
   color: var(--ff-fg3);
   line-height: 1.5;
 }
@@ -920,13 +923,13 @@ select {
   min-width: 0;
 }
 .enc-option b {
-  font-size: 11.5px;
+  font-size: 13px;
   font-weight: 600;
   display: block;
 }
 .enc-option small {
   display: block;
-  font-size: 10px;
+  font-size: 11.5px;
   color: var(--ff-fg3);
   margin-top: 2px;
   line-height: 1.45;
@@ -948,7 +951,7 @@ select {
 }
 
 .note {
-  font-size: 10.5px;
+  font-size: 12px;
   line-height: 1.6;
   color: var(--ff-fg3);
   background: var(--ff-surf2);
@@ -978,7 +981,7 @@ select {
 .estimate {
   display: flex;
   justify-content: space-between;
-  font-size: 10.5px;
+  font-size: 12px;
   color: var(--ff-fg3);
 }
 .estimate b {
@@ -1002,7 +1005,7 @@ select {
   gap: 8px;
   min-width: 0;
   flex: 1;
-  font-size: 11px;
+  font-size: 12.5px;
   color: var(--ff-fg3);
 }
 .outdir code {
@@ -1012,7 +1015,7 @@ select {
   min-width: 0;
   color: var(--ff-fg2);
   font-family: var(--ff-font-mono);
-  font-size: 10.5px;
+  font-size: 12px;
 }
 
 /* ---------- Task center ---------- */
@@ -1037,7 +1040,7 @@ select {
   border-bottom: 1px solid var(--ff-line);
 }
 .tc-head b {
-  font-size: 13px;
+  font-size: 14px;
 }
 .tc-head .spacer {
   margin-left: auto;
@@ -1058,11 +1061,11 @@ select {
 }
 .stat b {
   display: block;
-  font-size: 15px;
-  line-height: 1.15;
+  font-size: 16px;
+  line-height: 1.25;
 }
 .stat span {
-  font-size: 9.5px;
+  font-size: 11px;
   color: var(--ff-fg3);
 }
 .stat.run b {
@@ -1099,7 +1102,7 @@ select {
   gap: 8px;
 }
 .task-top .nm {
-  font-size: 11.5px;
+  font-size: 13px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1108,7 +1111,7 @@ select {
   min-width: 0;
 }
 .task-top .st {
-  font-size: 9.5px;
+  font-size: 11px;
   padding: 2px 7px;
   border-radius: 999px;
   background: var(--ff-surf2);
@@ -1154,7 +1157,7 @@ select {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 10px;
+  font-size: 11.5px;
   color: var(--ff-fg3);
 }
 .task-meta .spacer {
@@ -1162,7 +1165,7 @@ select {
 }
 .task-msg {
   margin-top: 6px;
-  font-size: 10.5px;
+  font-size: 12px;
   line-height: 1.5;
   color: var(--ff-fg3);
   word-break: break-word;
@@ -1187,7 +1190,7 @@ select {
   padding: 0 14px;
   border-top: 1px solid var(--ff-line);
   background: var(--ff-bg2);
-  font-size: 10.5px;
+  font-size: 12px;
   color: var(--ff-fg3);
 }
 .statusbar .dot {
@@ -1218,7 +1221,7 @@ select {
 .flavor-build {
   margin-left: 2px;
   color: var(--ff-fg3);
-  font-size: 10px;
+  font-size: 11.5px;
 }
 
 /* ---------- Settings drawer ---------- */
@@ -1249,7 +1252,7 @@ select {
   border-bottom: 1px solid var(--ff-line);
 }
 .drawer header b {
-  font-size: 14px;
+  font-size: 15px;
 }
 .drawer .drawer-body {
   flex: 1;
@@ -1266,7 +1269,7 @@ select {
   gap: 8px;
   padding: 6px 0;
   border-bottom: 1px dashed var(--ff-line);
-  font-size: 11px;
+  font-size: 12.5px;
 }
 .cap-row:last-child {
   border-bottom: 0;
@@ -1280,7 +1283,7 @@ select {
 }
 .cap-row small {
   color: var(--ff-fg3);
-  font-size: 10px;
+  font-size: 11.5px;
   display: block;
   margin-top: 1px;
   white-space: normal;
@@ -1288,7 +1291,7 @@ select {
 .kv {
   display: flex;
   gap: 8px;
-  font-size: 10.5px;
+  font-size: 12px;
   color: var(--ff-fg3);
   line-height: 1.6;
 }
@@ -1316,7 +1319,7 @@ select {
   color: var(--ff-fg);
   border-radius: 9px;
   padding: 9px 14px;
-  font-size: 11.5px;
+  font-size: 13px;
   box-shadow: var(--ff-shadow);
   max-width: 560px;
 }
@@ -1393,12 +1396,12 @@ select {
   align-items: flex-start;
 }
 .setup-head h1 {
-  font-size: 18px;
+  font-size: 19px;
   margin: 0 0 6px;
 }
 .setup-head p {
   margin: 0;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.7;
   color: var(--ff-fg2);
 }
@@ -1420,13 +1423,13 @@ select {
   gap: 14px;
 }
 .setup-steps > li {
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.7;
 }
 .setup-steps p {
   margin: 4px 0 8px;
   color: var(--ff-fg3);
-  font-size: 11.5px;
+  font-size: 13px;
 }
 .setup-steps code {
   font-family: var(--ff-mono, monospace);
@@ -1445,7 +1448,7 @@ select {
   min-width: 0;
 }
 .setup-meta {
-  font-size: 11px;
+  font-size: 12.5px;
   color: var(--ff-fg3);
   white-space: nowrap;
 }
@@ -1462,7 +1465,7 @@ select {
 .setup-kv {
   display: flex;
   justify-content: space-between;
-  font-size: 11.5px;
+  font-size: 13px;
   color: var(--ff-fg2);
 }
 .setup-kv b {
@@ -1475,11 +1478,11 @@ select {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 11px;
+  font-size: 12.5px;
   color: var(--ff-fg3);
 }
 .setup-hash code {
-  font-size: 10.5px;
+  font-size: 12px;
   word-break: break-all;
   background: var(--ff-bg);
   border: 1px solid var(--ff-line);
@@ -1494,7 +1497,7 @@ select {
   padding-top: 12px;
 }
 .setup-foot .sub {
-  font-size: 10.5px;
+  font-size: 12px;
   color: var(--ff-fg3);
 }
 
@@ -1507,7 +1510,7 @@ select {
 }
 .advanced summary {
   cursor: pointer;
-  font-size: 11.5px;
+  font-size: 13px;
   color: var(--ff-fg2);
   user-select: none;
 }
@@ -1564,7 +1567,7 @@ select {
   min-height: 160px;
   padding: 12px;
   color: var(--ff-fg3);
-  font-size: 12px;
+  font-size: 13px;
   text-align: center;
 }
 .rect-crop-dim {
@@ -1580,7 +1583,7 @@ select {
 }
 .rect-crop-readout {
   color: var(--ff-fg3);
-  font-size: 12px;
+  font-size: 13px;
 }
 .rect-crop-fields {
   display: grid;
@@ -1591,7 +1594,7 @@ select {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--ff-fg3);
 }
 .rect-crop-field .input {
@@ -1632,7 +1635,7 @@ select {
 }
 .qcard b {
   display: block;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -1640,7 +1643,7 @@ select {
 }
 .qcard small {
   display: block;
-  font-size: 10px;
+  font-size: 11.5px;
   color: var(--ff-fg3);
   white-space: nowrap;
   overflow: hidden;
@@ -1666,7 +1669,7 @@ select {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
   background: none;
   border: 0;
@@ -1676,7 +1679,7 @@ select {
 }
 .ovtop .n {
   margin-left: auto;
-  font-size: 9.5px;
+  font-size: 11px;
   color: var(--ff-fg3);
   font-weight: 400;
 }
@@ -1692,7 +1695,7 @@ select {
   color: var(--ff-fg2);
   border-radius: 999px;
   padding: 1px 8px;
-  font-size: 10px;
+  font-size: 11.5px;
   cursor: pointer;
 }
 .chip:hover {
@@ -1700,12 +1703,10 @@ select {
   color: var(--ff-accent);
 }
 .ovmetaline {
-  font-size: 10px;
+  font-size: 11.5px;
   color: var(--ff-fg3);
   line-height: 1.55;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 .ovmetaline b {
   color: var(--ff-fg2);
@@ -1719,13 +1720,13 @@ select {
   float: right;
   margin-left: 6px;
   cursor: pointer;
-  font-size: 10px;
+  font-size: 11.5px;
 }
 .fmtstrip {
   border-top: 1px dashed var(--ff-line);
   margin-top: 12px;
   padding-top: 8px;
-  font-size: 10px;
+  font-size: 11.5px;
   color: var(--ff-fg3);
   display: flex;
   gap: 14px;
@@ -1772,7 +1773,7 @@ select {
   gap: 6px;
   padding: 4px 2px;
   border-top: 1px solid var(--ff-line);
-  font-size: 11px;
+  font-size: 12.5px;
 }
 .preset-name {
   flex: 1;
@@ -1794,7 +1795,7 @@ select {
   background: none;
   border: 0;
   color: var(--ff-fg3);
-  font-size: 10px;
+  font-size: 11.5px;
   cursor: pointer;
   padding: 0 2px;
 }
@@ -1814,7 +1815,7 @@ select {
   min-width: 0;
 }
 .preset-empty {
-  font-size: 10.5px;
+  font-size: 12px;
   color: var(--ff-fg3);
   padding: 4px 2px;
 }
@@ -1828,7 +1829,7 @@ select {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 11.5px;
+  font-size: 13px;
   color: var(--ff-fg2);
   cursor: pointer;
 }
@@ -1841,7 +1842,7 @@ select {
   background: none;
   border: 0;
   color: var(--ff-accent);
-  font-size: 11px;
+  font-size: 12.5px;
   cursor: pointer;
   text-decoration: underline;
 }

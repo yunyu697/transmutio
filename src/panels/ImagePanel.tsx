@@ -758,7 +758,7 @@ export function ImagePanel({
             更改
           </button>
         </div>
-        <div style={{ fontSize: 10.5, color: "var(--ff-fg3)" }}>
+        <div style={{ fontSize: 12, color: "var(--ff-fg3)" }}>
           {totals.count ? (
             <>
               共 <b style={{ color: "var(--ff-fg2)" }}>{totals.count}</b> 张 · 源文件 {formatBytes(totals.bytes)}

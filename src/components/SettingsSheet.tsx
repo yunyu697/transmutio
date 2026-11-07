@@ -225,7 +225,7 @@ export function SettingsSheet({
 
           <Group title="硬件能力探测" icon="gpu">
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 10.5, color: "var(--ff-fg3)" }}>
+              <span style={{ fontSize: 12, color: "var(--ff-fg3)" }}>
                 {caps ? `探测于 ${new Date(caps.probedAt).toLocaleString("zh-CN")} · ${caps.cacheHit ? "缓存命中" : "重新探测"}` : "尚未探测"}
               </span>
               <button className="btn small" style={{ marginLeft: "auto" }} onClick={onReprobe} disabled={probing}>

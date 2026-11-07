@@ -62,7 +62,7 @@ export function TaskCenter({
         >
           {paused ? "继续队列" : "暂停队列"}
         </button>
-        <span className="muted" style={{ fontSize: 10.5, color: "var(--ff-fg3)" }}>
+        <span className="muted" style={{ fontSize: 12, color: "var(--ff-fg3)" }}>
           并发
         </span>
         <select
@@ -134,7 +134,7 @@ export function TaskCenter({
                     <span
                       title={`质量 ${task.qualityUsed ?? "—"} · 尝试 ${task.attemptsUsed ?? "—"} 次`}
                       style={{
-                        fontSize: 9.5,
+                        fontSize: 11,
                         padding: "2px 7px",
                         borderRadius: 999,
                         color: "var(--ff-warn)",
@@ -215,13 +215,13 @@ export function TaskCenter({
               <Icon name="grid" size={22} />
             </div>
             <div>还没有任务</div>
-            <div style={{ fontSize: 10.5, opacity: 0.8 }}>选择一条转换方法并添加文件即可开始</div>
+            <div style={{ fontSize: 12, opacity: 0.8 }}>选择一条转换方法并添加文件即可开始</div>
           </div>
         )}
       </div>
 
       <div className="inspector-foot" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-        <span className="muted" style={{ fontSize: 10.5, color: "var(--ff-fg3)" }}>
+        <span className="muted" style={{ fontSize: 12, color: "var(--ff-fg3)" }}>
           排队 {stats.queued} · 取消 {stats.cancelled}
         </span>
         <button className="btn small ghost" style={{ marginLeft: "auto" }} onClick={onClearFinished}>

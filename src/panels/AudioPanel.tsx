@@ -414,7 +414,7 @@ function AudioTranscode({
             更改
           </button>
         </div>
-        <div style={{ fontSize: 10.5, color: "var(--ff-fg3)" }}>
+        <div style={{ fontSize: 12, color: "var(--ff-fg3)" }}>
           {estimate ? (
             <>
               粗估体积 <b style={{ color: "var(--ff-fg2)" }}>{formatBytes(estimate.bytes)}</b> · 时长{" "}
@@ -566,7 +566,7 @@ function AudioBottomBar({
           更改
         </button>
       </div>
-      <div style={{ fontSize: 10.5, color: "var(--ff-fg3)" }}>{hint}</div>
+      <div style={{ fontSize: 12, color: "var(--ff-fg3)" }}>{hint}</div>
       <button className="btn primary" onClick={onStart} disabled={starting || !canStart}>
         <Icon name="play" size={14} />
         {starting ? "正在入队…" : label}

@@ -117,7 +117,7 @@ export function DropZone({
           {busy ? "读取中…" : "选择文件"}
         </button>
       </span>
-      <span style={{ marginLeft: "auto", fontSize: 10, opacity: 0.7 }}>支持批量 · 不覆盖已有文件</span>
+      <span style={{ marginLeft: "auto", fontSize: 11.5, opacity: 0.7 }}>支持批量 · 不覆盖已有文件</span>
     </div>
   );
 }
@@ -139,7 +139,7 @@ export function FileTable({
             <Icon name="film" size={22} />
           </div>
           <div>拖入文件，或点击「添加文件」。</div>
-          <div style={{ fontSize: 10.5, opacity: 0.8 }}>文件只读取信息，不会被改动</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>文件只读取信息，不会被改动</div>
         </div>
       </div>
     );
@@ -183,7 +183,7 @@ export function FileTable({
         </tbody>
       </table>
       <div style={{ display: "flex", gap: 8, padding: "8px 10px", borderTop: "1px solid var(--ff-line)" }}>
-        <span className="muted" style={{ fontSize: 10.5 }}>
+        <span className="muted" style={{ fontSize: 12 }}>
           共 {files.length} 个文件
         </span>
         <button className="btn small ghost" style={{ marginLeft: "auto" }} onClick={onClear}>
@@ -401,7 +401,7 @@ export function SwitchRow({
   return (
     <div className="switchrow">
       <div>
-        <div style={{ fontSize: 11.5 }}>{label}</div>
+        <div style={{ fontSize: 13 }}>{label}</div>
         {hint ? <div className="hint">{hint}</div> : null}
       </div>
       <button

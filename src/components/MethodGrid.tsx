@@ -27,7 +27,7 @@ export function MethodGrid({
           <p>{subtitle}</p>
         </div>
         <div className="spacer" />
-        <div className="muted" style={{ fontSize: 10.5, color: "var(--ff-fg3)" }}>
+        <div className="muted" style={{ fontSize: 12, color: "var(--ff-fg3)" }}>
           本版实现：视频 · 音频 · 图片
         </div>
       </div>
@@ -74,7 +74,7 @@ export function MethodGrid({
               <Icon name="search" size={22} />
             </div>
             <div>没有匹配的方法</div>
-            <div style={{ fontSize: 10.5, opacity: 0.8 }}>试试「MP4」「MP3」「缩放」等关键词</div>
+            <div style={{ fontSize: 12, opacity: 0.8 }}>试试「MP4」「MP3」「缩放」等关键词</div>
           </div>
         )}
         <div className="note" style={{ marginTop: 18 }}>

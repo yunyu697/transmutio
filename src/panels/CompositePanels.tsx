@@ -71,7 +71,7 @@ function BottomBar({
           更改
         </button>
       </div>
-      <div style={{ fontSize: 10.5, color: "var(--ff-fg3)" }}>{hint}</div>
+      <div style={{ fontSize: 12, color: "var(--ff-fg3)" }}>{hint}</div>
       <button className="btn primary" onClick={onStart} disabled={starting || !canStart}>
         <Icon name="play" size={14} />
         {starting ? "正在入队…" : "开始处理"}
