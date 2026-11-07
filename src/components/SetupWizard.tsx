@@ -398,8 +398,10 @@ export function SetupWizard({
                   </div>
                 ) : !isGplVariant && inspection.gpl && !effectiveAllowGpl ? (
                   <div className="note danger">
-                    GPL 构建被 LGPL 版拒绝。如需 x264/x265 软件编码，请改用 GPL 版（Transmutio GPL）；
-                    或仅在本机开发时显式开启下方开关。
+                    GPL 构建被 LGPL 版拒绝。如需 x264/x265 软件编码，请改用 GPL 版（Transmutio GPL）。
+                    {flavor?.devOverrideAvailable
+                      ? "仅在本机开发时，可点击下方「允许 GPL」开发按钮。"
+                      : null}
                   </div>
                 ) : null}
               </div>

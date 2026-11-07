@@ -138,7 +138,7 @@ pub struct AppState {
     pub log_dir: Mutex<Option<PathBuf>>,
     /// 批次全部结束后的动作：none | open-folder | shutdown。
     pub after_action: Mutex<String>,
-    /// 用户在设置里指定的 PDF 工具目录（仅影响 pdftoppm 查找）。
+    /// 用户在设置里指定的 PDF 工具目录（影响 pdftoppm / pdftotext 查找）。
     pub pdf_tools_dir: Mutex<Option<String>>,
 }
 

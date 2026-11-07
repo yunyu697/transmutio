@@ -285,7 +285,7 @@ export function SettingsSheet({
                   只接受 GPL 构建的 FFmpeg（含 libx264 / libx265）。更新通道 {flavor.updateChannel}。
                 </div>
               </>
-            ) : (
+            ) : flavor?.devOverrideAvailable ? (
               <>
                 <SwitchRow
                   label="允许 GPL / nonfree 编码器"
@@ -298,6 +298,17 @@ export function SettingsSheet({
                     已开启 GPL / nonfree：当前能力表会放行 GPL 编码器。发布构建请保持关闭，并替换为 LGPL FFmpeg。
                   </div>
                 ) : null}
+              </>
+            ) : (
+              <>
+                <div className="kv">
+                  <span>GPL 编码器</span>
+                  <b>发布版固定拒绝</b>
+                </div>
+                <div className="note">
+                  这是 LGPL 发布版：编译期固定拒绝 GPL / nonfree 构建，没有可切换的开关。
+                  如需 x264 / x265 软件编码，请改用 GPL 版（Transmutio GPL）。更新通道 {flavor?.updateChannel}。
+                </div>
               </>
             )}
           </Group>
