@@ -86,6 +86,30 @@ const CAPS = {
   notes: [],
 };
 
+// 与后端 device_presets.rs 同一份字段形态（只取 UI 断言用到的两条）。
+const DEVICE_PRESETS = [
+  {
+    id: "apple-1080p",
+    label: "iPhone / iPad（1080p H.264）",
+    note: "Apple 设备通用档：MP4 + H.264 + AAC 128 kbps，1080p / 30 fps",
+    container: "mp4",
+    codec: "h264",
+    resolution: "1080",
+    fps: "30",
+    audioBitrateKbps: 128,
+  },
+  {
+    id: "android-720p",
+    label: "Android 手机 / 平板（720p H.264）",
+    note: "兼容性优先：MP4 + H.264 + AAC 128 kbps，720p / 30 fps",
+    container: "mp4",
+    codec: "h264",
+    resolution: "720",
+    fps: "30",
+    audioBitrateKbps: 128,
+  },
+];
+
 const TOOLS = {
   ffmpeg: { path: "C:\\ffmpeg\\bin\\ffmpeg.exe", source: "path", exists: true },
   ffprobe: { path: "C:\\ffmpeg\\bin\\ffprobe.exe", source: "path", exists: true },
@@ -179,12 +203,27 @@ async function mockTauri(page, cfg = {}) {
             return immediate(null);
           case "plugin:opener|open_url":
             return immediate(null);
+          case "list_device_presets":
+            return immediate(config.presets ?? []);
+          case "pdf_tools_status":
+            return immediate(
+              config.pdfTools ?? {
+                pdftoppm: "C:\\poppler\\pdftoppm.exe",
+                pdftotext: "C:\\poppler\\pdftotext.exe",
+                source: "path",
+                available: true,
+                reason: null,
+                textAvailable: true,
+                textReason: null,
+                note: "mock",
+              },
+            );
           default:
             return immediate(null);
         }
       },
     };
-  }, { tools: TOOLS, caps: CAPS, flavor: FLAVOR, ...cfg });
+  }, { tools: TOOLS, caps: CAPS, flavor: FLAVOR, presets: DEVICE_PRESETS, ...cfg });
 }
 
 const field = (page, label) =>
@@ -226,6 +265,18 @@ async function main() {
 
     // 视频面板
     await openMethod(page, "视频", "视频转码");
+    // 设备预设：应用模板后容器/编码/分辨率/帧率要写进同一份面板参数。
+    await field(page, "设备预设").locator("select").selectOption("apple-1080p");
+    const presetStored = await readStorage(page, "transmutio:panel:video:video-mp4");
+    add(
+      "panel-persist",
+      "设备预设模板写入面板参数",
+      presetStored?.resolution === "1080" &&
+        presetStored?.fps === "30" &&
+        presetStored?.container === "mp4" &&
+        presetStored?.codec === "h264",
+      `resolution=${presetStored?.resolution} fps=${presetStored?.fps} container=${presetStored?.container} codec=${presetStored?.codec}`,
+    );
     await field(page, "分辨率").locator("select").selectOption("720");
     await field(page, "帧率").locator("select").selectOption("30");
     await field(page, "旋转").locator(".segmented button").filter({ hasText: "90°" }).click();
@@ -430,6 +481,21 @@ async function main() {
       } catch {
         /* ignore */
       }
+      // 统计一次性清理标记位的写入次数（sessionStorage 跨 reload 累计），
+      // 用来证明「再启动一次不产生新写入」。
+      try {
+        const proto = Storage.prototype;
+        const originalSet = proto.setItem;
+        proto.setItem = function (key, value) {
+          if (String(key) === "transmutio:cleanup:v2") {
+            const n = Number(sessionStorage.getItem("transmutio:test-cleanup-writes") || "0") + 1;
+            originalSet.call(sessionStorage, "transmutio:test-cleanup-writes", String(n));
+          }
+          return originalSet.call(this, key, value);
+        };
+      } catch {
+        /* ignore */
+      }
     }, legacyInjected);
     await mockTauri(page3);
     await page3.goto(origin, { waitUntil: "domcontentloaded" });
@@ -440,6 +506,7 @@ async function main() {
       ...Object.keys(legacyInjected),
       "transmutio:panel:video:video-mp4",
       "transmutio:settings",
+      "transmutio:cleanup:v2",
     ];
     const readKeys = (target, keys) =>
       target.evaluate((list) => {
@@ -457,8 +524,9 @@ async function main() {
       "旧前缀键保留原值、不迁移；alpha11 遗留键被清理",
       legacyPrefixKeys.every((key) => migratedSnapshot[key] === legacyInjected[key]) &&
         migratedSnapshot["transmutio:storage-migration:v1"] === null &&
-        migratedSnapshot["transmutio:migration-notice-dismissed"] === null,
-      `legacyVideo=${migratedSnapshot["formatforge:panel:video:video-mp4"]} legacySettings=${migratedSnapshot["formatforge:settings"]} marker=${migratedSnapshot["transmutio:storage-migration:v1"]} notice=${migratedSnapshot["transmutio:migration-notice-dismissed"]}`,
+        migratedSnapshot["transmutio:migration-notice-dismissed"] === null &&
+        migratedSnapshot["transmutio:cleanup:v2"] === "1",
+      `legacyVideo=${migratedSnapshot["formatforge:panel:video:video-mp4"]} legacySettings=${migratedSnapshot["formatforge:settings"]} marker=${migratedSnapshot["transmutio:storage-migration:v1"]} notice=${migratedSnapshot["transmutio:migration-notice-dismissed"]} cleanupMarker=${migratedSnapshot["transmutio:cleanup:v2"]}`,
     );
 
     await openMethod(page3, "视频", "视频转码");
@@ -497,9 +565,59 @@ async function main() {
       "重复加载仍不读、不删旧前缀键",
       legacyPrefixKeys.every((key) => afterSnapshot[key] === legacyInjected[key]) &&
         afterSnapshot["transmutio:storage-migration:v1"] === null &&
-        afterSnapshot["transmutio:migration-notice-dismissed"] === null,
-      `legacyVideo=${afterSnapshot["formatforge:panel:video:video-mp4"]} legacySettings=${afterSnapshot["formatforge:settings"]} marker=${afterSnapshot["transmutio:storage-migration:v1"]} notice=${afterSnapshot["transmutio:migration-notice-dismissed"]}`,
+        afterSnapshot["transmutio:migration-notice-dismissed"] === null &&
+        afterSnapshot["transmutio:cleanup:v2"] === "1",
+      `legacyVideo=${afterSnapshot["formatforge:panel:video:video-mp4"]} legacySettings=${afterSnapshot["formatforge:settings"]} marker=${afterSnapshot["transmutio:storage-migration:v1"]} notice=${afterSnapshot["transmutio:migration-notice-dismissed"]} cleanupMarker=${afterSnapshot["transmutio:cleanup:v2"]}`,
     );
+
+    // 标记位写入次数：首次启动 1 次，刷新（等价再启动）后仍为 1，证明没有每次启动都写。
+    const cleanupWrites = await page3.evaluate(() =>
+      Number(sessionStorage.getItem("transmutio:test-cleanup-writes") || "0"),
+    );
+    add(
+      "panel-persist-legacy-ignored",
+      "清理只跑一次：二次启动不再写标记位",
+      cleanupWrites === 1,
+      `markerWrites=${cleanupWrites}（首次启动应写 1 次，刷新后不应增加）`,
+    );
+
+    // ---------- 场景 4：缺少 pdftotext 时，入口直接给出可操作指引且不可入队 ----------
+    const page4 = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+    page4.on("pageerror", (error) => pageErrors.push(String(error)));
+    await mockTauri(page4, {
+      pdfTools: {
+        pdftoppm: "C:\\poppler\\pdftoppm.exe",
+        pdftotext: null,
+        source: "path",
+        available: true,
+        reason: null,
+        textAvailable: false,
+        textReason: "未找到 pdftotext（Poppler）。「PDF 转文本」需要它提取文字；合并/拆分不受影响。",
+        note: "mock",
+      },
+    });
+    await page4.goto(origin, { waitUntil: "domcontentloaded" });
+    await page4.waitForSelector(".method-grid", { timeout: 10000 });
+    await openMethod(page4, "文档", "PDF 转文本");
+    const guardText = await page4.locator(".note.warn").first().innerText();
+    const guardButton = page4.locator(".bottombar .btn.primary");
+    const guardDisabled = await guardButton.isDisabled();
+    const guardLabel = (await guardButton.innerText()).trim();
+    const enqueueCalls = await page4.evaluate(() =>
+      window.__FF_MOCK__.calls.filter((call) => call.cmd === "enqueue_jobs").length,
+    );
+    add(
+      "pdf-text-guard",
+      "缺少 pdftotext 时入口给出指引且按钮禁用",
+      guardText.includes("pdftotext") &&
+        guardText.includes("PDFTOTEXT_PATH") &&
+        guardText.includes("自动下载 Poppler") &&
+        guardDisabled &&
+        guardLabel.includes("缺少 pdftotext") &&
+        enqueueCalls === 0,
+      `warning=${JSON.stringify(guardText.split("\n")[0])} disabled=${guardDisabled} label=${guardLabel} enqueueCalls=${enqueueCalls}`,
+    );
+    await page4.close();
 
     add("panel-persist", "页面无未捕获异常", pageErrors.length === 0, pageErrors.join("; ") || "无");
 

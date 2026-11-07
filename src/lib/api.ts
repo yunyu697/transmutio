@@ -102,6 +102,7 @@ export type JobKind =
   | "image-gif"
   | "audio-aac"
   | "audio-merge"
+  | "audio-mix"
   | "audio-trim"
   | "image"
   | "image-compress"
@@ -110,7 +111,8 @@ export type JobKind =
   | "image-collage"
   | "pdf-merge"
   | "pdf-split"
-  | "pdf-image";
+  | "pdf-image"
+  | "pdf-text";
 
 export interface Job {
   id: string;
@@ -161,6 +163,17 @@ export interface JobSpec {
   /** 冲突策略：suffix（默认）| skip | overwrite */
   conflict?: "suffix" | "skip" | "overwrite";
   params: Record<string, unknown>;
+}
+
+export interface DevicePreset {
+  id: string;
+  label: string;
+  note: string;
+  container: string;
+  codec: string;
+  resolution: string;
+  fps: string;
+  audioBitrateKbps: number;
 }
 
 /** 图片水印参数（后端 camelCase 反序列化；关闭时不传该字段）。 */
@@ -265,8 +278,15 @@ export interface VideoParams {
   audioRateMode?: "bitrate" | "source";
   resolution: "source" | "2160" | "1440" | "1080" | "720" | "480";
   fps: "source" | "30" | "60";
-  /** 居中裁剪画面比例 */
+  /** 居中裁剪画面比例（cropMode=ratio 时生效） */
   crop: "source" | "16:9" | "1:1" | "9:16";
+  /** ratio（居中比例裁剪，默认）| rect（自定义矩形） */
+  cropMode?: "ratio" | "rect";
+  /** rect 模式：相对源画面宽高的百分比（0–100，原点左上角） */
+  cropXPct?: number;
+  cropYPct?: number;
+  cropWPct?: number;
+  cropHPct?: number;
   rotation: "0" | "90" | "180" | "270";
   audioMode: "aac" | "copy" | "none";
   audioBitrateKbps: number;
@@ -402,9 +422,12 @@ export interface CollageParams {
 
 export interface PdfToolsInfo {
   pdftoppm: string | null;
+  pdftotext: string | null;
   source: "env" | "path" | "custom" | string | null;
   available: boolean;
   reason: string | null;
+  textAvailable: boolean;
+  textReason: string | null;
   note: string;
 }
 
@@ -691,6 +714,14 @@ export const api = {
   probeCapabilities: (customFfmpeg: string | undefined, allowGpl: boolean, force: boolean) =>
     invoke<Capabilities>("probe_capabilities", { customFfmpeg: customFfmpeg ?? null, allowGpl, force }),
   probeFiles: (paths: string[]) => invoke<MediaInfo[]>("probe_files", { paths }),
+  listDevicePresets: () => invoke<DevicePreset[]>("list_device_presets"),
+  /** 抽取视频某时间点的预览帧，返回 PNG data URL（裁剪面板框选用）。 */
+  previewFrame: (path: string, timeSec?: number, maxEdge?: number) =>
+    invoke<string>("preview_frame", {
+      path,
+      timeSec: timeSec ?? null,
+      maxEdge: maxEdge ?? null,
+    }),
   enqueue: (specs: JobSpec[]) => invoke<Job[]>("enqueue_jobs", { specs }),
   listJobs: () => invoke<Job[]>("list_jobs"),
   cancelJob: (id: string) => invoke<void>("cancel_job", { id }),

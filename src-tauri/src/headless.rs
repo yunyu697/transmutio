@@ -66,6 +66,116 @@ fn fail(results: &mut Vec<Check>, name: &str, detail: String) {
     });
 }
 
+/// 依赖外部工具但当前环境未安装时使用：不计入 PASS/FAIL，报告里如实标注。
+fn skip(results: &mut Vec<Check>, name: &str, detail: String) {
+    results.push(Check {
+        name: name.into(),
+        status: "skip".into(),
+        detail,
+        level: LEVEL.into(),
+    });
+}
+
+/// 读取音频的最大音量（dBFS），用于验证混音后既没静音也没削波。
+fn max_volume_db(ffmpeg: &str, input: &Path) -> Result<f64, String> {
+    let out = std::process::Command::new(ffmpeg)
+        .args([
+            "-hide_banner",
+            "-nostdin",
+            "-i",
+            &input.to_string_lossy(),
+            "-af",
+            "volumedetect",
+            "-f",
+            "null",
+            "-",
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|e| format!("启动 ffmpeg 失败：{e}"))?;
+    let text = String::from_utf8_lossy(&out.stderr);
+    let marker = text
+        .split("max_volume:")
+        .nth(1)
+        .ok_or_else(|| "volumedetect 未输出 max_volume".to_string())?;
+    marker
+        .split_whitespace()
+        .next()
+        .and_then(|v| v.parse::<f64>().ok())
+        .ok_or_else(|| format!("无法解析 max_volume：{}", marker.trim()))
+}
+
+/// 生成一个含可提取文字的最小 PDF（Helvetica 文本），供 PDF→TXT 真实用例使用。
+fn make_text_pdf(path: &Path, pages: usize) -> Result<(), String> {
+    let mut out = b"%PDF-1.4\n".to_vec();
+    let mut offsets: Vec<usize> = Vec::new();
+    let push = |out: &mut Vec<u8>, offsets: &mut Vec<usize>, body: String| {
+        offsets.push(out.len());
+        out.extend_from_slice(body.as_bytes());
+    };
+    push(
+        &mut out,
+        &mut offsets,
+        "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n".into(),
+    );
+    let kids: Vec<String> = (0..pages).map(|i| format!("{} 0 R", 3 + i)).collect();
+    push(
+        &mut out,
+        &mut offsets,
+        format!(
+            "2 0 obj\n<< /Type /Pages /Kids [{}] /Count {} >>\nendobj\n",
+            kids.join(" "),
+            pages
+        ),
+    );
+    let font_id = 3 + pages;
+    for i in 0..pages {
+        push(
+            &mut out,
+            &mut offsets,
+            format!(
+                "{} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 {font_id} 0 R >> >> /Contents {} 0 R >>\nendobj\n",
+                3 + i,
+                4 + pages + i
+            ),
+        );
+    }
+    push(
+        &mut out,
+        &mut offsets,
+        format!(
+            "{font_id} 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n"
+        ),
+    );
+    for i in 0..pages {
+        let content = format!(
+            "BT /F1 24 Tf 72 700 Td (FormatForge text page {}) Tj ET",
+            i + 1
+        );
+        push(
+            &mut out,
+            &mut offsets,
+            format!(
+                "{} 0 obj\n<< /Length {} >>\nstream\n{}\nendstream\nendobj\n",
+                4 + pages + i,
+                content.len(),
+                content
+            ),
+        );
+    }
+    let xref = out.len();
+    let size = 2 * pages + 4;
+    out.extend(format!("xref\n0 {size}\n0000000000 65535 f \n").as_bytes());
+    for offset in &offsets {
+        out.extend(format!("{offset:010} 00000 n \n").as_bytes());
+    }
+    out.extend(
+        format!("trailer\n<< /Size {size} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n").as_bytes(),
+    );
+    std::fs::write(path, out).map_err(|e| format!("写测试 PDF 失败：{e}"))
+}
+
 fn video_params(hw_decode: bool) -> Value {
     json!({
         "codec": "h264",
@@ -153,6 +263,40 @@ fn first_frame_hash(ffmpeg: &str, path: &Path) -> Result<String, String> {
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .ok_or_else(|| "framemd5 输出中没有哈希字段".to_string())
+}
+
+/// 首帧 PSNR（dB）：两路视频的时基不同，逐帧比对会随时间漂移，
+/// 因此只取第 1 帧做像素级比对（裁剪区域是否一致）。
+fn average_psnr(ffmpeg: &str, left: &Path, right: &Path) -> Result<f64, String> {
+    let out = std::process::Command::new(ffmpeg)
+        .args([
+            "-hide_banner",
+            "-i",
+            &left.to_string_lossy(),
+            "-i",
+            &right.to_string_lossy(),
+            "-lavfi",
+            "[0:v][1:v]psnr",
+            "-frames:v",
+            "1",
+            "-f",
+            "null",
+            "-",
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|e| format!("启动 ffmpeg 失败：{e}"))?;
+    let text = String::from_utf8_lossy(&out.stderr);
+    let marker = text
+        .split("average:")
+        .nth(1)
+        .ok_or_else(|| format!("PSNR 未输出 average：{}", text.lines().last().unwrap_or("")))?;
+    marker
+        .split_whitespace()
+        .next()
+        .and_then(|v| v.parse::<f64>().ok())
+        .ok_or_else(|| format!("无法解析 PSNR：{}", marker.trim()))
 }
 
 fn run_ffmpeg(ffmpeg: &str, args: &[String]) -> Result<(), String> {
@@ -940,6 +1084,237 @@ pub async fn run_checks(report_path: &str) -> i32 {
         ),
     }
 
+    // 6b) 任意矩形裁剪：1280x720 的 x10% y20% 50%x50% → 640x360 @ (128,144)，
+    //     与独立 ffmpeg 裁剪参考逐帧比对（PSNR），证明截取位置和尺寸都正确。
+    let out_rect = workspace.join("crop-rect");
+    let _ = std::fs::create_dir_all(&out_rect);
+    let mut params = video_params(false);
+    params["encoder"] = json!("software");
+    params["resolution"] = json!("source");
+    params["quality"] = json!(18);
+    params["cropMode"] = json!("rect");
+    params["cropXPct"] = json!(10.0);
+    params["cropYPct"] = json!(20.0);
+    params["cropWPct"] = json!(50.0);
+    params["cropHPct"] = json!(50.0);
+    let spec = JobSpec {
+        kind: "video-mp4".into(),
+        input: src_short.to_string_lossy().to_string(),
+        output_dir: out_rect.to_string_lossy().to_string(),
+        inputs: Vec::new(),
+        name_template: None,
+        conflict: None,
+        output_stem: Some("矩形裁剪".into()),
+        params,
+    };
+    match run_one(&ctx, spec, 120).await {
+        Err(e) => fail(&mut results, "任意矩形裁剪", e),
+        Ok(j) if j.status == "done" => match ffprobe.as_deref() {
+            Some(fp) => {
+                let info = crate::probe::probe_media(fp, &j.output).await;
+                let dims_ok = info.width == Some(640) && info.height == Some(360);
+                let reference = workspace.join("crop-rect-ref.mkv");
+                let ref_args: Vec<String> = vec![
+                    "-hide_banner".into(),
+                    "-loglevel".into(),
+                    "error".into(),
+                    "-y".into(),
+                    "-i".into(),
+                    src_short.to_string_lossy().to_string(),
+                    "-vf".into(),
+                    "crop=640:360:128:144".into(),
+                    "-c:v".into(),
+                    "ffv1".into(),
+                    reference.to_string_lossy().to_string(),
+                ];
+                let psnr = match run_ffmpeg(&ffmpeg_path, &ref_args) {
+                    Err(e) => Err(format!("生成参考裁剪失败：{e}")),
+                    Ok(_) => average_psnr(
+                        &ffmpeg_path,
+                        Path::new(&j.output),
+                        reference.as_path(),
+                    ),
+                };
+                match psnr {
+                    Ok(db) => {
+                        let ok = dims_ok && db >= 45.0;
+                        let detail = format!(
+                            "来源 1280x720，矩形 10%/20%/50%/50% → 输出 {}x{}（目标 640x360），与独立 crop=640:360:128:144 参考的首帧 PSNR {db:.2} dB（阈值 45）",
+                            info.width.unwrap_or(0),
+                            info.height.unwrap_or(0)
+                        );
+                        if ok {
+                            pass(&mut results, "任意矩形裁剪：尺寸与截取位置正确", detail);
+                        } else {
+                            fail(&mut results, "任意矩形裁剪：尺寸与截取位置正确", detail);
+                        }
+                    }
+                    Err(e) => fail(&mut results, "任意矩形裁剪：PSNR 比对", e),
+                }
+            }
+            None => fail(
+                &mut results,
+                "任意矩形裁剪",
+                "缺少 ffprobe，无法做产物断言".into(),
+            ),
+        },
+        Ok(j) => fail(
+            &mut results,
+            "任意矩形裁剪",
+            format!("status={} message={:?}", j.status, j.message),
+        ),
+    }
+
+    // 6c) 裁剪预览帧：真实调用后端函数，校验返回 PNG 的 IHDR 尺寸
+    match jobs::preview_frame_data_url(
+        &ffmpeg_path,
+        &src_short.to_string_lossy(),
+        0.5,
+        480,
+    )
+    .await
+    {
+        Err(e) => fail(&mut results, "裁剪预览帧", e),
+        Ok(url) => {
+            use base64::Engine;
+            let prefix = "data:image/png;base64,";
+            let png = url
+                .strip_prefix(prefix)
+                .ok_or_else(|| "预览帧不是 PNG data URL".to_string())
+                .and_then(|body| {
+                    base64::engine::general_purpose::STANDARD
+                        .decode(body)
+                        .map_err(|e| format!("预览帧 base64 解码失败：{e}"))
+                });
+            match png {
+                Ok(bytes) if bytes.len() > 8 && bytes[0..8] == [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] => {
+                    let width = u32::from_be_bytes([bytes[16], bytes[17], bytes[18], bytes[19]]);
+                    let height = u32::from_be_bytes([bytes[20], bytes[21], bytes[22], bytes[23]]);
+                    let detail = format!("PNG {}x{}，{} 字节（最长边限制 480）", width, height, bytes.len());
+                    if width == 480 && height == 270 {
+                        pass(&mut results, "裁剪预览帧：PNG 尺寸正确", detail);
+                    } else {
+                        fail(&mut results, "裁剪预览帧：PNG 尺寸正确", detail);
+                    }
+                }
+                Ok(bytes) => fail(
+                    &mut results,
+                    "裁剪预览帧：PNG 尺寸正确",
+                    format!("不是有效 PNG（{} 字节）", bytes.len()),
+                ),
+                Err(e) => fail(&mut results, "裁剪预览帧：PNG 尺寸正确", e),
+            }
+        }
+    }
+
+    // 6d) 设备预设模板：apple-1080p（MP4/H.264/1080p/30 fps/AAC 128k）真实产物
+    let out_preset = workspace.join("preset-apple");
+    let _ = std::fs::create_dir_all(&out_preset);
+    let preset = crate::device_presets::find("apple-1080p").expect("预设必须存在");
+    let mut params = video_params(false);
+    params["encoder"] = json!("software");
+    if let (Some(obj), Some(over)) = (params.as_object_mut(), preset.params_json().as_object()) {
+        for (key, value) in over {
+            obj.insert(key.clone(), value.clone());
+        }
+    }
+    let spec = JobSpec {
+        kind: "video-mp4".into(),
+        input: src_short.to_string_lossy().to_string(),
+        output_dir: out_preset.to_string_lossy().to_string(),
+        inputs: Vec::new(),
+        name_template: None,
+        conflict: None,
+        output_stem: Some("设备预设".into()),
+        params,
+    };
+    match run_one(&ctx, spec, 120).await {
+        Err(e) => fail(&mut results, "设备预设模板：apple-1080p", e),
+        Ok(j) if j.status == "done" => match ffprobe.as_deref() {
+            Some(fp) => {
+                let info = crate::probe::probe_media(fp, &j.output).await;
+                let fps = info.fps.unwrap_or(0.0);
+                let ok = info.width == Some(1920) && info.height == Some(1080) && (fps - 30.0).abs() < 0.5;
+                let detail = format!(
+                    "720p 源 → {}x{}（目标 1920x1080），帧率 {fps:.2}（目标 30），编码器 {:?}",
+                    info.width.unwrap_or(0),
+                    info.height.unwrap_or(0),
+                    j.encoder_used
+                );
+                if ok {
+                    pass(&mut results, "设备预设模板：apple-1080p", detail);
+                } else {
+                    fail(&mut results, "设备预设模板：apple-1080p", detail);
+                }
+            }
+            None => fail(
+                &mut results,
+                "设备预设模板：apple-1080p",
+                "缺少 ffprobe，无法做产物断言".into(),
+            ),
+        },
+        Ok(j) => fail(
+            &mut results,
+            "设备预设模板：apple-1080p",
+            format!("status={} message={:?}", j.status, j.message),
+        ),
+    }
+
+    // 6e) PDF → 文本：真实 pdftotext 提取 2 页文字（未安装 Poppler 时如实 skip）
+    let pdf_tools = crate::pdf_tools::resolve(None);
+    if !pdf_tools.text_available {
+        skip(
+            &mut results,
+            "PDF 转文本（UTF-8）",
+            "未检测到 pdftotext（Poppler），跳过此用例；设置 PDFTOTEXT_PATH 或加入 PATH 后可复跑".into(),
+        );
+    } else {
+        let pdf_src = workspace.join("pdf-text-src.pdf");
+        let out_text = workspace.join("pdf-text");
+        match make_text_pdf(&pdf_src, 2) {
+            Err(e) => fail(&mut results, "PDF 转文本（UTF-8）", e),
+            Ok(_) => {
+                let _ = std::fs::create_dir_all(&out_text);
+                let spec = JobSpec {
+                    kind: "pdf-text".into(),
+                    input: pdf_src.to_string_lossy().to_string(),
+                    inputs: Vec::new(),
+                    output_dir: out_text.to_string_lossy().to_string(),
+                    name_template: None,
+                    conflict: None,
+                    output_stem: Some("pdf文本".into()),
+                    params: json!({ "layout": true }),
+                };
+                match run_one(&ctx, spec, 60).await {
+                    Err(e) => fail(&mut results, "PDF 转文本（UTF-8）", e),
+                    Ok(j) if j.status == "done" => {
+                        let text = std::fs::read_to_string(&j.output).unwrap_or_default();
+                        let pages_ok = text.contains("FormatForge text page 1")
+                            && text.contains("FormatForge text page 2");
+                        let size = std::fs::metadata(&j.output).map(|m| m.len()).unwrap_or(0);
+                        let detail = format!(
+                            "pdftotext 输出 {}，{} 字节，两页文字命中={}，首行={:?}",
+                            j.output,
+                            size,
+                            pages_ok,
+                            text.lines().next().unwrap_or("")
+                        );
+                        if pages_ok && size > 20 {
+                            pass(&mut results, "PDF 转文本（UTF-8）", detail);
+                        } else {
+                            fail(&mut results, "PDF 转文本（UTF-8）", detail);
+                        }
+                    }
+                    Ok(j) => fail(
+                        &mut results,
+                        "PDF 转文本（UTF-8）",
+                        format!("status={} message={:?} error={:?}", j.status, j.message, j.error_kind),
+                    ),
+                }
+            }
+        }
+    }
+
     // 7) 响度归一化：-32 dB 左右的低音量素材应被拉到接近 -16 LUFS
     let quiet = workspace.join("quiet.wav");
     let quiet_args = vec![
@@ -1666,6 +2041,48 @@ pub async fn run_checks(report_path: &str) -> i32 {
                 }
                 Err(e) => fail(&mut results, "音频合并", e),
             }
+        }
+
+        // 6c) 音频混音：两路同时混合，时长取最长的一路，等权衰减不削波
+        let out_amix = workspace.join("out-audio-mix");
+        let _ = std::fs::create_dir_all(&out_amix);
+        let mix_spec = JobSpec {
+            kind: "audio-mix".into(),
+            input: merge_audio_a.to_string_lossy().to_string(),
+            inputs: vec![merge_audio_b.to_string_lossy().to_string()],
+            output_dir: out_amix.to_string_lossy().to_string(),
+            output_stem: Some("混音音频".into()),
+            name_template: None,
+            conflict: None,
+            params: json!({
+                "format": "mp3", "bitrateKbps": 128, "rateMode": "bitrate",
+                "sampleRate": "44100", "channels": "stereo", "normalize": false
+            }),
+        };
+        match run_one(&ctx, mix_spec, 120).await {
+            Ok(job) => {
+                let info_out = crate::probe::probe_media(&probe_bin, &job.output).await;
+                let duration = info_out.duration_sec.unwrap_or(0.0);
+                let channels = info_out.channels.unwrap_or(0);
+                let rate = info_out.sample_rate.unwrap_or(0);
+                let peak = max_volume_db(&ffmpeg_path, Path::new(&job.output));
+                let peak_ok = matches!(&peak, Ok(p) if *p > -30.0 && *p <= 0.5);
+                let ok = job.status == "done"
+                    && (duration - 3.0).abs() < 0.35
+                    && channels == 2
+                    && rate == 44100
+                    && peak_ok;
+                let detail = format!(
+                    "duration={duration:.3}s（取最长一路，期望 3.000）sample_rate={rate} channels={channels} peak={peak:?} dB（应 > -30 且 ≤ 0）codec={:?}",
+                    info_out.audio_codec
+                );
+                if ok {
+                    pass(&mut results, "音频混音：等权混合取最长时长且不削波", detail);
+                } else {
+                    fail(&mut results, "音频混音：等权混合取最长时长且不削波", detail);
+                }
+            }
+            Err(e) => fail(&mut results, "音频混音", e),
         }
 
         // 7) 音频截取：3 秒素材取 [0.5, 2.5)，期望 2.000 秒

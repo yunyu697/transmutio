@@ -445,7 +445,13 @@ export function PdfPanel({
   const isMerge = methodId === "pdf-merge";
   const isSplit = methodId === "pdf-split";
   const isImage = methodId === "pdf-image";
+  const isText = methodId === "pdf-text";
   const toolMissing = isImage && pdfTools && !pdfTools.available;
+  const textToolMissing = isText && pdfTools && !pdfTools.textAvailable;
+  const [textLayout, setTextLayout] = useState<boolean>(
+    () => loadPanelPrefs<{ layout: boolean }>("pdf:text", { layout: true }).layout,
+  );
+  useEffect(() => savePanelPrefs("pdf:text", { layout: textLayout }), [textLayout]);
 
   const [downloadPopplerBusy, setDownloadPopplerBusy] = useState(false);
 
@@ -464,8 +470,9 @@ export function PdfPanel({
     setRedetecting(true);
     try {
       const next = await onRedetectPdfTools();
-      if (next?.available) toast("已重新检测到 pdftoppm，现在可以转换了。", "ok");
-      else toast(next?.reason ?? "仍未检测到 pdftoppm（Poppler），请按上方说明配置后重试。", "error");
+      if (next?.textAvailable || next?.available)
+        toast("已重新检测到 Poppler 工具。", "ok");
+      else toast(next?.reason ?? "仍未检测到 Poppler，请按上方说明配置后重试。", "error");
     } catch (error) {
       toast(`重新检测失败：${error instanceof Error ? error.message : String(error)}`, "error");
     } finally {
@@ -490,18 +497,21 @@ export function PdfPanel({
     if (!paths.length) return toast("请先添加 PDF 文件", "error");
     if (isMerge && paths.length < 2) return toast("PDF 合并至少需要 2 个文件", "error");
     if (toolMissing) return toast(pdfTools?.reason ?? "缺少 pdftoppm", "error");
+    if (textToolMissing) return toast(pdfTools?.textReason ?? "缺少 pdftotext", "error");
     if (isSplit && mode === "ranges") {
       const valid = /^\d+(-\d+)?(,\d+(-\d+)?)*$/.test(ranges.trim());
       if (!valid) return toast("页码范围格式非法，例如 1-3,5", "error");
     }
     setStarting(true);
     try {
-      const kind = isMerge ? "pdf-merge" : isSplit ? "pdf-split" : "pdf-image";
+      const kind = isMerge ? "pdf-merge" : isSplit ? "pdf-split" : isText ? "pdf-text" : "pdf-image";
       const params = isMerge
         ? {}
         : isSplit
           ? { mode, ranges: mode === "ranges" ? ranges.trim() : undefined }
-          : { format, dpi };
+          : isText
+            ? { layout: textLayout }
+            : { format, dpi };
       const jobs = await api.enqueue([
         {
           kind,
@@ -530,8 +540,8 @@ export function PdfPanel({
         <div className="wb-head">
           <button className="btn small ghost" onClick={onBack}>← 方法列表</button>
           <div>
-            <h1>{isMerge ? "PDF 合并" : isSplit ? "PDF 拆分" : "PDF 转图片"}</h1>
-            <p>{isMerge ? "多份 PDF 按顺序拼接（本地处理，不依赖外部工具）" : isSplit ? "每页一个文件或指定页码范围" : "PNG / JPG，可指定 DPI（需要 pdftoppm）"}</p>
+            <h1>{isMerge ? "PDF 合并" : isSplit ? "PDF 拆分" : isText ? "PDF 转文本" : "PDF 转图片"}</h1>
+            <p>{isMerge ? "多份 PDF 按顺序拼接（本地处理，不依赖外部工具）" : isSplit ? "每页一个文件或指定页码范围" : isText ? "提取可复制文本为 UTF-8 .txt（需要 pdftotext）" : "PNG / JPG，可指定 DPI（需要 pdftoppm）"}</p>
           </div>
           <button className="btn" style={{ marginLeft: "auto" }} onClick={pick}>
             <Icon name="plus" size={14} />添加 PDF
@@ -567,6 +577,37 @@ export function PdfPanel({
             ) : null}
           </div>
         ) : null}
+        {textToolMissing ? (
+          <div className="note warn" style={{ margin: "10px 20px 0" }}>
+            <b>未检测到 pdftotext（Poppler 套件）：</b>PDF 转文本暂时无法执行，合并 / 拆分不受影响。<br />
+            配置方式（任选其一）：
+            <ul style={{ margin: "6px 0 0 18px", padding: 0 }}>
+              <li>在设置页的「PDF 工具目录」中填写 Poppler 的 <code>Library\bin</code> 目录（该目录需包含 <code>pdftotext.exe</code>）。</li>
+              <li>或设置环境变量 <code>PDFTOTEXT_PATH=...\pdftotext.exe</code>。</li>
+              <li>或点击下方「自动下载 Poppler」，下载包同时包含 <code>pdftoppm.exe</code> 与 <code>pdftotext.exe</code>。</li>
+            </ul>
+            查找顺序：<code>PDFTOTEXT_PATH</code> → 设置目录 → <code>TRANSMUTIO_PDF_TOOLS</code> → PATH。<br />
+            {pdfTools?.textReason ? <>检测详情：{pdfTools.textReason}<br /></> : null}
+            <button
+              className="btn small"
+              style={{ marginTop: 8 }}
+              onClick={() => void redetect()}
+              disabled={redetecting || !onRedetectPdfTools}
+            >
+              {redetecting ? "检测中…" : "重新检测"}
+            </button>
+            {onDownloadPoppler ? (
+              <button
+                className="btn small"
+                style={{ marginTop: 8, marginLeft: 8 }}
+                onClick={() => void downloadingPoppler()}
+                disabled={downloadPopplerBusy}
+              >
+                {downloadPopplerBusy ? "下载中…" : "自动下载 Poppler（含 pdftotext）"}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <div style={{ padding: "14px 20px" }}>
           {paths.length ? (
             <div className="file-table">
@@ -588,6 +629,20 @@ export function PdfPanel({
       <aside className="inspector">
         <div className="inspector-head"><Icon name="pdf" size={15} /><b>参数</b><span className="sub">{paths.length} 个文件</span></div>
         <div className="inspector-body">
+          {isText ? (
+            <Group title="文本输出" icon="pdf">
+              <Field label="版面">
+                <Segmented
+                  value={textLayout ? "layout" : "plain"}
+                  onChange={(value) => setTextLayout(value === "layout")}
+                  options={[{ value: "layout", label: "保留版面" }, { value: "plain", label: "纯文本流" }]}
+                />
+              </Field>
+              <div className="note">
+                输出 UTF-8 .txt；PDF 里的文字不可复制（扫描件）时只能得到空文件，需要先做 OCR。
+              </div>
+            </Group>
+          ) : null}
           {isSplit ? (
             <Group title="拆分方式" icon="split">
               <Field label="模式">
@@ -627,8 +682,19 @@ export function PdfPanel({
       <div className="bottombar">
         <OutDirBar outputDir={outputDir} onChangeOutputDir={onChangeOutputDir} />
         <div style={{ fontSize: 10.5, color: "var(--ff-fg3)" }}>{paths.length ? `${paths.length} 个 PDF` : "添加文件后显示统计"}</div>
-        <button className="btn primary" onClick={start} disabled={starting || !paths.length || Boolean(toolMissing)}>
-          <Icon name="play" size={14} />{starting ? "正在入队…" : isMerge ? "开始合并" : isSplit ? "开始拆分" : "开始转换"}
+        <button className="btn primary" onClick={start} disabled={starting || !paths.length || Boolean(toolMissing) || Boolean(textToolMissing)}>
+          <Icon name="play" size={14} />
+          {starting
+            ? "正在入队…"
+            : textToolMissing
+              ? "缺少 pdftotext"
+              : toolMissing
+                ? "缺少 pdftoppm"
+                : isMerge
+                  ? "开始合并"
+                  : isSplit
+                    ? "开始拆分"
+                    : "开始转换"}
         </button>
       </div>
     </div>

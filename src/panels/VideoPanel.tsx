@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { formatBytes, formatDuration } from "@formatforge/design-tokens";
-import { api, type Capabilities, type Job, type SubtitleParams, type VideoParams, type WatermarkParams } from "../lib/api";
+import { api, type Capabilities, type DevicePreset, type Job, type SubtitleParams, type VideoParams, type WatermarkParams } from "../lib/api";
 import {
   AudioBitrateField,
   DropZone,
@@ -46,6 +46,11 @@ const DEFAULT_PARAMS: VideoParams = {
   resolution: "source",
   fps: "source",
   crop: "source",
+  cropMode: "ratio",
+  cropXPct: 5,
+  cropYPct: 5,
+  cropWPct: 90,
+  cropHPct: 90,
   rotation: "0",
   audioMode: "aac",
   audioBitrateKbps: 192,
@@ -95,6 +100,162 @@ const WATERMARK_ROWS: { value: string; label: string }[][] = [
     { value: "se", label: "右下" },
   ],
 ];
+
+/** 自定义矩形裁剪的取值（相对源画面宽高的百分比）。 */
+interface RectValue {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+const clampPct = (value: number) =>
+  Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0;
+
+/** 框选拖拽：按下到抬起的两个点归一化成「左上角 + 宽高」，最小 1%。 */
+function dragRect(drag: { sx: number; sy: number; cx: number; cy: number }): RectValue {
+  const x = Math.min(drag.sx, drag.cx);
+  const y = Math.min(drag.sy, drag.cy);
+  const w = Math.max(1, Math.abs(drag.cx - drag.sx));
+  const h = Math.max(1, Math.abs(drag.cy - drag.sy));
+  return {
+    x: clampPct(Math.min(x, 100 - w)),
+    y: clampPct(Math.min(y, 100 - h)),
+    w: clampPct(w),
+    h: clampPct(h),
+  };
+}
+
+/** 预览帧 + 框选覆盖层：在画面上拖拽即回填百分比，数值输入框与框选双向同步。 */
+function RectCropEditor(props: {
+  url: string | null;
+  loading: boolean;
+  error: string | null;
+  aspect: number;
+  sourceWidth?: number | null;
+  sourceHeight?: number | null;
+  value: RectValue;
+  onChange: (next: RectValue) => void;
+}) {
+  const { url, loading, error, aspect, sourceWidth, sourceHeight, value, onChange } = props;
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const [drag, setDrag] = useState<{ sx: number; sy: number; cx: number; cy: number } | null>(null);
+
+  const locate = (event: React.PointerEvent<HTMLDivElement>) => {
+    const el = boxRef.current;
+    if (!el) return { x: 0, y: 0 };
+    const rect = el.getBoundingClientRect();
+    return {
+      x: clampPct(((event.clientX - rect.left) / Math.max(1, rect.width)) * 100),
+      y: clampPct(((event.clientY - rect.top) / Math.max(1, rect.height)) * 100),
+    };
+  };
+
+  const active = drag ? dragRect(drag) : value;
+  const pxWidth =
+    sourceWidth && sourceWidth > 0
+      ? Math.max(2, Math.floor((sourceWidth * active.w) / 100 / 2) * 2)
+      : null;
+  const pxHeight =
+    sourceHeight && sourceHeight > 0
+      ? Math.max(2, Math.floor((sourceHeight * active.h) / 100 / 2) * 2)
+      : null;
+
+  return (
+    <div className="rect-crop">
+      <div
+        className={`rect-crop-box${drag ? " dragging" : ""}`}
+        ref={boxRef}
+        style={{ aspectRatio: `${aspect}` }}
+        onPointerDown={(event) => {
+          if (!url) return;
+          event.currentTarget.setPointerCapture(event.pointerId);
+          const point = locate(event);
+          setDrag({ sx: point.x, sy: point.y, cx: point.x, cy: point.y });
+        }}
+        onPointerMove={(event) => {
+          if (!drag) return;
+          const point = locate(event);
+          setDrag((prev) => (prev ? { ...prev, cx: point.x, cy: point.y } : prev));
+        }}
+        onPointerUp={() => {
+          if (drag) onChange(dragRect(drag));
+          setDrag(null);
+        }}
+        onPointerCancel={() => setDrag(null)}
+      >
+        {url ? (
+          <img src={url} alt="视频预览帧" draggable={false} />
+        ) : (
+          <div className="rect-crop-empty">
+            {loading ? "正在生成预览帧…" : error ?? "添加视频并选择「自定义矩形」后可框选区域"}
+          </div>
+        )}
+        {url ? (
+          <>
+            <div className="rect-crop-dim" style={{ left: 0, top: 0, right: 0, height: `${active.y}%` }} />
+            <div
+              className="rect-crop-dim"
+              style={{ left: 0, top: `${active.y + active.h}%`, right: 0, bottom: 0 }}
+            />
+            <div
+              className="rect-crop-dim"
+              style={{ left: 0, top: `${active.y}%`, width: `${active.x}%`, height: `${active.h}%` }}
+            />
+            <div
+              className="rect-crop-dim"
+              style={{ left: `${active.x + active.w}%`, top: `${active.y}%`, right: 0, height: `${active.h}%` }}
+            />
+            <div
+              className="rect-crop-selection"
+              style={{
+                left: `${active.x}%`,
+                top: `${active.y}%`,
+                width: `${active.w}%`,
+                height: `${active.h}%`,
+              }}
+            />
+          </>
+        ) : null}
+      </div>
+      <div className="rect-crop-readout">
+        {pxWidth && pxHeight
+          ? `裁剪后约 ${pxWidth} × ${pxHeight} px（宽高自动取偶）`
+          : "按源画面百分比裁剪，宽高自动取偶"}
+      </div>
+      <div className="rect-crop-fields">
+        {([
+          ["x", "左", value.x],
+          ["y", "上", value.y],
+          ["w", "宽", value.w],
+          ["h", "高", value.h],
+        ] as const).map(([key, label, current]) => (
+          <label key={key} className="rect-crop-field">
+            <span>{label}</span>
+            <input
+              className="input"
+              type="number"
+              min={key === "w" || key === "h" ? 1 : 0}
+              max={100}
+              step={0.1}
+              value={Number(current.toFixed(1))}
+              onChange={(event) => {
+                const next = clampPct(Number(event.target.value));
+                const patched: RectValue = { ...value, [key]: next };
+                // 让矩形始终留在画面内：改左/上时收缩宽高，改宽/高时限制到剩余空间。
+                if (key === "x") patched.w = Math.min(value.w, 100 - next);
+                if (key === "y") patched.h = Math.min(value.h, 100 - next);
+                if (key === "w") patched.w = Math.max(1, Math.min(next, 100 - value.x));
+                if (key === "h") patched.h = Math.max(1, Math.min(next, 100 - value.y));
+                onChange(patched);
+              }}
+            />
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function qualityHintKbps(resolution: string, quality: number): number {
   const base = resolution === "2160" ? 16000 : resolution === "1440" ? 8000 : resolution === "720" ? 1800 : resolution === "480" ? 900 : 4200;
@@ -194,6 +355,47 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
   const isWatermark = methodId === "video-watermark";
   const isSubtitle = methodId === "video-subtitle";
   const isSplit = methodId === "video-split";
+  const isCrop = methodId === "video-crop";
+  const rectCrop = (params.cropMode ?? "ratio") === "rect";
+  const firstFile = files[0];
+
+  // 自定义矩形裁剪才需要预览帧：切换模式 / 换文件 / 探测完成后按当前参数重新取一帧。
+  const [framePreview, setFramePreview] = useState<{
+    url: string | null;
+    loading: boolean;
+    error: string | null;
+  }>({ url: null, loading: false, error: null });
+  const [devicePresets, setDevicePresets] = useState<DevicePreset[]>([]);
+  const [presetId, setPresetId] = useState("custom");
+  useEffect(() => {
+    api
+      .listDevicePresets()
+      .then(setDevicePresets)
+      .catch(() => setDevicePresets([]));
+  }, []);
+  const activePreset = devicePresets.find((preset) => preset.id === presetId) ?? null;
+  useEffect(() => {
+    if (!isCrop || !rectCrop || !firstFile || !ffmpegReady) {
+      setFramePreview({ url: null, loading: false, error: null });
+      return;
+    }
+    let cancelled = false;
+    setFramePreview({ url: null, loading: true, error: null });
+    const time = Math.min(1, Math.max(0.1, (firstFile.durationSec ?? 1) / 4));
+    api
+      .previewFrame(firstFile.path, time, 960)
+      .then((url) => {
+        if (!cancelled) setFramePreview({ url, loading: false, error: null });
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setFramePreview({ url: null, loading: false, error: String(err) });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isCrop, rectCrop, firstFile?.path, firstFile?.durationSec, ffmpegReady]);
 
   // 字幕前置约束：容器不承载内嵌轨道、变速 + 烧录、缺少 libass 都不能入队。
   const subtitleBurnUnavailable = caps?.subtitleBurn === false;
@@ -409,6 +611,43 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
         <div className="inspector-body">
           <Group title="目标格式" icon="film">
             {probeNotice ? <div className={`note ${probeNotice.level === "warn" ? "warn" : ""}`}>{probeNotice.text}</div> : null}
+            <Field label="设备预设" tag="模板">
+              <select
+                className="select"
+                value={presetId}
+                onChange={(event) => {
+                  const id = event.target.value;
+                  setPresetId(id);
+                  const preset = devicePresets.find((item) => item.id === id);
+                  if (!preset) return;
+                  setParams((prev) => ({
+                    ...prev,
+                    container: preset.container as VideoParams["container"],
+                    codec: preset.codec as VideoParams["codec"],
+                    encoder: "auto",
+                    resolution: preset.resolution as VideoParams["resolution"],
+                    fps: preset.fps as VideoParams["fps"],
+                    audioMode: "aac",
+                    audioBitrateKbps: preset.audioBitrateKbps,
+                    audioRateMode: "bitrate",
+                    faststart: true,
+                  }));
+                  toast(`已应用「${preset.label}」模板`, "info");
+                }}
+              >
+                <option value="custom">不使用模板（手动设置）</option>
+                {devicePresets.map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <div className="note">
+              {activePreset
+                ? activePreset.note
+                : "模板只覆盖容器、编码、分辨率、帧率与音轨码率；裁剪、水印等其它设置保持不变。"}
+            </div>
             <Field label="容器" tag={`输出 .${containerSpec.ext}`}>
               <Segmented
                 value={params.container}
@@ -559,20 +798,66 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
                 ]}
               />
             </Field>
-            <Field label="裁剪比例" tag="居中">
-              <select
-                className="select"
-                value={params.crop}
-                onChange={(e) => set("crop", e.target.value as VideoParams["crop"])}
-              >
-                <option value="source">保持原始画面</option>
-                <option value="16:9">16:9（横屏）</option>
-                <option value="1:1">1:1（方形）</option>
-                <option value="9:16">9:16（竖屏）</option>
-              </select>
-            </Field>
+            {isCrop ? (
+              <Field label="裁剪方式" tag={rectCrop ? "自定义矩形" : "居中"}>
+                <Segmented
+                  value={params.cropMode ?? "ratio"}
+                  onChange={(value) => set("cropMode", value as "ratio" | "rect")}
+                  options={[
+                    { value: "ratio", label: "按比例" },
+                    { value: "rect", label: "自定义矩形" },
+                  ]}
+                />
+              </Field>
+            ) : null}
+            {!isCrop || !rectCrop ? (
+              <Field label="裁剪比例" tag="居中">
+                <select
+                  className="select"
+                  value={params.crop}
+                  onChange={(e) => set("crop", e.target.value as VideoParams["crop"])}
+                >
+                  <option value="source">保持原始画面</option>
+                  <option value="16:9">16:9（横屏）</option>
+                  <option value="1:1">1:1（方形）</option>
+                  <option value="9:16">9:16（竖屏）</option>
+                </select>
+              </Field>
+            ) : (
+              <Field label="框选裁剪区域" tag="百分比">
+                <RectCropEditor
+                  url={framePreview.url}
+                  loading={framePreview.loading}
+                  error={framePreview.error}
+                  aspect={
+                    firstFile?.width && firstFile?.height
+                      ? firstFile.width / firstFile.height
+                      : 16 / 9
+                  }
+                  sourceWidth={firstFile?.width}
+                  sourceHeight={firstFile?.height}
+                  value={{
+                    x: params.cropXPct ?? 5,
+                    y: params.cropYPct ?? 5,
+                    w: params.cropWPct ?? 90,
+                    h: params.cropHPct ?? 90,
+                  }}
+                  onChange={(next) =>
+                    setParams((prev) => ({
+                      ...prev,
+                      cropXPct: next.x,
+                      cropYPct: next.y,
+                      cropWPct: next.w,
+                      cropHPct: next.h,
+                    }))
+                  }
+                />
+              </Field>
+            )}
             <div className="note">
-              处理顺序为「裁剪 → 旋转 → 缩放」；裁剪从画面中心取最大可用区域，不会拉伸。
+              {isCrop && rectCrop
+                ? "矩形按源画面宽高的百分比裁剪，宽高自动取偶并夹在画面内；处理顺序仍为「裁剪 → 旋转 → 缩放」。"
+                : "处理顺序为「裁剪 → 旋转 → 缩放」；裁剪从画面中心取最大可用区域，不会拉伸。"}
             </div>
           </Group>
 

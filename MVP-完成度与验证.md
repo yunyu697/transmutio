@@ -59,7 +59,7 @@ Rust 单元测试 16/16 通过（`cargo-test.log`；新增 5 条滤镜/归一化
 
 `packages/design-tokens`、`i18n`、`settings`（`StorageAdapter`）、`task-queue`（`TaskTransport`）、
 `telemetry`（`LogSink` + 崩溃上报）、`updater`（`UpdaterAdapter`，当前 Null 实现）。
-各包独立目录与 README，业务层只依赖接口；未从「菲菲」工程读取或复制任何代码。
+各包独立目录与 README，业务层只依赖接口；未从其它工程读取或复制任何代码。
 
 ---
 

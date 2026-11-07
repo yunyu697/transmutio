@@ -3,6 +3,7 @@ pub mod args;
 pub mod avif;
 pub mod compress;
 pub mod containers;
+pub mod device_presets;
 pub mod download;
 pub mod exif_write;
 pub mod flavor;
@@ -109,6 +110,34 @@ async fn probe_files(
         result.push(probe::probe_media(&ffprobe, &path).await);
     }
     Ok(result)
+}
+
+#[tauri::command]
+fn list_device_presets() -> Vec<device_presets::DevicePreset> {
+    device_presets::list().to_vec()
+}
+
+#[tauri::command]
+async fn preview_frame(
+    state: State<'_, Arc<AppState>>,
+    path: String,
+    time_sec: Option<f64>,
+    max_edge: Option<u32>,
+) -> Result<String, String> {
+    let ffmpeg = {
+        let tools = state.tools.lock().await;
+        tools
+            .as_ref()
+            .and_then(|t| t.ffmpeg.as_ref().map(|p| p.path.clone()))
+    };
+    let ffmpeg = ffmpeg.ok_or_else(|| "未找到 ffmpeg，无法生成裁剪预览帧".to_string())?;
+    jobs::preview_frame_data_url(
+        &ffmpeg,
+        &path,
+        time_sec.unwrap_or(0.0),
+        max_edge.unwrap_or(960),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -379,6 +408,8 @@ pub fn run() {
             resolve_tools,
             probe_capabilities,
             probe_files,
+            list_device_presets,
+            preview_frame,
             enqueue_jobs,
             list_jobs,
             cancel_job,

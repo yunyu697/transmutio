@@ -4,7 +4,7 @@ import "./styles.css";
 import { themeToCss } from "@formatforge/design-tokens";
 import { cleanupRetiredKeys } from "./lib/storage";
 
-// alpha11 遗留键的一次性清理（只删两个确切键，无其它启动副作用）。
+// alpha11 遗留键的一次性清理：独立标记位控制只跑一次，不清扫其它任何键。
 cleanupRetiredKeys();
 
 // 设计令牌以 CSS 变量注入，深浅主题只切换 [data-theme]。

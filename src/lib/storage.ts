@@ -50,17 +50,23 @@ export function createNamespacedStorage() {
   };
 }
 
+/** 一次性清理的标记位（独立命名，不复用被清理的两个旧键名）。 */
+export const RETIRED_CLEANUP_MARKER = "transmutio:cleanup:v2";
+
 /**
  * 一次性清理 alpha11 遗留的两个键。只删这两个确切键：
- * - 不读、不写、不删 `formatforge:*`；
- * - 无迁移标记、无后续副作用，删完即结束。
+ * - 不读、不写、不删 `formatforge:*`，也不碰 `transmutio:settings` 与面板参数；
+ * - 用独立标记位控制只跑一次：标记存在时直接返回，不再扫描/删除；
+ * - 删除或写标记失败都静默忽略，不影响启动。
  */
 export function cleanupRetiredKeys(storage: Storage | null = safeStorage()): void {
   if (!storage) return;
   try {
+    if (storage.getItem(RETIRED_CLEANUP_MARKER)) return;
     storage.removeItem("transmutio:storage-migration:v1");
     storage.removeItem("transmutio:migration-notice-dismissed");
+    storage.setItem(RETIRED_CLEANUP_MARKER, "1");
   } catch {
-    /* ignore */
+    /* 隐私模式 / 配额不足 / 存储被禁用：静默降级，不影响启动 */
   }
 }

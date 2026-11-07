@@ -243,6 +243,8 @@ async function mockTauri(page, cfg) {
             return immediate(null);
           case "plugin:opener|open_url":
             return immediate(null);
+          case "list_device_presets":
+            return immediate([]);
           default:
             return immediate(null);
         }

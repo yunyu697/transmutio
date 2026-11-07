@@ -38,6 +38,7 @@ interface AudioPanelProps {
 /** 合并 / 截取是独立工作流，先分流再渲染，避免在同一组件里条件调用 hooks。 */
 export function AudioPanel(props: AudioPanelProps) {
   if (props.methodId === "audio-merge") return <AudioMergePanel {...props} />;
+  if (props.methodId === "audio-mix") return <AudioMergePanel {...props} mix />;
   if (props.methodId === "audio-trim") return <AudioTrimPanel {...props} />;
   return <AudioTranscode {...props} />;
 }
@@ -516,7 +517,7 @@ function AudioOutputSettings({
         <div className="note">{sourceHint}</div>
         <SwitchRow
           label="音量归一化"
-          hint="EBU R128（-16 LUFS），多段拼接后整体响度一致"
+          hint="EBU R128（-16 LUFS），输出整体响度统一"
           on={params.normalize}
           onChange={(value) => patch({ normalize: value })}
         />
@@ -569,6 +570,7 @@ function AudioBottomBar({
 }
 
 function AudioMergePanel({
+  mix = false,
   caps,
   outputDir,
   ffmpegReady,
@@ -576,21 +578,25 @@ function AudioMergePanel({
   onEnqueued,
   toast,
   onBack,
-}: AudioPanelProps) {
+  }: AudioPanelProps & { mix?: boolean }) {
+  const key = mix ? "audio-mix" : "audio-merge";
+  const action = mix ? "混音" : "合并";
   const { files, busy, notice, pick, remove, clear } = useMediaFiles(["audio", "video"]);
   const [params, setParams] = useState<AudioMergeParams>(() =>
-    loadPanelPrefs("audio:audio-merge", DEFAULT_OUTPUT),
+    loadPanelPrefs(`audio:${key}`, DEFAULT_OUTPUT),
   );
   const [naming, setNaming] = useState<NamingPrefs>(() =>
-    loadPanelPrefs("naming:audio-merge", { template: "", conflict: "suffix" }),
+    loadPanelPrefs(`naming:${key}`, { template: "", conflict: "suffix" }),
   );
   const [starting, setStarting] = useState(false);
-  useEffect(() => savePanelPrefs("audio:audio-merge", params), [params]);
-  useEffect(() => savePanelPrefs("naming:audio-merge", naming), [naming]);
+  useEffect(() => savePanelPrefs(`audio:${key}`, params), [key, params]);
+  useEffect(() => savePanelPrefs(`naming:${key}`, naming), [key, naming]);
   const patch = (next: Partial<AudioMergeParams>) => setParams((prev) => ({ ...prev, ...next }));
 
   const usable = files.filter((file) => !file.error);
-  const duration = usable.reduce((sum, file) => sum + (file.durationSec ?? 0), 0);
+  const duration = mix
+    ? Math.max(0, ...usable.map((file) => file.durationSec ?? 0))
+    : usable.reduce((sum, file) => sum + (file.durationSec ?? 0), 0);
   const lossy = (findAudioFormat(params.format) ?? AUDIO_FORMATS[0]).lossy;
   const sourceKbps = Math.round((usable[0]?.audioBitrate ?? 0) / 1000);
   const kbps =
@@ -602,11 +608,11 @@ function AudioMergePanel({
 
   const start = async () => {
     if (usable.length < 2) {
-      toast("音频合并至少需要 2 个音频文件（顺序决定拼接顺序）", "error");
+      toast(`音频${action}至少需要 2 个音频文件`, "error");
       return;
     }
     if (!ffmpegReady) {
-      toast("未找到 ffmpeg，无法开始合并", "error");
+      toast(`未找到 ffmpeg，无法开始${action}`, "error");
       return;
     }
     setStarting(true);
@@ -614,7 +620,7 @@ function AudioMergePanel({
       const [first, ...rest] = usable;
       const jobs = await api.enqueue([
         {
-          kind: "audio-merge",
+          kind: mix ? "audio-mix" : "audio-merge",
           input: first.path,
           inputs: rest.map((file) => file.path),
           outputDir,
@@ -624,7 +630,7 @@ function AudioMergePanel({
         },
       ]);
       onEnqueued(jobs);
-      toast(`已加入音频合并任务（${usable.length} 个输入）`, "ok");
+      toast(`已加入音频${action}任务（${usable.length} 个输入）`, "ok");
       clear();
     } catch (error) {
       toast(`入队失败：${error instanceof Error ? error.message : String(error)}`, "error");
@@ -641,8 +647,12 @@ function AudioMergePanel({
             ← 方法列表
           </button>
           <div>
-            <h1>音频合并</h1>
-            <p>按列表顺序拼接 · 逐路统一采样率与声道后重编码 · 绝不覆盖原文件</p>
+            <h1>音频{mix ? "混音" : "合并"}</h1>
+            <p>
+              {mix
+                ? "多路同时混合 · 每路等权衰减防削波 · 时长取最长的一路"
+                : "按列表顺序拼接 · 逐路统一采样率与声道后重编码 · 绝不覆盖原文件"}
+            </p>
           </div>
           <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
             <Icon name="plus" size={14} />
@@ -656,7 +666,9 @@ function AudioMergePanel({
           </div>
         ) : null}
         <div className="note" style={{ margin: "10px 20px 0" }}>
-          文件按添加顺序拼接；需要调整顺序请移除后重新添加。至少需要 2 个文件，源文件是视频时只取第一条音轨。
+          {mix
+            ? "所有文件同时开始播放并混合（时长取最长的一路）；每路按 1/N 等权衰减避免削波。至少需要 2 个文件，源文件是视频时只取第一条音轨。"
+            : "文件按添加顺序拼接；需要调整顺序请移除后重新添加。至少需要 2 个文件，源文件是视频时只取第一条音轨。"}
         </div>
         <FileTable files={files} onRemove={remove} onClear={clear} />
       </div>
@@ -664,7 +676,7 @@ function AudioMergePanel({
       <aside className="inspector">
         <div className="inspector-head">
           <Icon name="settings" size={15} />
-          <b>合并参数</b>
+          <b>{mix ? "混音参数" : "合并参数"}</b>
           <span className="sub">{usable.length} 个输入</span>
         </div>
         <div className="inspector-body">
@@ -673,7 +685,11 @@ function AudioMergePanel({
             patch={patch}
             caps={caps}
             ffmpegReady={ffmpegReady}
-            sourceHint="选择「保持原始」时，采样率与声道以第一个文件为准，其余文件会被统一到该参数再拼接。"
+            sourceHint={
+              mix
+                ? "选择「保持原始」时，采样率与声道以第一个文件为准，其余文件会被统一到该参数再混合。"
+                : "选择「保持原始」时，采样率与声道以第一个文件为准，其余文件会被统一到该参数再拼接。"
+            }
           />
           <OutputNaming naming={naming} onChange={setNaming} />
         </div>
@@ -684,16 +700,16 @@ function AudioMergePanel({
         onChangeOutputDir={onChangeOutputDir}
         canStart={usable.length >= 2}
         starting={starting}
-        label="开始合并"
+        label={`开始${action}`}
         onStart={start}
         hint={
           estimate ? (
             <>
-              总时长 {formatDuration(estimate.duration)} · 粗估体积{" "}
+              {mix ? "最长一路" : "总时长"} {formatDuration(estimate.duration)} · 粗估体积{" "}
               <b style={{ color: "var(--ff-fg2)" }}>{formatBytes(estimate.bytes)}</b>
             </>
           ) : (
-            "至少添加 2 个文件后开始合并"
+            `至少添加 2 个文件后开始${action}`
           )
         }
       />

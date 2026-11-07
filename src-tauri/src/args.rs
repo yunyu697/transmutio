@@ -34,8 +34,20 @@ pub struct VideoParams {
     pub resolution: String,
     /// source | 30 | 60
     pub fps: String,
-    /// source | 16:9 | 1:1 | 9:16（居中裁剪）
+    /// source | 16:9 | 1:1 | 9:16（居中裁剪）；`crop_mode=rect` 时不读取
     pub crop: String,
+    /// ratio（居中比例裁剪，默认）| rect（自定义矩形）
+    #[serde(default)]
+    pub crop_mode: String,
+    /// rect 模式的矩形，相对源画面的百分比（0–100，原点左上角）
+    #[serde(default)]
+    pub crop_x_pct: f64,
+    #[serde(default)]
+    pub crop_y_pct: f64,
+    #[serde(default)]
+    pub crop_w_pct: f64,
+    #[serde(default)]
+    pub crop_h_pct: f64,
     /// 0 | 90 | 180 | 270
     pub rotation: String,
     /// aac | copy | none
@@ -780,6 +792,76 @@ fn crop_filter(mode: &str) -> Option<String> {
         _ => return None,
     };
     Some(format!("crop=w='{w}':h='{h}'"))
+}
+
+/// 自定义矩形裁剪的参数校验（不依赖源尺寸）。百分比必须有限、非负，
+/// 且矩形不能越出画面（x+w ≤ 100、y+h ≤ 100）。
+pub fn validate_video_crop(p: &VideoParams) -> Result<(), String> {
+    match p.crop_mode.as_str() {
+        "" | "ratio" => Ok(()),
+        "rect" => {
+            let fields = [
+                ("水平起点", p.crop_x_pct),
+                ("垂直起点", p.crop_y_pct),
+                ("宽度", p.crop_w_pct),
+                ("高度", p.crop_h_pct),
+            ];
+            for (label, value) in fields {
+                if !value.is_finite() {
+                    return Err(format!("自定义裁剪的{label}必须是有限数值"));
+                }
+                if value < 0.0 {
+                    return Err(format!("自定义裁剪的{label}不能为负数"));
+                }
+            }
+            if p.crop_w_pct <= 0.0 || p.crop_h_pct <= 0.0 {
+                return Err("自定义裁剪的宽高百分比必须大于 0".into());
+            }
+            if p.crop_x_pct + p.crop_w_pct > 100.0 + 1e-6
+                || p.crop_y_pct + p.crop_h_pct > 100.0 + 1e-6
+            {
+                return Err(format!(
+                    "自定义裁剪矩形越界：x {}+宽 {} / y {}+高 {} 必须分别 ≤ 100%",
+                    fmt_num(p.crop_x_pct),
+                    fmt_num(p.crop_w_pct),
+                    fmt_num(p.crop_y_pct),
+                    fmt_num(p.crop_h_pct)
+                ));
+            }
+            Ok(())
+        }
+        other => Err(format!(
+            "不支持的裁剪模式「{other}」，可选 ratio / rect"
+        )),
+    }
+}
+
+/// rect 模式的 ffmpeg 裁剪表达式：按源画面百分比换算像素，宽高取偶，
+/// x/y 用 `min` 夹住，避免百分比取整后矩形越出画面导致 ffmpeg 直接失败。
+fn rect_crop_filter(p: &VideoParams) -> Result<String, String> {
+    validate_video_crop(p)?;
+    let w = fmt_num(p.crop_w_pct);
+    let h = fmt_num(p.crop_h_pct);
+    let x = fmt_num(p.crop_x_pct);
+    let y = fmt_num(p.crop_y_pct);
+    let cw = format!("max(2,trunc(iw*{w}/100/2)*2)");
+    let ch = format!("max(2,trunc(ih*{h}/100/2)*2)");
+    let cx = format!("min(trunc(iw*{x}/100/2)*2,iw-{cw})");
+    let cy = format!("min(trunc(ih*{y}/100/2)*2,ih-{ch})");
+    Ok(format!("crop=w='{cw}':h='{ch}':x='{cx}':y='{cy}'"))
+}
+
+/// rect 模式裁剪后的实际像素宽高（与 `rect_crop_filter` 的取偶规则一致）。
+fn rect_crop_dimensions(p: &VideoParams, width: u32, height: u32) -> (u32, u32) {
+    let even = |pct: f64, max: u32| -> u32 {
+        let px = (max as f64 * pct / 100.0).max(0.0);
+        let trunc = (px / 2.0).floor() * 2.0;
+        (trunc as u32).max(2).min(max.max(2))
+    };
+    (
+        even(p.crop_w_pct, width),
+        even(p.crop_h_pct, height),
+    )
 }
 
 /// 图片裁剪参数的结构校验（不依赖源图尺寸）。非法值必须明确报错。
@@ -1898,7 +1980,11 @@ fn rotation_dimensions(mode: &str, width: u32, height: u32) -> (u32, u32) {
 
 /// 视频「最终画面」尺寸：裁剪 → 旋转 → 分辨率缩放（scale=-2:h，宽度取偶）。
 pub fn video_base_dims(p: &VideoParams, src_width: u32, src_height: u32) -> (u32, u32) {
-    let (w, h) = crop_dimensions(&p.crop, src_width, src_height);
+    let (w, h) = if p.crop_mode == "rect" {
+        rect_crop_dimensions(p, src_width, src_height)
+    } else {
+        crop_dimensions(&p.crop, src_width, src_height)
+    };
     let (mut w, mut h) = rotation_dimensions(&p.rotation, w, h);
     if p.resolution != "source" && !p.resolution.is_empty() {
         if let Ok(target_h) = p.resolution.parse::<u32>() {
@@ -2092,7 +2178,9 @@ pub fn build_video(
         }
     }
     let mut filters: Vec<String> = Vec::new();
-    if let Some(crop) = crop_filter(&p.crop) {
+    if p.crop_mode == "rect" {
+        filters.push(rect_crop_filter(p)?);
+    } else if let Some(crop) = crop_filter(&p.crop) {
         filters.push(crop);
     }
     filters.extend(rotation_filters(&p.rotation));
@@ -2391,6 +2479,75 @@ pub fn build_audio_merge(
         "aout"
     } else {
         "acat"
+    };
+
+    let mut args: Vec<String> = vec![
+        "-hide_banner".into(),
+        "-nostdin".into(),
+        "-y".into(),
+        "-loglevel".into(),
+        "warning".into(),
+        "-progress".into(),
+        "pipe:1".into(),
+    ];
+    for input in inputs {
+        args.push("-i".into());
+        args.push(input.clone());
+    }
+    args.push("-filter_complex".into());
+    args.push(graph);
+    args.push("-map".into());
+    args.push(format!("[{out_label}]"));
+    args.push("-c:a".into());
+    args.push(encoder.into());
+    if lossy {
+        args.push("-b:a".into());
+        args.push(format!("{kbps}k"));
+    }
+    args.push(output.into());
+    Ok(args)
+}
+
+/// 音频混音：多路同时混合（`amix`，时长取最长的一路）。
+/// `amix normalize=1` 会按输入数量做等权衰减，避免直接相加削波；这是有意的保守策略。
+pub fn build_audio_mix(
+    inputs: &[String],
+    output: &str,
+    p: &AudioMergeParams,
+    encoder: &str,
+) -> Result<Vec<String>, String> {
+    if inputs.len() < 2 {
+        return Err("音频混音至少需要 2 个输入文件".into());
+    }
+    let lossy = crate::containers::find_audio(&p.format)
+        .map(|f| f.lossy)
+        .unwrap_or(true);
+    let kbps = audio_kbps(&p.rate_mode, p.bitrate_kbps, p.source_kbps);
+    let sample_rate = merge_sample_rate(&p.sample_rate, p.base_sample_rate);
+    let (layout, _channels) = merge_layout(&p.channels, p.base_channels);
+
+    let mut graph = String::new();
+    for index in 0..inputs.len() {
+        if index > 0 {
+            graph.push(';');
+        }
+        graph.push_str(&format!(
+            "[{index}:a:0]aresample=async=1:first_pts=0,aformat=sample_rates={sample_rate}:channel_layouts={layout}[a{index}]"
+        ));
+    }
+    graph.push(';');
+    for index in 0..inputs.len() {
+        graph.push_str(&format!("[a{index}]"));
+    }
+    graph.push_str(&format!(
+        "amix=inputs={}:duration=longest:dropout_transition=0:normalize=1[amixed]",
+        inputs.len()
+    ));
+    let out_label = if p.normalize {
+        graph.push_str(";[amixed]loudnorm=I=-16:TP=-1.5:LRA=11[aout]");
+        "aout"
+    } else {
+        "amixed"
     };
 
     let mut args: Vec<String> = vec![
@@ -3182,6 +3339,11 @@ mod tests {
             resolution: "source".into(),
             fps: "source".into(),
             crop: "source".into(),
+            crop_mode: String::new(),
+            crop_x_pct: 0.0,
+            crop_y_pct: 0.0,
+            crop_w_pct: 0.0,
+            crop_h_pct: 0.0,
             rotation: "0".into(),
             audio_mode: "none".into(),
             audio_bitrate_kbps: 192,
@@ -3332,6 +3494,60 @@ mod tests {
         assert!(graph.contains("concat=n=2:v=0:a=1[acat];[acat]loudnorm="), "{graph}");
         let map = args[args.iter().position(|a| a == "-map").unwrap() + 1].clone();
         assert_eq!(map, "[aout]");
+    }
+
+    #[test]
+    fn audio_mix_uses_amix_longest_and_normalizes_clipping() {
+        let inputs = vec!["a.m4a".to_string(), "b.wav".to_string(), "c.flac".to_string()];
+        let p = AudioMergeParams {
+            format: "mp3".into(),
+            bitrate_kbps: 192,
+            base_sample_rate: 44100,
+            base_channels: 2,
+            ..Default::default()
+        };
+        let args = build_audio_mix(&inputs, "out.mp3", &p, "libmp3lame").unwrap();
+        assert_eq!(args.iter().filter(|a| *a == "-i").count(), 3);
+        let graph = args[args.iter().position(|a| a == "-filter_complex").unwrap() + 1].clone();
+        for index in 0..3 {
+            assert!(
+                graph.contains(&format!(
+                    "[{index}:a:0]aresample=async=1:first_pts=0,aformat=sample_rates=44100:channel_layouts=stereo[a{index}]"
+                )),
+                "{graph}"
+            );
+        }
+        assert!(
+            graph.contains(
+                "amix=inputs=3:duration=longest:dropout_transition=0:normalize=1[amixed]"
+            ),
+            "{graph}"
+        );
+        let map = args[args.iter().position(|a| a == "-map").unwrap() + 1].clone();
+        assert_eq!(map, "[amixed]");
+        assert_eq!(args[args.iter().position(|a| a == "-b:a").unwrap() + 1], "192k");
+    }
+
+    #[test]
+    fn audio_mix_normalize_appends_loudnorm_and_rejects_single_input() {
+        let p = AudioMergeParams {
+            format: "mp3".into(),
+            normalize: true,
+            ..Default::default()
+        };
+        let args = build_audio_mix(
+            &["a.mp3".to_string(), "b.mp3".to_string()],
+            "out.mp3",
+            &p,
+            "libmp3lame",
+        )
+        .unwrap();
+        let graph = args[args.iter().position(|a| a == "-filter_complex").unwrap() + 1].clone();
+        assert!(graph.contains("[amixed]loudnorm="), "{graph}");
+        assert_eq!(args[args.iter().position(|a| a == "-map").unwrap() + 1], "[aout]");
+
+        let err = build_audio_mix(&["a.mp3".to_string()], "out.mp3", &p, "libmp3lame").unwrap_err();
+        assert!(err.contains("至少需要 2 个"), "{err}");
     }
 
     #[test]
@@ -3608,6 +3824,71 @@ mod tests {
         let wide = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
         let vf = filter_arg(&wide).expect("应生成 -vf");
         assert!(vf.contains("ih*16/9") && vf.contains("iw*9/16"), "{vf}");
+    }
+
+    #[test]
+    fn rect_crop_filter_and_dimensions() {
+        let mut p = video_params();
+        p.crop_mode = "rect".into();
+        p.crop_x_pct = 10.0;
+        p.crop_y_pct = 20.0;
+        p.crop_w_pct = 50.0;
+        p.crop_h_pct = 50.0;
+        let argv = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
+        let vf = filter_arg(&argv).expect("矩形裁剪应生成 -vf");
+        assert_eq!(
+            vf,
+            "crop=w='max(2,trunc(iw*50/100/2)*2)':h='max(2,trunc(ih*50/100/2)*2)':x='min(trunc(iw*10/100/2)*2,iw-max(2,trunc(iw*50/100/2)*2))':y='min(trunc(ih*20/100/2)*2,ih-max(2,trunc(ih*50/100/2)*2))'"
+        );
+        // 1280x720 的 50% × 50% = 640x360，且裁剪先于旋转/缩放。
+        assert_eq!(video_base_dims(&p, 1280, 720), (640, 360));
+        p.rotation = "90".into();
+        assert_eq!(video_base_dims(&p, 1280, 720), (360, 640));
+        p.rotation = "0".into();
+        p.resolution = "480".into();
+        assert_eq!(video_base_dims(&p, 1280, 720), (854, 480));
+    }
+
+    #[test]
+    fn rect_crop_validation_rejects_out_of_bounds() {
+        let mut p = video_params();
+        p.crop_mode = "rect".into();
+        p.crop_w_pct = 100.0;
+        p.crop_h_pct = 100.0;
+        assert!(validate_video_crop(&p).is_ok());
+
+        p.crop_x_pct = 10.0;
+        let err = validate_video_crop(&p).unwrap_err();
+        assert!(err.contains("越界"), "{err}");
+
+        p.crop_x_pct = -1.0;
+        p.crop_w_pct = 50.0;
+        let err = validate_video_crop(&p).unwrap_err();
+        assert!(err.contains("负数"), "{err}");
+
+        p.crop_x_pct = 0.0;
+        p.crop_w_pct = 0.0;
+        let err = validate_video_crop(&p).unwrap_err();
+        assert!(err.contains("大于 0"), "{err}");
+
+        p.crop_mode = "magic".into();
+        let err = validate_video_crop(&p).unwrap_err();
+        assert!(err.contains("不支持的裁剪模式"), "{err}");
+    }
+
+    #[test]
+    fn rect_crop_odd_percentages_are_even_and_clamped() {
+        let mut p = video_params();
+        p.crop_mode = "rect".into();
+        p.crop_x_pct = 33.3;
+        p.crop_y_pct = 0.0;
+        p.crop_w_pct = 66.7;
+        p.crop_h_pct = 100.0;
+        // 1280x720：x=426→426（取偶 426 已是偶数），w=853→852，x+w=1278 不越界。
+        assert_eq!(video_base_dims(&p, 1280, 720), (852, 720));
+        let argv = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
+        let vf = filter_arg(&argv).expect("应生成 -vf");
+        assert!(vf.contains("iw-") && vf.starts_with("crop=w='max(2"), "{vf}");
     }
 
     #[test]

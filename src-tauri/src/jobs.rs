@@ -251,7 +251,7 @@ fn fmt_sec_short(value: f64) -> String {
 fn kind_ext(kind: &str, params: &Value) -> String {
     match kind {
         // 音频格式由 params.format 决定；kind 仅用于任务分类（历史 id 保持兼容）。
-        "audio-mp3" | "audio-aac" | "audio-merge" | "audio-trim" => {
+        "audio-mp3" | "audio-aac" | "audio-merge" | "audio-mix" | "audio-trim" => {
             let format = params
                 .get("format")
                 .and_then(Value::as_str)
@@ -285,6 +285,7 @@ fn kind_ext(kind: &str, params: &Value) -> String {
                 .to_string()
         }
         "pdf-merge" | "pdf-split" => "pdf".into(),
+        "pdf-text" => "txt".into(),
         "pdf-image" => {
             let format = params
                 .get("format")
@@ -512,6 +513,7 @@ fn precheck_spec(
             }
             args::validate_watermark(&p.watermark)?;
             args::validate_subtitle(&p.subtitle, &p.container, p.speed)?;
+            args::validate_video_crop(&p)?;
             args::validate_volume(&p.volume)?;
             if p.audio_mode == "copy" && p.volume.enabled && !p.volume.mute {
                 return Err(
@@ -529,11 +531,12 @@ fn precheck_spec(
             args::validate_audio_volume(&p)?;
             containers::validate_audio(&p.format)
         }
-        "audio-merge" => {
+        "audio-merge" | "audio-mix" => {
             let p: args::AudioMergeParams = serde_json::from_value(params.clone())
-                .map_err(|e| format!("音频合并参数格式错误：{e}"))?;
+                .map_err(|e| format!("音频合并/混音参数格式错误：{e}"))?;
             if inputs.len() < 2 {
-                return Err("音频合并至少需要 2 个音频文件：请多选后再入队".into());
+                let action = if kind == "audio-mix" { "混音" } else { "合并" };
+                return Err(format!("音频{action}至少需要 2 个音频文件：请多选后再入队"));
             }
             containers::validate_audio(&p.format)
         }
@@ -660,8 +663,28 @@ fn precheck_spec(
             pdf::page_count(&inputs[0])?;
             Ok(())
         }
+        "pdf-text" => {
+            if inputs.len() != 1 {
+                return Err("PDF 转文本一次只能处理 1 个文件".into());
+            }
+            let ext = Path::new(&inputs[0])
+                .extension()
+                .map(|e| e.to_string_lossy().to_ascii_lowercase())
+                .unwrap_or_default();
+            if ext != "pdf" {
+                return Err(format!("{} 不是 PDF 文件", inputs[0]));
+            }
+            let tools = crate::pdf_tools::resolve(pdf_dir);
+            if !tools.text_available {
+                return Err(tools
+                    .text_reason
+                    .unwrap_or_else(|| "未找到 pdftotext（Poppler）".into()));
+            }
+            pdf::page_count(&inputs[0])?;
+            Ok(())
+        }
         other => Err(format!(
-            "未知任务类型「{other}」；支持 video-mp4 / video-split / video-merge / video-mux / video-gif / image-gif / audio-mp3 / audio-aac / audio-merge / audio-trim / image / image-compress / image-seq-video / video-frames / image-collage / pdf-merge / pdf-split / pdf-image"
+            "未知任务类型「{other}」；支持 video-mp4 / video-split / video-merge / video-mux / video-gif / image-gif / audio-mp3 / audio-aac / audio-merge / audio-trim / image / image-compress / image-seq-video / video-frames / image-collage / pdf-merge / pdf-split / pdf-image / pdf-text"
         )),
     }
 }
@@ -788,9 +811,11 @@ pub async fn enqueue(ctx: &Ctx, specs: Vec<JobSpec>) -> Result<Vec<Job>, String>
             total_duration = Some((p.end_sec - p.start_sec).max(0.0));
         }
 
-        // 合并任务的总时长/进度依赖全部输入，这里一次性探测并累加。
-        if spec.kind == "video-merge" || spec.kind == "audio-merge" {
+        // 合并任务的总时长/进度依赖全部输入，这里一次性探测并累加；
+        // 混音取最长的一路（amix duration=longest）。
+        if spec.kind == "video-merge" || spec.kind == "audio-merge" || spec.kind == "audio-mix" {
             let mut sum = 0.0f64;
+            let mut max = 0.0f64;
             let mut all_known = true;
             for input in &inputs {
                 let part = match ffprobe.as_deref() {
@@ -800,11 +825,20 @@ pub async fn enqueue(ctx: &Ctx, specs: Vec<JobSpec>) -> Result<Vec<Job>, String>
                     _ => info.clone(),
                 };
                 match part.duration_sec {
-                    Some(d) => sum += d,
+                    Some(d) => {
+                        sum += d;
+                        max = max.max(d);
+                    }
                     None => all_known = false,
                 }
             }
-            total_duration = if all_known { Some(sum) } else { None };
+            total_duration = if !all_known {
+                None
+            } else if spec.kind == "audio-mix" {
+                Some(max)
+            } else {
+                Some(sum)
+            };
         }
         if inputs.len() > 1 {
             info.name = format!("{} +{}", info.name, inputs.len() - 1);
@@ -1419,6 +1453,86 @@ fn best_decode_accel(caps: Option<&probe::Capabilities>) -> Option<String> {
             .find(|d| d.available)
             .map(|d| d.id.clone())
     })
+}
+
+/// 抽取视频指定时间点的一帧，最长边缩放到 `max_edge` 像素后返回 PNG data URL。
+/// 只用于裁剪面板的框选预览，临时文件写入系统临时目录并在读取后删除。
+pub async fn preview_frame_data_url(
+    ffmpeg: &str,
+    input: &str,
+    time_sec: f64,
+    max_edge: u32,
+) -> Result<String, String> {
+    use base64::Engine;
+    let time = if time_sec.is_finite() && time_sec > 0.0 {
+        time_sec
+    } else {
+        0.0
+    };
+    let edge = max_edge.clamp(64, 1920);
+    let dir = std::env::temp_dir().join(format!(
+        "formatforge-preview-{}-{}",
+        now_ms(),
+        JOB_SEQ.fetch_add(1, Ordering::SeqCst)
+    ));
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建预览临时目录失败：{e}"))?;
+    let out = dir.join("frame.png");
+    let mut cmd = Command::new(ffmpeg);
+    let args: Vec<String> = vec![
+        "-hide_banner".into(),
+        "-nostdin".into(),
+        "-y".into(),
+        "-ss".into(),
+        format!("{time:.3}"),
+        "-i".into(),
+        input.into(),
+        "-frames:v".into(),
+        "1".into(),
+        "-vf".into(),
+        format!("scale=w=min(iw\\,{edge}):h=-2"),
+        "-f".into(),
+        "image2".into(),
+        "-c:v".into(),
+        "png".into(),
+        out.to_string_lossy().to_string(),
+    ];
+    cmd.args(&args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("无法启动 ffmpeg 生成预览帧：{e}"))?;
+    if !output.status.success() {
+        let tail: String = String::from_utf8_lossy(&output.stderr)
+            .lines()
+            .rev()
+            .take(3)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join(" | ");
+        let _ = std::fs::remove_dir_all(&dir);
+        return Err(format!("预览帧提取失败：{tail}"));
+    }
+    let bytes = std::fs::read(&out).map_err(|e| format!("读取预览帧失败：{e}"));
+    let _ = std::fs::remove_dir_all(&dir);
+    let bytes = bytes?;
+    if bytes.is_empty() {
+        return Err("预览帧为空：请确认文件可解码".into());
+    }
+    Ok(format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
 }
 
 struct ExecOutcome {
@@ -2183,6 +2297,7 @@ async fn run_pdf(ctx: Ctx, id: String, job: Job, dir: PathBuf, temp: PathBuf) {
         job.message = Some(match kind.as_str() {
             "pdf-merge" => "正在合并 PDF…".into(),
             "pdf-split" => "正在拆分 PDF…".into(),
+            "pdf-text" => "正在提取 PDF 文本…".into(),
             _ => "正在把 PDF 渲染成图片…".into(),
         });
     })
@@ -2264,6 +2379,76 @@ async fn run_pdf(ctx: Ctx, id: String, job: Job, dir: PathBuf, temp: PathBuf) {
                         first_output: first.ok_or("拆分没有产生任何文件")?,
                         bytes,
                         message: format!("已拆分为 {} 个 PDF", used.len()),
+                    })
+                }
+                "pdf-text" => {
+                    let tools = crate::pdf_tools::resolve(pdf_dir.as_deref());
+                    let pdftotext = tools.pdftotext.clone().ok_or_else(|| {
+                        tools
+                            .text_reason
+                            .clone()
+                            .unwrap_or_else(|| "未找到 pdftotext（Poppler）".into())
+                    })?;
+                    let layout = job2
+                        .params
+                        .get("layout")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(true);
+                    let total = pdf::page_count(&job2.inputs[0])?;
+                    let tmp_txt = dir2.join(format!(".ff-tmp-pdftxt-{id2}.txt"));
+                    let _ = std::fs::remove_file(&tmp_txt);
+                    let mut cmd = std::process::Command::new(&pdftotext);
+                    cmd.arg("-enc").arg("UTF-8");
+                    if layout {
+                        cmd.arg("-layout");
+                    }
+                    cmd.arg(&job2.inputs[0]).arg(&tmp_txt);
+                    #[cfg(windows)]
+                    {
+                        use std::os::windows::process::CommandExt;
+                        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+                        cmd.creation_flags(CREATE_NO_WINDOW);
+                    }
+                    let output = cmd
+                        .output()
+                        .map_err(|e| format!("无法启动 pdftotext：{e}"))?;
+                    if !output.status.success() {
+                        let _ = std::fs::remove_file(&tmp_txt);
+                        let tail: String = String::from_utf8_lossy(&output.stderr)
+                            .lines()
+                            .rev()
+                            .take(3)
+                            .collect::<Vec<_>>()
+                            .into_iter()
+                            .rev()
+                            .collect::<Vec<_>>()
+                            .join(" | ");
+                        return Err(format!("pdftotext 失败：{tail}"));
+                    }
+                    let overwrite = conflict_policy(Some(&job2.conflict)) == "overwrite";
+                    let (target, size) = if overwrite {
+                        let size = rename_overwrite(&tmp_txt, Path::new(&job2.output))
+                            .map_err(|e| format!("写入输出失败：{e}"))?;
+                        (PathBuf::from(&job2.output), size)
+                    } else {
+                        match rename_atomic(&tmp_txt, Path::new(&job2.output)) {
+                            Ok(size) => (PathBuf::from(&job2.output), size),
+                            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+                                let target = unique_output(&dir2, &stem, "txt", &[]);
+                                let size = rename_atomic(&tmp_txt, &target)
+                                    .map_err(|e| format!("写入输出失败：{e}"))?;
+                                (target, size)
+                            }
+                            Err(err) => return Err(format!("写入输出失败：{err}")),
+                        }
+                    };
+                    Ok(PdfOutcome {
+                        first_output: target,
+                        bytes: size,
+                        message: format!(
+                            "已提取 {total} 页文本（UTF-8{}）",
+                            if layout { "，保留版面" } else { "" }
+                        ),
                     })
                 }
                 _ => {
@@ -3232,8 +3417,11 @@ async fn run_job(ctx: Ctx, id: String) {
         return;
     }
 
-    // PDF 任务：合并/拆分在进程内完成，转图片调用外部 pdftoppm。
-    if matches!(job.kind.as_str(), "pdf-merge" | "pdf-split" | "pdf-image") {
+    // PDF 任务：合并/拆分在进程内完成，转图片调用外部 pdftoppm，转文本调用 pdftotext。
+    if matches!(
+        job.kind.as_str(),
+        "pdf-merge" | "pdf-split" | "pdf-image" | "pdf-text"
+    ) {
         run_pdf(
             ctx.clone(),
             id.clone(),
@@ -3420,7 +3608,7 @@ async fn run_job(ctx: Ctx, id: String) {
             }
             chain
         }
-        "audio-mp3" | "audio-aac" | "audio-merge" | "audio-trim" => {
+        "audio-mp3" | "audio-aac" | "audio-merge" | "audio-mix" | "audio-trim" => {
             let format = job
                 .params
                 .get("format")
@@ -3616,12 +3804,12 @@ async fn run_job(ctx: Ctx, id: String) {
                     }
                     args::build_audio(encoder, &job.input, temp.to_string_lossy().as_ref(), &p)
                 }
-                "audio-merge" | "audio-trim" => {
+                "audio-merge" | "audio-mix" | "audio-trim" => {
                     let probe_bin = tools_snapshot
                         .as_ref()
                         .and_then(|t| t.ffprobe.as_ref())
                         .map(|p| p.path.as_str());
-                    let built = if job.kind == "audio-merge" {
+                    let built = if job.kind == "audio-merge" || job.kind == "audio-mix" {
                         let mut p: args::AudioMergeParams =
                             serde_json::from_value(job.params.clone()).unwrap_or_default();
                         // 「保持原始」与 source 采样率/声道都取首个输入的真实值。
@@ -3634,12 +3822,21 @@ async fn run_job(ctx: Ctx, id: String) {
                             p.base_sample_rate = info.sample_rate.unwrap_or(0);
                             p.base_channels = info.channels.unwrap_or(0);
                         }
-                        args::build_audio_merge(
-                            &job.inputs,
-                            temp.to_string_lossy().as_ref(),
-                            &p,
-                            encoder,
-                        )
+                        if job.kind == "audio-mix" {
+                            args::build_audio_mix(
+                                &job.inputs,
+                                temp.to_string_lossy().as_ref(),
+                                &p,
+                                encoder,
+                            )
+                        } else {
+                            args::build_audio_merge(
+                                &job.inputs,
+                                temp.to_string_lossy().as_ref(),
+                                &p,
+                                encoder,
+                            )
+                        }
                     } else {
                         let mut p: args::AudioTrimParams =
                             serde_json::from_value(job.params.clone()).unwrap_or_default();

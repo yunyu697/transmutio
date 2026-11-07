@@ -65,6 +65,7 @@ export const sections: SectionDef[] = [
     methods: [
       m("audio", "audio-aac", "音频转码", "MP3 / AAC(m4a) / FLAC / WAV / OGG / Opus，默认 AAC", "wave", true, "audio"),
       m("audio", "audio-merge", "音频合并", "多文件顺序拼接 · 统一采样率与声道", "merge", true, "audio"),
+      m("audio", "audio-mix", "音频混音", "多路同时混合 · 等权衰减防削波 · 取最长时长", "mux", true, "audio"),
       m("audio", "audio-trim", "音频截取", "按时间区间截取并重编码", "scissors", true, "audio"),
       m("audio", "audio-speed", "变速与变调", "不改变音高的速度调整", "speed", false),
       m("audio", "audio-volume", "音量标准化", "EBU R128（-16 LUFS），输出 MP3/AAC", "volume", true, "audio"),
@@ -91,12 +92,13 @@ export const sections: SectionDef[] = [
     id: "document",
     name: "文档",
     icon: "document",
-    hint: "PDF 合并 / 拆分 / 转图片",
+    hint: "PDF 合并 / 拆分 / 转图片 / 转文本",
     methods: [
       m("document", "doc-pdf", "文档转 PDF", "Word / Excel / PPT → PDF", "pdf", false),
       m("document", "pdf-merge", "PDF 合并", "多份 PDF 顺序合并，本地处理", "merge", true, "pdf"),
       m("document", "pdf-split", "PDF 拆分", "每页一个文件或指定页码范围", "split", true, "pdf"),
       m("document", "pdf-image", "PDF 转图片", "PNG / JPG，可指定 DPI（需 pdftoppm）", "image", true, "pdf"),
+      m("document", "pdf-text", "PDF 转文本", "提取可复制文字为 UTF-8 .txt（需 pdftotext）", "pdf", true, "pdf"),
       m("document", "office-convert", "Office 互转", "docx / xlsx / pptx 互转", "document", false),
     ],
   },
