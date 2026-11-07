@@ -1,7 +1,7 @@
 # Transmutio（MVP）
 
 跨平台桌面转码工具（Windows / macOS / Linux），Tauri 2 + React 19 + TypeScript，
-FFmpeg 以 sidecar 子进程运行。本仓库是独立工程，不与其他项目共享代码目录。
+FFmpeg / Poppler 均以外部子进程调用（不内嵌、不写入系统 PATH）。本仓库是独立工程，不与其他项目共享代码目录。
 
 ## 结论（先看这里）
 
@@ -11,12 +11,13 @@ FFmpeg 以 sidecar 子进程运行。本仓库是独立工程，不与其他项�
 | 视频转码（6 容器） | ✅ 已跑通：MP4 / MKV / WebM / MOV / TS / AVI；1080p→720p、4K→1080p、120s 长时长、硬解 d3d11va + `h264_amf` 硬编、硬编失败自动回退软编 |
 | 音频转码（6 格式） | ✅ 已跑通：MP3 / AAC(m4a) / FLAC / WAV / OGG(Vorbis) / Opus；含从视频提取音轨；无损格式自动跳过码率参数 |
 | 图片批量转换 / 缩放 | ✅ 已跑通：PNG→JPG、WebP、4K→最长边 1280（不拉伸） |
-| 任务中心 | ✅ 4 槽并发、进度、取消杀子进程、失败重试、打开输出目录；无窗口核心链路 7/7 实测 |
+| 近期补齐的能力 | ✅ 音频合并 / 截取（`1.0.0`）；视频任意矩形裁剪（预览帧 + 框选）、设备预设（4 种）、PDF 转文本、音频混音（`1.1.0`）；均有 `verify:core` 真实链路实测（见下「`1.1.0` 实测摘要」） |
+| 任务中心 | ✅ 4 槽并发、进度、取消杀子进程、失败重试、打开输出目录；`verify:core` 41/41 真实链路实测 |
 | 用户文件安全 | ✅ 不覆盖（硬链接原子发布）、临时文件、取消清理；删除源文件未实现（默认关闭） |
-| 首次启动引导 | ✅ 缺失或 GPL/nonfree 时展示；可选「按内置清单下载」（官方源 + 镜像回退 + 内置 SHA-256 校验 + 断点续传），也可手动选文件；UI 层 headless 26/26 + 真实 LGPL 落位 10/10（见文档 §4.2、§4.22） |
-| 默认许可路线 | ✅ 仅 LGPL 放行；GPL/nonfree 默认禁用，仅开发开关 |
-| macOS / Apple Silicon | ⚠️ **按文档实现、待真机验证**（本机无 Apple 设备，未实测） |
-| Linux | ⚠️ **按文档实现、待真机验证**（未在 Linux 上构建运行） |
+| 首次启动引导 | ✅ 缺失或 GPL/nonfree 时展示；可选「按内置清单下载」（官方源 + 镜像回退 + 内置 SHA-256 校验 + 断点续传），也可手动选文件；UI 层 headless 39/39 + 真实 LGPL 落位 12/12（见文档 §4.2、§4.22） |
+| 默认许可路线 | ✅ 默认走 LGPL 清单，不下载 GPL 构建；LGPL 发布版编译期强制拒绝 GPL 构建（仅 debug 构建可用设置页开关临时放行），GPL 变体则只接受 GPL 构建 |
+| macOS / Apple Silicon | ⚠️ **CI 安装包构建通过，运行时待真机验证**（本机无 Apple 设备） |
+| Linux | ⚠️ **CI 安装包构建通过，运行时待真机验证**（未在 Linux 上运行） |
 
 MVP 完成度与逐项证据见 [MVP-完成度与验证.md](MVP-完成度与验证.md)；
 许可待决策项见 [LICENSING.md](LICENSING.md)；
@@ -31,8 +32,8 @@ GPU 能力矩阵与实测/文档/待验证标注见 [GPU-能力矩阵.md](GPU-�
 - 序列：图片序列 → 视频（fps / 尺寸统一 / 编码器，起始编号按文件名自动推导）、视频 → 图片序列
 - 音频：转码（MP3 / AAC→m4a / FLAC / WAV / OGG-Vorbis / Opus）、合并（多文件按顺序拼接，自动统一采样率/声道）、截取（按时间区间，支持批量同区间）、混音（多轨等权叠加，时长取最长一路，可选响度归一化）、音量标准化（EBU R128）、相对音量增益
 - 文档：PDF 合并、拆分（每页 / 页码范围，内置 lopdf，零外部依赖）、PDF 转图片（PNG / JPG + DPI，需外部 pdftoppm）、PDF 转文本（UTF-8，可选保留版面，需外部 pdftotext）
-- 配置：面板参数 + 输出策略的预设导入 / 导出（版本与字段严格校验，不含路径与凭据）
-- 任务：4 槽并发、暂停 / 继续、命名模板、冲突策略、自动重试（仅 hw-unavailable / 临时 IO）
+- 配置：面板参数 + 输出策略的预设导入 / 导出（版本与字段严格校验，不含路径与凭据；导入会同步「批次完成后」动作）
+- 任务：4 槽并发、暂停 / 继续、命名模板、冲突策略、自动重试（仅 hw-unavailable / 临时 IO）、批次完成后动作（不动作 / 打开输出目录 / 关机；关机需环境变量 `FORMATFORGE_ALLOW_SHUTDOWN=1` 才真正下发）
 - 更新：检查 / 下载 / 校验（GitHub 官方 + 加速镜像按序回退、断点续传、启动清理）；
   Windows 为「检查 + 安装」，macOS 与 Linux deb 如实标为「检查 + 下载」
 
@@ -40,6 +41,11 @@ GPU 能力矩阵与实测/文档/待验证标注见 [GPU-能力矩阵.md](GPU-�
 
 - 文档：文档转 PDF、Office 互转
 - 光驱 / DVD / ISO、工具集（改名、校验、信息、截图等）
+
+`1.0.0` 自查发现的六项「看起来能做、实际没做」问题已全部处理，README 描述以处理后的行为为准：
+文字水印改为真实 `drawtext`（`textfile=` 传文本，支持中文字体）；序列「起始编号」不再可手填、
+按文件名自动推导 `-start_number`；界面语言下拉已移除（仅简体中文）；预设导入会真正应用并同步
+「批次完成后」动作；命名模板校验与 LGPL 合规证据两项为测试/发布闸门修复，已回归通过。
 
 ### 格式清单与探测的关系
 
@@ -53,11 +59,11 @@ GPU 能力矩阵与实测/文档/待验证标注见 [GPU-能力矩阵.md](GPU-�
 
 ### 本地数据与升级
 
-- 设置与面板参数只使用 `transmutio:*` 键。旧版 `formatforge:*` 残留键**不读取、不迁移、也不删除**：
-  留着无影响，主动删除用户数据没有必要。
-- 「PDF 转图片」入口常驻可点：缺 `pdftoppm` 时进入面板会给出 Poppler 安装路径（设置页
-  「PDF 工具目录」或 `PDFTOPPM_PATH`）与「重新检测」按钮，查找顺序仍是
-  `PDFTOPPM_PATH → 设置目录 → TRANSMUTIO_PDF_TOOLS → PATH`。
+- 设置与面板参数只使用 `transmutio:*` 键。旧版 `formatforge:*` 残留键**不读取、不迁移、也不删除**。
+- `1.1.0` 起首次启动会**一次性**删除两个旧版遗留键：`transmutio:storage-migration:v1` 与
+  `transmutio:migration-notice-dismissed`。是否已执行由独立标记位 `transmutio:cleanup:v2` 控制，
+  只跑一次；删除失败静默忽略、不影响启动，也不触碰 `transmutio:settings`、面板参数或其它任何键
+  （实测：注入两键 → 启动 → 两键消失、其它键原样保留；二次启动无新写入）。
 
 ## 下载与许可
 
@@ -71,15 +77,17 @@ GPU 能力矩阵与实测/文档/待验证标注见 [GPU-能力矩阵.md](GPU-�
 - **应用代码 = MIT**：任何人可自由使用、修改、再分发本仓库代码，只需保留版权与许可声明。
 - **FFmpeg / Poppler = 各自的 LGPL / GPL 路线**：这两个二进制不属于本仓库代码，
   也不随安装包分发。LGPL 变体只接受 LGPL 构建的 FFmpeg；GPL 变体只接受 GPL 构建的 FFmpeg
-  （可用 libx264 / libx265）。Poppler 为 GPL-2.0+，仅在「PDF 转图片」功能中作为外部工具使用。
+  （可用 libx264 / libx265）。Poppler 为 GPL-2.0+，仅在「PDF 转图片」「PDF 转文本」中作为外部工具使用。
   第三方许可证全文保持原样，位于 `licenses/`。
 
-- 发布页：<https://github.com/yunyu697/transmutio/releases>（`v0.1.0` 为历史版本；
-  当前为 `1.0.0-alpha*` 预发布，不建议日常使用）
+- 发布页：<https://github.com/yunyu697/transmutio/releases>（当前正式版 `1.1.0`，2026-11-07 发布；
+  `1.0.0` 为上一正式版，`0.1.0` 为历史版本）
 - **安装包不包含 FFmpeg / Poppler 二进制**。仓库与 Release 附件都不分发这两个二进制：
   FFmpeg 由用户自行准备并在首次启动时经引导页校验（版本 / 构建配置 / SHA-256）后落位到
-  应用数据目录；「PDF 转图片」需用户自行安装 Poppler 的 `pdftoppm`。因此本项目不承担
-  FFmpeg/Poppler 二进制再分发的源码提供义务；若你要再分发它们，请自行履行对应许可证。
+  应用数据目录；「PDF 转图片」需要 Poppler 的 `pdftoppm`，「PDF 转文本」需要同一套件里的
+  `pdftotext`。因此本项目不承担 FFmpeg/Poppler 二进制再分发的源码提供义务；若你要再分发它们，
+  请自行履行对应许可证。更新包的 `.sig` 为 minisign 签名，与应用安装包的 Authenticode 签名
+  不是一回事（见下文「未做」清单）。
 - 两个安装包的区别与所选许可路线：
 
   | 包 | 接受的 FFmpeg 构建 | 含义 |
@@ -95,13 +103,14 @@ GPU 能力矩阵与实测/文档/待验证标注见 [GPU-能力矩阵.md](GPU-�
   （`src-tauri/resources/licenses/`）。
 - 源码获取方式（本项目**未修改** FFmpeg 与 Poppler 源码）：
   - FFmpeg：<https://ffmpeg.org/download.html>；源码 <https://git.ffmpeg.org/ffmpeg.git> 或
-    <https://github.com/FFmpeg/FFmpeg>。发布验证使用的参考构建：LGPL
-    `N-128352-gec887b13a8-20261103`（BtbN/FFmpeg-Builds，git 提交 `ec887b13a8`），
+    <https://github.com/FFmpeg/FFmpeg>。内置下载清单钉死的 LGPL 构建：
+    `N-128433-gdb8537d8cc`（BtbN/FFmpeg-Builds，清单内置官方 SHA-256），
     configure 参数全文见 `src-tauri/resources/licenses/SOURCE-ACQUISITION-LGPL.txt`；
     GPL 参考构建（gyan.dev）见 `SOURCE-ACQUISITION-GPL.txt`。
   - Poppler：<https://poppler.freedesktop.org/>；源码
     <https://gitlab.freedesktop.org/poppler/poppler>。本仓库不分发其二进制。
-- **安装包未签名**（无 Authenticode / Apple 公证），Windows SmartScreen 可能提示未知发布者。
+- **安装包未做 Authenticode / Apple 公证**（更新包另有 minisign 签名并已实测校验），
+  Windows SmartScreen 可能提示未知发布者。
 
 ## 环境要求（本机实测版本）
 
@@ -129,10 +138,10 @@ GPU 能力矩阵与实测/文档/待验证标注见 [GPU-能力矩阵.md](GPU-�
   `ffmpeg --version` 与构建配置，不匹配则回滚。
 - 支持断点续传（`Range`，服务器不支持时自动从头）与每来源最多 3 次重试；下载前先检查
   磁盘剩余空间，不足直接拒绝并给出数字。
-- 落位到 `<应用数据目录>/tools/ffmpeg-<版本>/`，随后重新探测能力表。
+- 落位到 `<应用数据目录>/tools/ffmpeg-<版本>/`，路径写入设置页的 ffmpeg 路径，随后重新探测能力表。
 
 当前内置清单的可自动下载包：**Windows x64** 的 FFmpeg LGPL / GPL（BtbN 固定构建）与
-Poppler（`pdftoppm`）。**macOS / Linux 没有可固定 SHA-256 的官方发布包**，因此不提供自动
+Poppler（同时提供 `pdftoppm` 与 `pdftotext`）。**macOS / Linux 没有可固定 SHA-256 的官方发布包**，因此不提供自动
 下载，引导页会给出可读原因与手动/包管理器方案（不会伪造一个跑不通的下载项）。
 
 ### B. 手动选择本地文件
@@ -143,7 +152,8 @@ Poppler（`pdftoppm`）。**macOS / Linux 没有可固定 SHA-256 的官方发�
 4. 落位后复核哈希并持久化路径，随后重新探测能力表
 
 明确不做：不静默下载可执行文件、不代替用户接受许可、不接受 nonfree 组件；
-GPL 构建只有在设置中显式开启「允许 GPL」后才可用于本机开发。引导页在无 FFmpeg 时也能正常展示，
+GPL 构建不被默认包接受：LGPL 发布版在编译期强制拒绝（只有 debug 构建可用设置页「允许 GPL」临时放行），
+GPL 变体则只接受 GPL 构建。引导页在无 FFmpeg 时也能正常展示，
 任何转换入口都不会伪造成功。
 
 也可以手动放置（任选其一）：
@@ -170,27 +180,33 @@ libx264 / libx265 / fdk-aac）。本机开发用的 gyan.dev full 构建是 GPL�
 npm run check:ffmpeg-license
 ```
 
-## PDF 与可选外部工具（pdftoppm）
+## PDF 与可选外部工具（pdftoppm / pdftotext）
 
 | 功能 | 依赖 | 缺失时的行为 |
 | --- | --- | --- |
 | PDF 合并 / 拆分 | **无外部依赖**。内置 `lopdf`（纯 Rust，静态链接进主程序） | — |
-| PDF 转图片 | 外部 **Poppler** 的 `pdftoppm`（需 `pdftoppm.exe` 及其 DLL 目录） | 方法列表里的「PDF 转图片」卡片置灰并标记「需外部工具」；点击给出完整原因与安装建议；后端入队再次拒绝。不会进入面板后静默失败 |
+| PDF 转图片 | 外部 **Poppler** 的 `pdftoppm`（需 `pdftoppm.exe` 及其 DLL 目录） | 方法卡片**不置灰**、仍可点击；进入面板后顶部提示「未检测到 pdftoppm」，给出配置方式、检测详情、「重新检测」与「自动下载 Poppler」；**开始按钮禁用**；后端在入队前即拒绝。不会进面板后静默失败 |
+| PDF 转文本 | 外部 **Poppler** 的 `pdftotext`（Windows 非标配，需 `pdftotext.exe` 及其 DLL 目录） | 方法卡片**不置灰**、仍可点击；进入面板后顶部提示「未检测到 pdftotext」，列出三种配置方式、「重新检测」与「自动下载 Poppler（含 pdftotext）」；**开始按钮禁用**并显示「缺少 pdftotext」；后端在入队前即拒绝，不会等任务跑起来才报错，也不会退化成「源文件无法解码」这类误报 |
 
-`pdftoppm` 查找顺序（任一命中即可）：
+`pdftoppm` / `pdftotext` 各自独立解析，任一命中即可：
 
-1. 环境变量 `PDFTOPPM_PATH`（直接指向 exe）
-2. 设置页选择的 PDF 工具目录（同时查找 `<dir>\Library\bin` 与 `<dir>\bin`）
-3. 环境变量 `TRANSMUTIO_PDF_TOOLS`（目录列表）
-4. 系统 `PATH`
+| 工具 | 查找顺序 |
+| --- | --- |
+| `pdftoppm` | `PDFTOPPM_PATH`（直接指向 exe）→ 设置页 PDF 工具目录（同时查找 `<dir>\Library\bin` 与 `<dir>\bin`）→ `TRANSMUTIO_PDF_TOOLS`（目录列表）→ 系统 `PATH` |
+| `pdftotext` | `PDFTOTEXT_PATH`（直接指向 exe）→ 设置页 PDF 工具目录（同上两个子目录）→ `TRANSMUTIO_PDF_TOOLS` → 系统 `PATH` |
 
-仓库与安装包**不分发** Poppler。Windows 上可在「PDF 转图片」面板点
+`1.1.0` 安装包内设置页**还没有**这个目录输入框（发布后才补齐，随后续版本发布）；
+在 `1.1.0` 中请用环境变量或「自动下载 Poppler」配置，自动下载会把目录写进该设置项。
+
+仓库与安装包**不分发** Poppler。Windows 上可在「PDF 转图片」或「PDF 转文本」面板点
 **自动下载 Poppler**：走同一份内置清单（固定版本 + 内置 SHA-256 + 镜像回退），校验通过后
 解压到 `<应用数据目录>/tools/poppler-<版本>/Library/bin/`，并自动写入设置页的 PDF 工具目录；
-校验失败会拒绝落位并给出原因。macOS / Linux 没有可固定校验和的包，面板会给出
+校验失败会拒绝落位并给出原因。下载包同时包含 `pdftoppm.exe` 与 `pdftotext.exe`。
+macOS / Linux 没有可固定校验和的包，面板会给出
 `brew install poppler` / `apt install poppler-utils` 的说明（不会伪造下载项）。
-也可以手动安装 Poppler for Windows（便携包解压后把 `Library\bin` 配进 `PDFTOPPM_PATH` 或设置页），
-或用 `scoop install poppler` / `choco install poppler`。合并与拆分不受影响。
+也可以手动安装 Poppler for Windows（便携包解压后把 `Library\bin` 配进 `PDFTOPPM_PATH` /
+`PDFTOTEXT_PATH` 或设置页），或用 `scoop install poppler` / `choco install poppler`。
+合并与拆分不受影响。
 
 ## 选哪个变体：LGPL 还是 GPL
 
@@ -296,27 +312,27 @@ npm run check:bundle                                                    # 解包
 | 工作流 | 触发 | 内容 |
 | --- | --- | --- |
 | `ci.yml` | `push` 到 `main` + `pull_request` | 前端 `npm ci` → 类型检查/构建 → `verify:formats`；后端 `cargo fmt --check`（阻断）→ `cargo clippy`（仅暴露警告）→ `cargo test`；无头 UI 在 `windows-latest` 跑 `panel-persist`（需浏览器，不需要 FFmpeg） |
-| `release.yml` | 推送 `v*` 标签 | **唯一发布路径**：先跑版本闸门（tag / 版本文件 / alpha 序号），再由 `windows-latest` / `macos-latest` / `ubuntu-22.04` 三平台各构建 LGPL + GPL 变体，产物（MSI/NSIS、DMG、deb/rpm/AppImage）自动汇总 `SHA256SUMS` 并创建 Release。**产物不含 FFmpeg/Poppler**，正文写明未签名与 alpha 不建议日常使用。不再手工上传附件 |
+| `release.yml` | 推送 `v*` 标签 | **唯一发布路径**：先跑版本闸门（tag / 版本文件 / alpha 序号），再由 `windows-latest` / `macos-latest` / `ubuntu-22.04` 三平台各构建 LGPL + GPL 变体（实际产物为 MSI/NSIS、DMG、deb/AppImage，`1.1.0` 共 10 个安装包），自动汇总 `SHA256SUMS` 并创建 Release。**产物不含 FFmpeg/Poppler**，正文写明未做 Authenticode / 公证；版本闸门同时校验 alpha 序号规则。不再手工上传附件 |
 
 - `verify:core` / `verify:setup` / `verify:flavor:*` / `p2-check` 依赖真实 FFmpeg（部分还需 Poppler），
   **只在本地或自托管 runner 执行**，GitHub 默认 runner 不跑。
 - 本地等价：`cargo fmt --check`、`cargo clippy`、`cargo test`、`npm run build`、`verify:formats`、`panel-persist`。
 
-更新通道方案见 [UPDATER.md](UPDATER.md)（已实装；密钥未生成，安装 fail-closed）。
+更新通道方案见 [UPDATER.md](UPDATER.md)（已实装；`src-tauri/updater.pub` 已配置公钥，签名缺失或校验失败时安装 fail-closed）。
 
 ## 测试与验证
 
 ```powershell
 npm run samples    # 生成真实样本库（中文/emoji/长路径/只读/0字节/损坏/120s/4K）
-npm run verify     # 参数配方层 + 真实 ffmpeg 转换（无 GUI，报告 23 PASS / 1 SKIP）
-npm run verify:core # 真实任务核心 + 真实 ffmpeg + 真实文件系统（无窗口，报告 31/31）
+npm run verify     # 参数配方层 + 真实 ffmpeg 转换（无 GUI，报告 24/24）
+npm run verify:core # 真实任务核心 + 真实 ffmpeg + 真实文件系统（无窗口，报告 41/41）
 npm run verify:formats # 静态断言：容器 ≥4 / 音频 ≥5 / 不兼容组合 / 探测提示 / 卡片与存储前缀（10/10）
-node scripts/panel-persist-check.mjs # 面板参数持久化 + 旧前缀零访问（headless，13/13）
+node scripts/panel-persist-check.mjs # 面板参数持久化 + 旧前缀零访问（headless，16/16）
 npm run verify:ui   # 引导页 UI 层：headless Edge + mock 后端（LGPL / nonfree / GPL 三场景，39/39）
 npm run verify:setup # 真实 LGPL ffmpeg 的 inspect → 落位 → 两变体判定 → 拒绝分支 → 闭环转码（12/12）
 npm run verify:flavor:lgpl # LGPL 变体：编译期策略、隔离、拒绝 GPL 编码器（7/7）
 npm run verify:flavor:gpl  # GPL 变体：接受 GPL 构建 + 真实 libx264 转 MP4（7/7）
-npm run test:rust  # 变体策略 + 文件安全 / 命名 / 容器与音频格式矩阵单元测试（63/63，无 GUI）
+npm run test:rust  # 变体策略 + 文件安全 / 命名 / 容器与音频格式矩阵单元测试（170/170，无 GUI）
 ```
 
 验证层级不要混称：
@@ -342,7 +358,7 @@ npm run test:rust  # 变体策略 + 文件安全 / 命名 / 容器与音频格�
 - 应用级链路 `npm run verify:app` 会启动可见窗口，默认拒绝执行，需显式确认：
   `FORMATFORGE_ALLOW_GUI_E2E=1`
 
-本次实测摘要（Windows 11 / AMD RX 5700 XT / gyan.dev GPL 开发构建）：
+历史实测摘要（Windows 11 / AMD RX 5700 XT / gyan.dev GPL 开发构建）：
 
 - 视频：`h264_amf` 硬编 + `d3d11va` 硬解；4K→1080p 成功；120s 样本 6.7s 完成（17.9x）
 - 硬编失败回退：用不可用的 `h264_nvenc` 复现，分类为 `hw-unavailable`，回退 libx264 成功
@@ -351,9 +367,20 @@ npm run test:rust  # 变体策略 + 文件安全 / 命名 / 容器与音频格�
 - 视频容器：mp4 / mkv / webm(vp9) / mov / ts / avi(mpeg4) 均用真实 ffmpeg 转码并由 ffprobe 复核
 - 图片：PNG→JPG（mjpeg 1920x1080）、4K→1280x720 等比缩放、WebP 可用
 - 并发：4 个进程同时转码全部成功（6.6s）；取消杀进程与临时文件清理在**真实任务核心**上通过
-- 引导：真实 LGPL 构建（BtbN `N-128352-gec887b13a8-20261103`）落位 10/10，含错误哈希、nonfree、
+- 引导：真实 LGPL 构建（当时清单钉的是 BtbN `N-128352-gec887b13a8-20261103`；当前清单为 `N-128433-gdb8537d8cc`）落位 10/10，含错误哈希、nonfree、
   无版本、GPL 拒绝分支；用落位副本转 AAC 成功
 - 未验证：被占用文件（占用模拟未成功）、macOS/Linux 真机、Apple Silicon 硬编
+
+`1.1.0` 实测摘要（`verify:core` 41/41、`panel-persist` 16/16）：
+
+- 矩形裁剪：1280×720 → x10%/y20%/50%×50% 输出 **640×360**，与独立参考
+  `crop=640:360:128:144` 首帧 **PSNR 58.51 dB**；预览帧 PNG **480×270 / 33,573 字节**
+- 设备预设：720p 源套用 apple-1080p → **1920×1080 / 30.00 fps / libx264**
+- PDF→TXT：2 页真实 PDF → **52 字节 txt，两页文字均命中**；缺 `pdftotext` 时入口按钮禁用且
+  **入队调用 = 0**
+- 音频混音：两路 → **3.000s（取最长一路）/ 44.1 kHz / 立体声 / peak −21.5 dB**
+- 升级：真实 `1.0.0 → 1.1.0` 静默覆盖安装 **0.92s**，启动到窗口 **0.19s**；
+  匿名更新检查 **1.956s**、下载 3,090,747 B **6.182s**、minisign 校验通过
 
 ## 签名与分发（第一版流程已就位）
 
@@ -388,27 +415,31 @@ formatforge/
 │  ├─ settings/              # 设置存储（StorageAdapter 可替换）
 │  ├─ task-queue/            # 任务队列抽象（TaskTransport 可替换）
 │  ├─ telemetry/             # 日志缓冲 + 崩溃上报
-│  └─ updater/               # 自动更新接口（当前 Null 实现）
+│  └─ updater/               # 自动更新接口（包内仅 Null 适配器；实际更新见 src-tauri/src/updater.rs）
 ├─ src/                      # React 界面（6 分区、方法网格、Inspector、任务中心）
 ├─ src-tauri/                # Rust 后端（工具解析、能力探测、参数、任务调度）
 ├─ scripts/                  # 样本生成、无 GUI 验证、签名脚本
 ├─ samples/                  # 生成的样本与验证报告（不入包）
-└─ README / LICENSING / GPU-能力矩阵 / MVP-完成度与验证 / CONTRIBUTING
+└─ README / LICENSING / GPU-能力矩阵 / MVP-完成度与验证 / FEATURE-GAP / UPDATER / CONTRIBUTING
 ```
 
 ## 已知限制与未验证项
 
 - 默认包**不含 FFmpeg**；未放置 LGPL 二进制时无法转换（这是有意设计，不伪造成功）。
-- LGPL 构建通常没有软件 H.264 编码器（无 libx264、未必有 libopenh264），
-  因此 LGPL 发布版要么依赖硬件编码，要么引入 OpenH264（见 LICENSING.md 待决策项）。
+- LGPL 构建**没有软件 HEVC 编码器**（无 libx265）；软件 H.264 取决于构建是否带 libopenh264
+  （当前清单钉死的 BtbN LGPL 构建带 `--enable-libopenh264`，见
+  `src-tauri/resources/licenses/SOURCE-ACQUISITION-LGPL.txt`）。既无硬件编码器、构建又不带 openh264 时，H.264 编码不可用。
 - 图片编码器没有逐项试编，缺少 libwebp 时任务会失败并给出原因。
 - 被占用文件的错误提示未完成自动化验证。
+- 界面仅提供简体中文；语言切换入口已移除（en-US 词典仍是未完成骨架），不再保留点了没反应的选项。
 - 引导页：UI 层（headless + mock）与真实 LGPL 落位已验证；**未在真实窗口内点击**（禁止 GUI），
   「复制损坏 → 复核回滚」分支与 macOS/Linux 落位未验证。
 - macOS / Apple Silicon 的 VideoToolbox 能力、并发上限、B 帧/10bit 行为：按文档实现，待真机验证。
-- 自动更新已实装（多镜像回退、断点续传、minisign 校验、安装后重启）；但
-  **更新签名公钥未配置**（`src-tauri/updater.pub` 为空），安装按 fail-closed 拒绝，不会跳过校验。
-- Windows/macOS 签名脚本已写好但本机无证书，未实际签名。
+- 自动更新已实装（多镜像回退、断点续传、minisign 校验、安装后重启）；`src-tauri/updater.pub`
+  已配置公钥，1.1.0 更新包的 `.sig` 已实测通过 minisign 校验；签名缺失或校验失败时安装
+  按 fail-closed 拒绝，不会跳过校验。
+- Windows/macOS **Authenticode / 公证未做**（本机无证书），安装包与 macOS `.app` 可能触发
+  SmartScreen / Gatekeeper 提示；这与更新包的 minisign 签名是两套机制。
 
 ### 当前未实现项（如实列出，入口置灰或明确写进已知限制）
 
@@ -423,7 +454,8 @@ formatforge/
 
 - [MVP-完成度与验证.md](MVP-完成度与验证.md)
 - [GPU-能力矩阵.md](GPU-能力矩阵.md)
+- [FEATURE-GAP.md](FEATURE-GAP.md)（对标产品功能对账，产品名已中性化、不保留链接与版本号）
 - [LICENSING.md](LICENSING.md)
 - [CONTRIBUTING.md](CONTRIBUTING.md)
-- [UPDATER.md](UPDATER.md)（更新通道方案，未启用）
-- 上一轮方案与设计稿：`../FormatFactory-跨平台重构方案.md`、`../FormatForge-UI-Design.html`
+- [UPDATER.md](UPDATER.md)（更新通道方案，已启用）
+- 上一轮方案与设计稿：工作区上级目录（未纳入本仓库）
