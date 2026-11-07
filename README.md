@@ -387,6 +387,20 @@ npm run test:rust  # 变体策略 + 文件安全 / 命名 / 容器与音频格�
   落地的等价证据，不额外编造指标
 - 未验证：macOS / Linux 真机运行
 
+`1.2.0` 实测摘要（破坏性版本，Windows 11 真机）：
+
+- 真实安装包跨会话预设：安装 `Transmutio.GPL_1.2.0_x64-setup.exe`（2,878,710 B）→
+  视频转码分辨率设为 `720` → 保存预设「跨会话验收」→ **正常关闭窗口**（进程退出码 `0`）→
+  重新启动 → 再次进入视频转码：分辨率读回 `720`，提示「已载入上次预设「跨会话验收」撤销」，
+  `transmutio:presets:v1` 仍存在（报告 `samples/preset-cross-session-report.json`）
+- 匿名核对（不带 token）：`latest.json` 可读且 `version=1.2.0`；`Transmutio_1.2.0_x64-setup.exe`
+  （2,882,446 B）、`Transmutio_1.2.0_aarch64.dmg`（3,773,219 B）、`Transmutio_1.2.0_amd64.AppImage`
+  （82,754,040 B）三者 SHA-256 与 `SHA256SUMS` 一致
+- 真实升级 `1.1.1 → 1.2.0`：静默覆盖安装 **0.91s**，注册表 `DisplayVersion` 与主程序
+  `FileVersion` 均为 **1.2.0**，主程序 7,774,208 B
+- 口径说明：`verify:ui` / `panel-persist` 的结论来自 headless 浏览器 + mock 后端；
+  跨会话预设一项来自真实安装包窗口，不是 DOM 断言
+
 ## 签名与分发（第一版流程已就位）
 
 Windows（先 sidecar 后主程序/安装包）：
