@@ -233,7 +233,10 @@ impl Default for AudioTrimParams {
 /// 截取区间校验：起点必须 ≥ 0，终点必须大于起点；两端都有限。
 pub fn validate_audio_trim(p: &AudioTrimParams) -> Result<(), String> {
     if !p.start_sec.is_finite() || p.start_sec < 0.0 {
-        return Err(format!("截取起点必须 ≥ 0 秒（当前 {}）", fmt_num(p.start_sec)));
+        return Err(format!(
+            "截取起点必须 ≥ 0 秒（当前 {}）",
+            fmt_num(p.start_sec)
+        ));
     }
     if !p.end_sec.is_finite() || p.end_sec <= p.start_sec {
         return Err(format!(
@@ -830,9 +833,7 @@ pub fn validate_video_crop(p: &VideoParams) -> Result<(), String> {
             }
             Ok(())
         }
-        other => Err(format!(
-            "不支持的裁剪模式「{other}」，可选 ratio / rect"
-        )),
+        other => Err(format!("不支持的裁剪模式「{other}」，可选 ratio / rect")),
     }
 }
 
@@ -858,10 +859,7 @@ fn rect_crop_dimensions(p: &VideoParams, width: u32, height: u32) -> (u32, u32) 
         let trunc = (px / 2.0).floor() * 2.0;
         (trunc as u32).max(2).min(max.max(2))
     };
-    (
-        even(p.crop_w_pct, width),
-        even(p.crop_h_pct, height),
-    )
+    (even(p.crop_w_pct, width), even(p.crop_h_pct, height))
 }
 
 /// 图片裁剪参数的结构校验（不依赖源图尺寸）。非法值必须明确报错。
@@ -1645,7 +1643,11 @@ pub fn text_watermark_filter(w: &WatermarkParams) -> Result<String, String> {
         return Err("文字水印内容不能为空".into());
     }
     let textfile = watermark_textfile(text)?;
-    let base_height = if w.base_height > 0 { w.base_height } else { 720 };
+    let base_height = if w.base_height > 0 {
+        w.base_height
+    } else {
+        720
+    };
     let px = subtitle_font_px(base_height, w.font_size_percent);
     let margin = w.margin;
     let (x, y) = match w.position.trim() {
@@ -1709,11 +1711,16 @@ pub fn validate_watermark(w: &WatermarkParams) -> Result<(), String> {
         }
         let font = w.font_path.trim();
         if font.is_empty() {
-            return Err("文字水印缺少字体文件：请选择支持中文的字体（如 C:\\Windows\\Fonts\\msyh.ttc）".into());
+            return Err(
+                "文字水印缺少字体文件：请选择支持中文的字体（如 C:\\Windows\\Fonts\\msyh.ttc）"
+                    .into(),
+            );
         }
         let path = std::path::Path::new(font);
         if !path.is_file() {
-            return Err(format!("字体文件不存在：{font}（请重新选择 .ttf / .otf / .ttc 字体）"));
+            return Err(format!(
+                "字体文件不存在：{font}（请重新选择 .ttf / .otf / .ttc 字体）"
+            ));
         }
         let ext = path
             .extension()
@@ -3450,7 +3457,11 @@ mod tests {
 
     #[test]
     fn audio_merge_unifies_format_then_concats_in_order() {
-        let inputs = vec!["a.m4a".to_string(), "b.wav".to_string(), "c.flac".to_string()];
+        let inputs = vec![
+            "a.m4a".to_string(),
+            "b.wav".to_string(),
+            "c.flac".to_string(),
+        ];
         let p = AudioMergeParams {
             format: "mp3".into(),
             bitrate_kbps: 192,
@@ -3473,7 +3484,10 @@ mod tests {
         assert!(graph.contains("concat=n=3:v=0:a=1[acat]"), "{graph}");
         let map = args[args.iter().position(|a| a == "-map").unwrap() + 1].clone();
         assert_eq!(map, "[acat]");
-        assert_eq!(args[args.iter().position(|a| a == "-b:a").unwrap() + 1], "192k");
+        assert_eq!(
+            args[args.iter().position(|a| a == "-b:a").unwrap() + 1],
+            "192k"
+        );
     }
 
     #[test]
@@ -3491,14 +3505,21 @@ mod tests {
         )
         .unwrap();
         let graph = args[args.iter().position(|a| a == "-filter_complex").unwrap() + 1].clone();
-        assert!(graph.contains("concat=n=2:v=0:a=1[acat];[acat]loudnorm="), "{graph}");
+        assert!(
+            graph.contains("concat=n=2:v=0:a=1[acat];[acat]loudnorm="),
+            "{graph}"
+        );
         let map = args[args.iter().position(|a| a == "-map").unwrap() + 1].clone();
         assert_eq!(map, "[aout]");
     }
 
     #[test]
     fn audio_mix_uses_amix_longest_and_normalizes_clipping() {
-        let inputs = vec!["a.m4a".to_string(), "b.wav".to_string(), "c.flac".to_string()];
+        let inputs = vec![
+            "a.m4a".to_string(),
+            "b.wav".to_string(),
+            "c.flac".to_string(),
+        ];
         let p = AudioMergeParams {
             format: "mp3".into(),
             bitrate_kbps: 192,
@@ -3525,7 +3546,10 @@ mod tests {
         );
         let map = args[args.iter().position(|a| a == "-map").unwrap() + 1].clone();
         assert_eq!(map, "[amixed]");
-        assert_eq!(args[args.iter().position(|a| a == "-b:a").unwrap() + 1], "192k");
+        assert_eq!(
+            args[args.iter().position(|a| a == "-b:a").unwrap() + 1],
+            "192k"
+        );
     }
 
     #[test]
@@ -3544,7 +3568,10 @@ mod tests {
         .unwrap();
         let graph = args[args.iter().position(|a| a == "-filter_complex").unwrap() + 1].clone();
         assert!(graph.contains("[amixed]loudnorm="), "{graph}");
-        assert_eq!(args[args.iter().position(|a| a == "-map").unwrap() + 1], "[aout]");
+        assert_eq!(
+            args[args.iter().position(|a| a == "-map").unwrap() + 1],
+            "[aout]"
+        );
 
         let err = build_audio_mix(&["a.mp3".to_string()], "out.mp3", &p, "libmp3lame").unwrap_err();
         assert!(err.contains("至少需要 2 个"), "{err}");
@@ -3553,7 +3580,8 @@ mod tests {
     #[test]
     fn audio_merge_rejects_single_input() {
         let p = AudioMergeParams::default();
-        let err = build_audio_merge(&["a.mp3".to_string()], "out.mp3", &p, "libmp3lame").unwrap_err();
+        let err =
+            build_audio_merge(&["a.mp3".to_string()], "out.mp3", &p, "libmp3lame").unwrap_err();
         assert!(err.contains("至少需要 2 个"), "{err}");
     }
 
@@ -3888,7 +3916,10 @@ mod tests {
         assert_eq!(video_base_dims(&p, 1280, 720), (852, 720));
         let argv = build_video("libx264", "in.mp4", "out.mp4", &p, "aac", None).unwrap();
         let vf = filter_arg(&argv).expect("应生成 -vf");
-        assert!(vf.contains("iw-") && vf.starts_with("crop=w='max(2"), "{vf}");
+        assert!(
+            vf.contains("iw-") && vf.starts_with("crop=w='max(2"),
+            "{vf}"
+        );
     }
 
     #[test]
@@ -4263,9 +4294,7 @@ mod tests {
     #[test]
     fn seq_start_number_is_derived_from_filenames() {
         // 起始编号只由文件名决定：界面不再提供输入框，避免指定一个 ffmpeg 读不到的编号。
-        let inputs: Vec<String> = (5..=8)
-            .map(|n| format!("dir/frame_{n:04}.png"))
-            .collect();
+        let inputs: Vec<String> = (5..=8).map(|n| format!("dir/frame_{n:04}.png")).collect();
         let (pattern, start, count) = validate_sequence(&inputs).unwrap();
         assert!(pattern.ends_with("frame_%04d.png"), "{pattern}");
         assert_eq!(start, 5, "起始编号应取文件名里的最小编号");
@@ -4646,7 +4675,10 @@ mod tests {
         let filter = text_watermark_filter(&w).unwrap();
         assert!(filter.starts_with("drawtext=fontfile="), "{filter}");
         // 盘符冒号在 filtergraph/AVOption 两层解析下必须写成两个反斜杠。
-        assert!(filter.contains("fontfile=C\\\\:/Windows/Fonts/msyh.ttc"), "{filter}");
+        assert!(
+            filter.contains("fontfile=C\\\\:/Windows/Fonts/msyh.ttc"),
+            "{filter}"
+        );
         // 文本走 textfile，避免单引号/反斜杠在内联 text= 里被吞掉。
         assert!(filter.contains("textfile="), "{filter}");
         let start = filter.find("textfile=").unwrap() + "textfile=".len();
@@ -4723,7 +4755,11 @@ mod tests {
         assert_eq!(count_flag(&args, "-vf"), 1);
         assert_eq!(count_flag(&args, "-shortest"), 0);
         let vf_pos = args.iter().position(|a| a == "-vf").unwrap();
-        assert!(args[vf_pos + 1].contains("drawtext="), "{}", args[vf_pos + 1]);
+        assert!(
+            args[vf_pos + 1].contains("drawtext="),
+            "{}",
+            args[vf_pos + 1]
+        );
 
         let img = ImageParams {
             format: "png".into(),
@@ -4735,7 +4771,11 @@ mod tests {
         assert_eq!(count_flag(&args, "-filter_complex"), 0);
         assert_eq!(count_flag(&args, "-vf"), 1);
         let vf_pos = args.iter().position(|a| a == "-vf").unwrap();
-        assert!(args[vf_pos + 1].contains("drawtext="), "{}", args[vf_pos + 1]);
+        assert!(
+            args[vf_pos + 1].contains("drawtext="),
+            "{}",
+            args[vf_pos + 1]
+        );
     }
 
     #[test]

@@ -770,7 +770,9 @@ pub async fn enqueue(ctx: &Ctx, specs: Vec<JobSpec>) -> Result<Vec<Job>, String>
 
         // 输出位置：`@source` 表示写回每个输入文件所在目录；空值明确报错，不静默回落。
         if spec.output_dir.trim().is_empty() {
-            return Err("未设置输出目录：请在设置里选择「自定义目录」或改用「与源文件相同目录」".into());
+            return Err(
+                "未设置输出目录：请在设置里选择「自定义目录」或改用「与源文件相同目录」".into(),
+            );
         }
         let dir = if spec.output_dir == "@source" {
             Path::new(&spec.input)
@@ -2194,7 +2196,6 @@ async fn run_composite(
     finish_slot(&ctx, &id).await;
 }
 
-
 /// 视频 → 图片序列。先写临时目录，成功后再逐帧移入输出目录，失败不留半套。
 async fn run_frames(ctx: Ctx, id: String, job: Job, ffmpeg: String, dir: PathBuf) {
     let p: args::FramesParams = serde_json::from_value(job.params.clone()).unwrap_or_default();
@@ -3251,7 +3252,11 @@ async fn run_job(ctx: Ctx, id: String) {
                 .params
                 .get("format")
                 .and_then(Value::as_str)
-                .unwrap_or(if job.kind == "audio-aac" { "aac" } else { "mp3" })
+                .unwrap_or(if job.kind == "audio-aac" {
+                    "aac"
+                } else {
+                    "mp3"
+                })
                 .to_string();
             let wanted = args::audio_encoder_for(&format);
             let usable = caps

@@ -293,12 +293,7 @@ fn make_source_sized(
     run_ffmpeg(ffmpeg, &args)
 }
 
-fn make_source_bitrate(
-    ffmpeg: &str,
-    path: &Path,
-    seconds: u32,
-    kbps: u32,
-) -> Result<(), String> {
+fn make_source_bitrate(ffmpeg: &str, path: &Path, seconds: u32, kbps: u32) -> Result<(), String> {
     let mut args = vec![
         "-hide_banner".into(),
         "-loglevel".into(),
@@ -1049,11 +1044,7 @@ pub async fn run_checks(report_path: &str) -> i32 {
                 ];
                 let psnr = match run_ffmpeg(&ffmpeg_path, &ref_args) {
                     Err(e) => Err(format!("生成参考裁剪失败：{e}")),
-                    Ok(_) => average_psnr(
-                        &ffmpeg_path,
-                        Path::new(&j.output),
-                        reference.as_path(),
-                    ),
+                    Ok(_) => average_psnr(&ffmpeg_path, Path::new(&j.output), reference.as_path()),
                 };
                 match psnr {
                     Ok(db) => {
@@ -1086,14 +1077,7 @@ pub async fn run_checks(report_path: &str) -> i32 {
     }
 
     // 6c) 裁剪预览帧：真实调用后端函数，校验返回 PNG 的 IHDR 尺寸
-    match jobs::preview_frame_data_url(
-        &ffmpeg_path,
-        &src_short.to_string_lossy(),
-        0.5,
-        480,
-    )
-    .await
-    {
+    match jobs::preview_frame_data_url(&ffmpeg_path, &src_short.to_string_lossy(), 0.5, 480).await {
         Err(e) => fail(&mut results, "裁剪预览帧", e),
         Ok(url) => {
             use base64::Engine;
@@ -1107,10 +1091,18 @@ pub async fn run_checks(report_path: &str) -> i32 {
                         .map_err(|e| format!("预览帧 base64 解码失败：{e}"))
                 });
             match png {
-                Ok(bytes) if bytes.len() > 8 && bytes[0..8] == [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] => {
+                Ok(bytes)
+                    if bytes.len() > 8
+                        && bytes[0..8] == [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] =>
+                {
                     let width = u32::from_be_bytes([bytes[16], bytes[17], bytes[18], bytes[19]]);
                     let height = u32::from_be_bytes([bytes[20], bytes[21], bytes[22], bytes[23]]);
-                    let detail = format!("PNG {}x{}，{} 字节（最长边限制 480）", width, height, bytes.len());
+                    let detail = format!(
+                        "PNG {}x{}，{} 字节（最长边限制 480）",
+                        width,
+                        height,
+                        bytes.len()
+                    );
                     if width == 480 && height == 270 {
                         pass(&mut results, "裁剪预览帧：PNG 尺寸正确", detail);
                     } else {
@@ -1154,7 +1146,9 @@ pub async fn run_checks(report_path: &str) -> i32 {
             Some(fp) => {
                 let info = crate::probe::probe_media(fp, &j.output).await;
                 let fps = info.fps.unwrap_or(0.0);
-                let ok = info.width == Some(1920) && info.height == Some(1080) && (fps - 30.0).abs() < 0.5;
+                let ok = info.width == Some(1920)
+                    && info.height == Some(1080)
+                    && (fps - 30.0).abs() < 0.5;
                 let detail = format!(
                     "720p 源 → {}x{}（目标 1920x1080），帧率 {fps:.2}（目标 30），编码器 {:?}",
                     info.width.unwrap_or(0),
@@ -1357,9 +1351,12 @@ pub async fn run_checks(report_path: &str) -> i32 {
         // 0) 文字水印：真实 drawtext（中文 + 系统字体 + filtergraph 特殊字符）
         let out_wm = workspace.join("out-watermark");
         let _ = std::fs::create_dir_all(&out_wm);
-        let font = ["C:\\Windows\\Fonts\\msyh.ttc", "C:\\Windows\\Fonts\\simhei.ttf"]
-            .into_iter()
-            .find(|p| Path::new(p).is_file());
+        let font = [
+            "C:\\Windows\\Fonts\\msyh.ttc",
+            "C:\\Windows\\Fonts\\simhei.ttf",
+        ]
+        .into_iter()
+        .find(|p| Path::new(p).is_file());
         match font {
             None => fail(
                 &mut results,
@@ -1400,7 +1397,10 @@ pub async fn run_checks(report_path: &str) -> i32 {
                     params: wm_params,
                     ..baseline.clone()
                 };
-                match (run_one(&ctx, baseline, 120).await, run_one(&ctx, watermarked, 120).await) {
+                match (
+                    run_one(&ctx, baseline, 120).await,
+                    run_one(&ctx, watermarked, 120).await,
+                ) {
                     (Ok(base), Ok(wm)) if base.status == "done" && wm.status == "done" => {
                         let base_hash = first_frame_hash(&ffmpeg_path, Path::new(&base.output));
                         let wm_hash = first_frame_hash(&ffmpeg_path, Path::new(&wm.output));
@@ -1522,8 +1522,7 @@ pub async fn run_checks(report_path: &str) -> i32 {
                     };
                     match run_one(&ctx, spec, 180).await {
                         Ok(job) if job.status == "done" => {
-                            let info =
-                                crate::probe::probe_media(&probe_bin, &job.output).await;
+                            let info = crate::probe::probe_media(&probe_bin, &job.output).await;
                             let out_kbps = info.video_bitrate.unwrap_or(0) / 1000;
                             let low = src_kbps * 7 / 10;
                             let high = src_kbps * 3 / 2;
@@ -1549,7 +1548,10 @@ pub async fn run_checks(report_path: &str) -> i32 {
                         Ok(job) => fail(
                             &mut results,
                             "视频保持原始码率：真实回填与产物复核",
-                            format!("任务未完成：status={} message={:?}", job.status, job.message),
+                            format!(
+                                "任务未完成：status={} message={:?}",
+                                job.status, job.message
+                            ),
                         ),
                         Err(e) => fail(
                             &mut results,
@@ -1841,17 +1843,33 @@ pub async fn run_checks(report_path: &str) -> i32 {
         let merge_audio_a = workspace.join("audio-merge-a-2s.wav");
         let merge_audio_b = workspace.join("audio-merge-b-3s.wav");
         let make_merge_a: Vec<String> = vec![
-            "-hide_banner".into(), "-loglevel".into(), "error".into(), "-y".into(),
-            "-f".into(), "lavfi".into(), "-i".into(),
+            "-hide_banner".into(),
+            "-loglevel".into(),
+            "error".into(),
+            "-y".into(),
+            "-f".into(),
+            "lavfi".into(),
+            "-i".into(),
             "sine=frequency=440:sample_rate=44100:duration=2".into(),
-            "-ar".into(), "44100".into(), "-ac".into(), "2".into(),
+            "-ar".into(),
+            "44100".into(),
+            "-ac".into(),
+            "2".into(),
             merge_audio_a.to_string_lossy().to_string(),
         ];
         let make_merge_b: Vec<String> = vec![
-            "-hide_banner".into(), "-loglevel".into(), "error".into(), "-y".into(),
-            "-f".into(), "lavfi".into(), "-i".into(),
+            "-hide_banner".into(),
+            "-loglevel".into(),
+            "error".into(),
+            "-y".into(),
+            "-f".into(),
+            "lavfi".into(),
+            "-i".into(),
             "sine=frequency=660:sample_rate=48000:duration=3".into(),
-            "-ar".into(), "48000".into(), "-ac".into(), "1".into(),
+            "-ar".into(),
+            "48000".into(),
+            "-ac".into(),
+            "1".into(),
             merge_audio_b.to_string_lossy().to_string(),
         ];
         if let Err(e) = run_ffmpeg(&ffmpeg_path, &make_merge_a)

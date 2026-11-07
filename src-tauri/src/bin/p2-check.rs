@@ -161,7 +161,6 @@ fn ffmpeg_color(ffmpeg: &Path, output: &Path, size: &str, color: &str) -> Result
     .map(|_| ())
 }
 
-
 fn probe_codec(ffprobe: &Path, path: &Path) -> Result<String, String> {
     let json = run(
         ffprobe,
@@ -1751,7 +1750,6 @@ fn image_collage(ffmpeg: &Path, ffprobe: &Path, dir: &Path, report: &mut Report)
         );
     }
 }
-
 
 fn probe_meta(ffprobe: &Path, path: &Path) -> Result<(String, String), String> {
     let json = run(
