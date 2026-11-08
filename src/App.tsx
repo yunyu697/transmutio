@@ -275,8 +275,11 @@ export default function App() {
     const common = {
       outputDir,
       ffmpegReady,
+      // "@source" 是「使用源文件夹」的哨兵值：只切模式，不清掉上次记住的自定义目录。
       onChangeOutputDir: (dir: string) =>
-        patchSettings({ outputDir: dir, outputDirMode: "custom" }),
+        dir === "@source"
+          ? patchSettings({ outputDirMode: "source" })
+          : patchSettings({ outputDir: dir, outputDirMode: "custom" }),
       onEnqueued: enqueued,
       toast,
       onBack: () => setActiveMethod(null),
@@ -339,8 +342,6 @@ export default function App() {
               activeMethodId={activeMethod?.id ?? null}
               collapsed={settings.navCollapsed}
               search={search}
-              outputDir={settings.outputDir}
-              outputDirMode={settings.outputDirMode}
               taskCount={running}
               tasksOpen={tasksOpen}
               theme={settings.theme}

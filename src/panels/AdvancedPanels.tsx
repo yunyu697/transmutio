@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { formatBytes } from "@formatforge/design-tokens";
 import { api, type AvifParams, type AvifResult, type CollageParams, type ExifFields, type ExifWriteResult, type FramesParams, type Job, type SeqParams } from "../lib/api";
 import { loadPanelPrefs, savePanelPrefs } from "../lib/panelPrefs";
-import { DropZone, Field, FileTable, Group, OutputNaming, Segmented, SwitchRow, useMediaFiles, type NamingPrefs } from "./shared";
+import { DropZone, Field, FileTable, Group, OutputDirBar, OutputNaming, Segmented, SwitchRow, useMediaFiles, type NamingPrefs } from "./shared";
 import { Icon } from "../components/Icon";
 import { PresetBar } from "../components/PresetBar";
 
@@ -16,13 +16,6 @@ type CommonProps = {
   onBack: () => void;
 };
 
-const chooseOutputDir = async (onChangeOutputDir: (dir: string) => void) => {
-  const picked = await import("@tauri-apps/plugin-dialog").then((m) =>
-    m.open({ directory: true, multiple: false }),
-  );
-  if (typeof picked === "string") onChangeOutputDir(picked);
-};
-
 function OutDirBar({
   outputDir,
   onChangeOutputDir,
@@ -30,15 +23,7 @@ function OutDirBar({
   outputDir: string;
   onChangeOutputDir: (dir: string) => void;
 }) {
-  return (
-    <div className="outdir">
-      <Icon name="folder" size={14} />
-      <code title={outputDir}>{outputDir || "未设置输出目录"}</code>
-      <button className="btn small ghost" onClick={() => void chooseOutputDir(onChangeOutputDir)}>
-        更改
-      </button>
-    </div>
-  );
+  return <OutputDirBar outputDir={outputDir} onChange={onChangeOutputDir} />;
 }
 
 const DEFAULT_SEQ: SeqParams = {

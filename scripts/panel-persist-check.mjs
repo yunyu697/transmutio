@@ -695,6 +695,90 @@ async function main() {
     const drawerClosed = (await page4.locator(".taskcenter").count()) === 0;
     add("ui-redesign", "再次点击队列条收起抽屉", drawerClosed, `drawerCount=${drawerClosed ? 0 : 1}`);
 
+    // ---------- 输出位置：开始按钮上方可就地改 + 一键切回源文件夹 ----------
+    const page5 = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+    page5.on("pageerror", (error) => pageErrors.push(String(error)));
+    await mockTauri(page5);
+    // 只播一次种：reload 时保留应用自己写回的设置，才能验证持久化。
+    await page5.addInitScript((prefs) => {
+      try {
+        if (!localStorage.getItem("transmutio:test-out-seeded")) {
+          localStorage.setItem("transmutio:settings", JSON.stringify(prefs));
+          localStorage.setItem("transmutio:test-out-seeded", "1");
+        }
+      } catch {
+        // about:blank 上无 storage，忽略。
+      }
+    }, {
+      lastSection: "video",
+      outputDirMode: "custom",
+      outputDir: "D:\\Exports\\Transmutio",
+    });
+    await page5.goto(origin, { waitUntil: "domcontentloaded" });
+    await page5.waitForSelector(".method-grid", { timeout: 10000 });
+    await openMethod(page5, "视频", "视频转码");
+
+    const outBefore = await page5.evaluate(() => {
+      const bar = document.querySelector(".outdir");
+      const start = document.querySelector(".bottombar .btn.primary");
+      const barBox = bar?.getBoundingClientRect();
+      const startBox = start?.getBoundingClientRect();
+      const buttons = Array.from(bar?.querySelectorAll("button") ?? []).map((b) => b.textContent?.trim() ?? "");
+      return {
+        text: bar?.textContent?.replace(/\s+/g, " ").trim() ?? "",
+        buttons,
+        aboveStart: Boolean(barBox && startBox && barBox.bottom <= startBox.top + 1),
+      };
+    });
+    add(
+      "ui-redesign",
+      "输出位置在开始按钮上方：自定义目录显示完整路径并提供「使用源文件夹」/「更改」",
+      outBefore.aboveStart &&
+        outBefore.text.includes("D:\\Exports\\Transmutio") &&
+        outBefore.buttons.includes("更改") &&
+        outBefore.buttons.includes("使用源文件夹"),
+      JSON.stringify(outBefore),
+    );
+
+    await page5.getByRole("button", { name: "使用源文件夹" }).click();
+    const outAfter = await page5.evaluate(() => {
+      const bar = document.querySelector(".outdir");
+      const buttons = Array.from(bar?.querySelectorAll("button") ?? []).map((b) => b.textContent?.trim() ?? "");
+      return {
+        text: bar?.textContent?.replace(/\s+/g, " ").trim() ?? "",
+        buttons,
+        mode: JSON.parse(localStorage.getItem("transmutio:settings") || "{}").data?.outputDirMode,
+      };
+    });
+    add(
+      "ui-redesign",
+      "一键切回源文件夹：显示「与源文件相同目录」，入口随即隐藏并写入设置",
+      outAfter.text.includes("与源文件相同目录") &&
+        !outAfter.buttons.includes("使用源文件夹") &&
+        outAfter.buttons.includes("更改") &&
+        outAfter.mode === "source",
+      JSON.stringify(outAfter),
+    );
+
+    await page5.reload({ waitUntil: "domcontentloaded" });
+    await page5.waitForSelector(".method-grid", { timeout: 10000 });
+    await openMethod(page5, "视频", "视频转码");
+    const outPersisted = await page5.evaluate(() => {
+      const bar = document.querySelector(".outdir");
+      return {
+        text: bar?.textContent?.replace(/\s+/g, " ").trim() ?? "",
+        buttons: Array.from(bar?.querySelectorAll("button") ?? []).map((b) => b.textContent?.trim() ?? ""),
+      };
+    });
+    add(
+      "ui-redesign",
+      "输出位置状态持久化：重启后仍是源文件夹且入口保持隐藏",
+      outPersisted.text.includes("与源文件相同目录") && !outPersisted.buttons.includes("使用源文件夹"),
+      JSON.stringify(outPersisted),
+    );
+    await page5.screenshot({ path: path.join(OUT_DIR, "output-source.png") });
+    await page5.close();
+
     const brand = await page4.evaluate(() => {
       const mark = document.querySelector(".sidenav .appmark:not(.rail-mark)");
       const img = mark?.querySelector("img");

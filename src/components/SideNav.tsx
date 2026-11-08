@@ -9,8 +9,6 @@ export interface SideNavProps {
   activeMethodId: string | null;
   collapsed: boolean;
   search: string;
-  outputDir: string;
-  outputDirMode: "source" | "custom";
   taskCount: number;
   tasksOpen: boolean;
   theme: "dark" | "light";
@@ -35,8 +33,6 @@ export function SideNav({
   activeMethodId,
   collapsed,
   search,
-  outputDir,
-  outputDirMode,
   taskCount,
   tasksOpen,
   theme,
@@ -157,10 +153,6 @@ export function SideNav({
         </div>
       ) : (
         <div className="side-foot">
-          <div className="outsum">
-            <b>输出位置</b>
-            <span className="path">{outputDirMode === "custom" && outputDir ? outputDir : "与源文件相同目录"}</span>
-          </div>
           <div className="iconrow">
             <button
               type="button"

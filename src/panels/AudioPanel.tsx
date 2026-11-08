@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { formatBytes, formatDuration } from "@formatforge/design-tokens";
 import { api, type AudioMergeParams, type AudioParams, type AudioTrimParams, type Capabilities, type Job } from "../lib/api";
-import { AudioBitrateField, DropZone, Field, FileTable, Group, OutputNaming, Segmented, SwitchRow, useMediaFiles, type NamingPrefs } from "./shared";
+import { AudioBitrateField, DropZone, Field, FileTable, Group, OutputDirBar, OutputNaming, Segmented, SwitchRow, useMediaFiles, type NamingPrefs } from "./shared";
 import { loadPanelPrefs, savePanelPrefs } from "../lib/panelPrefs";
 import { findMethod } from "../catalog";
 import {
@@ -399,21 +399,7 @@ function AudioTranscode({
 
       <div className="bottombar">
         <PresetBar methodId={methodId} title={findMethod(methodId)?.title ?? methodId} />
-        <div className="outdir">
-          <Icon name="folder" size={14} />
-          <code title={outputDir}>{outputDir || "未设置输出目录"}</code>
-          <button
-            className="btn small ghost"
-            onClick={async () => {
-              const picked = await import("@tauri-apps/plugin-dialog").then((m) =>
-                m.open({ directory: true, multiple: false }),
-              );
-              if (typeof picked === "string") onChangeOutputDir(picked);
-            }}
-          >
-            更改
-          </button>
-        </div>
+        <OutputDirBar outputDir={outputDir} onChange={onChangeOutputDir} />
         <div style={{ fontSize: 12, color: "var(--ff-fg3)" }}>
           {estimate ? (
             <>
@@ -551,21 +537,7 @@ function AudioBottomBar({
   return (
     <div className="bottombar">
       <PresetBar methodId={methodId} title={findMethod(methodId)?.title ?? methodId} />
-      <div className="outdir">
-        <Icon name="folder" size={14} />
-        <code title={outputDir}>{outputDir || "未设置输出目录"}</code>
-        <button
-          className="btn small ghost"
-          onClick={async () => {
-            const picked = await import("@tauri-apps/plugin-dialog").then((m) =>
-              m.open({ directory: true, multiple: false }),
-            );
-            if (typeof picked === "string") onChangeOutputDir(picked);
-          }}
-        >
-          更改
-        </button>
-      </div>
+      <OutputDirBar outputDir={outputDir} onChange={onChangeOutputDir} />
       <div style={{ fontSize: 12, color: "var(--ff-fg3)" }}>{hint}</div>
       <button className="btn primary" onClick={onStart} disabled={starting || !canStart}>
         <Icon name="play" size={14} />

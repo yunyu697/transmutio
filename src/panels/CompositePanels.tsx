@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { formatDuration } from "@formatforge/design-tokens";
 import { api, type GifParams, type Job, type MergeParams, type MuxParams } from "../lib/api";
-import { AudioBitrateField, DropZone, Field, FileTable, Group, OutputNaming, QualityTierField, Segmented, SwitchRow, useMediaFiles } from "./shared";
+import { AudioBitrateField, DropZone, Field, FileTable, Group, OutputDirBar, OutputNaming, QualityTierField, Segmented, SwitchRow, useMediaFiles } from "./shared";
 import { loadPanelPrefs, savePanelPrefs } from "../lib/panelPrefs";
 import { Icon } from "../components/Icon";
 import { PresetBar } from "../components/PresetBar";
@@ -37,13 +37,6 @@ function namingSpec(naming: Naming) {
   };
 }
 
-async function pickDir(onChangeOutputDir: (dir: string) => void) {
-  const picked = await import("@tauri-apps/plugin-dialog").then((m) =>
-    m.open({ directory: true, multiple: false }),
-  );
-  if (typeof picked === "string") onChangeOutputDir(picked);
-}
-
 function BottomBar({
   methodId,
   outputDir,
@@ -64,13 +57,7 @@ function BottomBar({
   return (
     <div className="bottombar">
       <PresetBar methodId={methodId} title={findMethod(methodId)?.title ?? methodId} />
-      <div className="outdir">
-        <Icon name="folder" size={14} />
-        <code title={outputDir}>{outputDir || "未设置输出目录"}</code>
-        <button className="btn small ghost" onClick={() => pickDir(onChangeOutputDir)}>
-          更改
-        </button>
-      </div>
+      <OutputDirBar outputDir={outputDir} onChange={onChangeOutputDir} />
       <div style={{ fontSize: 12, color: "var(--ff-fg3)" }}>{hint}</div>
       <button className="btn primary" onClick={onStart} disabled={starting || !canStart}>
         <Icon name="play" size={14} />

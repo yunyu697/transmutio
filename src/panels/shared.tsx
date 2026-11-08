@@ -195,6 +195,44 @@ export function FileTable({
 }
 
 /**
+ * 输出位置：放在开始按钮上方，可就地更改。
+ * 传 `"@source"` 表示与源文件同目录；此时隐藏「使用源文件夹」，
+ * 自定义目录时给出一键切回源目录的入口（不需要重新手选）。
+ */
+export function OutputDirBar({
+  outputDir,
+  onChange,
+}: {
+  outputDir: string;
+  onChange: (dir: string) => void;
+}) {
+  const isSource = !outputDir || outputDir === "@source";
+  return (
+    <div className="outdir">
+      <Icon name="folder" size={14} />
+      <span className="outdir-label">输出到</span>
+      <code title={isSource ? "与源文件相同目录" : outputDir}>
+        {isSource ? "与源文件相同目录" : outputDir}
+      </code>
+      <button
+        className="btn small ghost"
+        onClick={async () => {
+          const picked = await open({ directory: true, multiple: false });
+          if (typeof picked === "string") onChange(picked);
+        }}
+      >
+        更改
+      </button>
+      {isSource ? null : (
+        <button className="btn small ghost" onClick={() => onChange("@source")}>
+          使用源文件夹
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
  * 参数分组。`collapsed` 用于「次要参数」：默认只露一行标题，
  * 点开才展开内容（原生 details，展开状态不需要额外状态管理）。
  */

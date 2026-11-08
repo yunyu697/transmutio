@@ -7,6 +7,7 @@ import {
   Field,
   FileTable,
   Group,
+  OutputDirBar,
   OutputNaming,
   QualityTierField,
   Segmented,
@@ -1531,19 +1532,7 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
 
       <div className="bottombar">
         <PresetBar methodId={methodId} title={findMethod(methodId)?.title ?? methodId} />
-        <div className="outdir">
-          <Icon name="folder" size={14} />
-          <code title={outputDir}>{outputDir || "未设置输出目录"}</code>
-          <button
-            className="btn small ghost"
-            onClick={async () => {
-              const picked = await import("@tauri-apps/plugin-dialog").then((m) => m.open({ directory: true, multiple: false }));
-              if (typeof picked === "string") onChangeOutputDir(picked);
-            }}
-          >
-            更改
-          </button>
-        </div>
+        <OutputDirBar outputDir={outputDir} onChange={onChangeOutputDir} />
         <div style={{ fontSize: 12, color: "var(--ff-fg3)" }}>
           {estimate ? (
             <>
