@@ -316,6 +316,7 @@ npm run verify:core # 真实任务核心 + 真实 ffmpeg + 真实文件系统（
 npm run verify:formats # 静态断言：容器 ≥4 / 音频 ≥5 / 不兼容组合 / 探测提示 / 卡片与存储前缀（30/30）
 node scripts/panel-persist-check.mjs # 面板参数持久化 + 旧前缀零访问 + v4 界面 DOM 断言（headless，22/22）
 npm run verify:ui   # 引导页 UI 层：headless Edge + mock 后端（LGPL / nonfree / GPL 三场景，39/39）
+npm run verify:real # 真机验收：真实 WebView2 窗口 + 真实构建产物（20 项 + 启动首帧，不进 CI）
 npm run verify:setup # 真实 LGPL ffmpeg 的 inspect → 落位 → 两变体判定 → 拒绝分支 → 闭环转码（12/12）
 npm run verify:flavor:lgpl # LGPL 变体：编译期策略、隔离、拒绝 GPL 编码器（7/7）
 npm run verify:flavor:gpl  # GPL 变体：接受 GPL 构建 + 真实 libx264 转 MP4（7/7）
@@ -329,6 +330,7 @@ npm run test:rust  # 变体策略 + 文件安全 / 命名 / 容器与音频格�
 | `npm run verify` | 独立配方脚本（与 `args.rs` 手工对齐）+ 系统 ffmpeg | 参数配方 + 真实转码 |
 | `npm run verify:core` | **应用同一份任务核心**（队列/调度/取消/发布），真实 ffmpeg、真实文件系统 | 真实核心链路（无窗口） |
 | `npm run verify:ui` | `dist/` 前端产物，headless Edge + 注入的 Tauri IPC mock | **UI 层（headless）**，不驱动真实后端 |
+| `npm run verify:real` | **真实 release 构建产物 + 真实 WebView2 窗口**（CDP 驱动，`PrintWindow` 采样启动帧） | 真机界面验收（需要真实窗口与本机 LGPL ffmpeg，**不进 CI**） |
 | `npm run verify:setup` | **应用同一份 `install_blocking`** + 真实 LGPL/GPL ffmpeg、真实文件系统 | 真实落位链路（无窗口） |
 | `npm run verify:flavor:*` | **应用同一份策略与任务核心**，分别以默认 / `--features gpl` 编译 | 变体策略 + 真实 x264 转码（无窗口） |
 | `npm run verify:formats` | 读取 `formats.ts` / 两个面板源文件做静态断言 | 清单完整性（不是真实转码，真实转码见 `p2-check`） |

@@ -1,7 +1,7 @@
 {
   "name": "formatforge",
   "private": true,
-  "version": "1.2.2",
+  "version": "1.3.0",
   "type": "module",
   "workspaces": [
     "packages/*"
@@ -26,6 +26,7 @@
     "verify:core": "cargo run --manifest-path src-tauri/Cargo.toml --features dev-tools --bin headless-check -- samples/core-e2e-report.json",
     "verify:setup": "cargo run --manifest-path src-tauri/Cargo.toml --features dev-tools --bin setup-check -- samples/setup-install-report.json",
     "verify:ui": "node scripts/setup-ui-check.mjs",
+    "verify:real": "node scripts/real-webview-check.mjs",
     "verify:theme": "node scripts/theme-contrast-check.mjs",
     "verify:formats": "node scripts/formats-check.mjs",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
