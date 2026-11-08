@@ -813,6 +813,49 @@ select {
   gap: 12px;
 }
 
+/* 折叠的次要参数：去掉卡片外框，只剩一行标题 + 细分隔线，读起来像一份收起的清单。 */
+.group.fold {
+  border: 0;
+  border-top: 1px solid var(--ff-line);
+  border-radius: 0;
+  background: transparent;
+}
+.group.fold + .group.fold {
+  margin-top: calc(var(--sp-3) - 16px);
+}
+.group.fold > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 2px;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ff-fg2);
+}
+.group.fold > summary::-webkit-details-marker {
+  display: none;
+}
+.group.fold > summary:hover {
+  color: var(--ff-fg);
+}
+.group.fold > summary .chev {
+  margin-left: auto;
+  color: var(--ff-fg3);
+  transition: transform var(--motion-fast) var(--motion-ease);
+}
+.group.fold[open] > summary {
+  color: var(--ff-fg);
+}
+.group.fold[open] > summary .chev {
+  transform: rotate(90deg);
+}
+.group.fold > .group-body {
+  padding: 2px 2px 8px;
+}
+
 .field {
   display: flex;
   flex-direction: column;

@@ -194,13 +194,41 @@ export function FileTable({
   );
 }
 
-export function Group({ title, icon, children }: { title: string; icon: string; children: ReactNode }) {
+/**
+ * 参数分组。`collapsed` 用于「次要参数」：默认只露一行标题，
+ * 点开才展开内容（原生 details，展开状态不需要额外状态管理）。
+ */
+export function Group({
+  title,
+  icon,
+  children,
+  collapsed,
+}: {
+  title: string;
+  icon: string;
+  children: ReactNode;
+  collapsed?: boolean;
+}) {
+  const head = (
+    <>
+      <Icon name={icon} size={14} />
+      {title}
+    </>
+  );
+  if (collapsed) {
+    return (
+      <details className="group fold">
+        <summary>
+          {head}
+          <Icon name="chevron-right" size={13} className="chev" />
+        </summary>
+        <div className="group-body">{children}</div>
+      </details>
+    );
+  }
   return (
     <section className="group">
-      <header>
-        <Icon name={icon} size={14} />
-        {title}
-      </header>
+      <header>{head}</header>
       <div className="group-body">{children}</div>
     </section>
   );

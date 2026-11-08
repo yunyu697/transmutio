@@ -218,12 +218,22 @@ const field = (page, label) =>
 
 const switchRow = (page, label) => page.locator(".switchrow").filter({ hasText: label }).first();
 
-async function openMethod(page, section, title) {
+/** 次要参数默认折叠（details.group.fold）；展开后内部控件才可交互。 */
+async function expandFolds(page) {
+  await page.evaluate(() => {
+    document.querySelectorAll("details.group.fold").forEach((node) => {
+      node.open = true;
+    });
+  });
+}
+
+async function openMethod(page, section, title, expand = true) {
   const nav = page.locator(".grow").filter({ hasText: section }).first();
   await nav.click();
   await page.waitForSelector(".method-grid .card", { timeout: 10000 });
   await page.locator(".method-grid .card").filter({ hasText: title }).first().click();
   await page.waitForSelector(".workbench", { timeout: 10000 });
+  if (expand) await expandFolds(page);
 }
 
 const readStorage = (page, key) =>
@@ -251,7 +261,43 @@ async function main() {
     await page.waitForSelector(".method-grid", { timeout: 10000 });
 
     // 视频面板
-    await openMethod(page, "视频", "视频转码");
+    await openMethod(page, "视频", "视频转码", false);
+    // 次要参数默认折叠：只有目标格式 / 画质与尺寸 / 输出命名三组是展开的。
+    const foldState = await page.evaluate(() => {
+      const folds = Array.from(document.querySelectorAll(".inspector-body > details.group.fold"));
+      // 新版 Chromium 用 content-visibility 隐藏 details 内容，子元素的 rect 仍可能有尺寸；
+      // 折叠是否真的生效，用「整组高度 == 标题行高度」来判断。
+      const summaryOnly = folds.filter((node) => {
+        const group = node.getBoundingClientRect().height;
+        const summary = node.querySelector("summary")?.getBoundingClientRect().height ?? 0;
+        return summary > 0 && Math.abs(group - summary) < 2;
+      }).length;
+      return {
+        folded: folds.length,
+        opened: folds.filter((node) => node.open).length,
+        summaryOnly,
+        visible: document.querySelectorAll(".inspector-body > .group:not(.fold)").length,
+        titles: folds.map((node) => node.querySelector("summary")?.textContent?.trim() ?? ""),
+      };
+    });
+    add(
+      "ui-redesign",
+      "次要参数默认折叠：视频面板只露 3 组，其余 6 组收起且只占标题行高度",
+      foldState.folded === 6 &&
+        foldState.opened === 0 &&
+        foldState.summaryOnly === 6 &&
+        foldState.visible === 3,
+      JSON.stringify(foldState),
+    );
+    const fold = page.locator(".inspector-body > details.group.fold").first();
+    await fold.locator("summary").click();
+    const foldOpened = await fold.evaluate((node) => {
+      const group = node.getBoundingClientRect().height;
+      const summary = node.querySelector("summary")?.getBoundingClientRect().height ?? 0;
+      return node.open && group > summary + 20;
+    });
+    add("ui-redesign", "点击折叠标题可展开该组参数", foldOpened, `expanded=${foldOpened}`);
+    await expandFolds(page);
     // 设备预设：应用模板后容器/编码/分辨率/帧率要写进同一份面板参数。
     await field(page, "设备预设").locator("select").selectOption("apple-1080p");
     const presetStored = await readStorage(page, "transmutio:panel:video:video-mp4");

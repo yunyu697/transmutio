@@ -689,7 +689,7 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
             </div>
           </Group>
 
-          <Group title="编码器" icon="chip">
+          <Group title="编码器" icon="chip" collapsed>
             <Field label="选择方式" tag="硬编优先">
               <Segmented<string>
                 value={params.encoder === "auto" || params.encoder === "software" ? params.encoder : "manual"}
@@ -787,7 +787,7 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
             </div>
           </Group>
 
-          <Group title="画面调整" icon="crop">
+          <Group title="画面调整" icon="crop" collapsed={!isCrop}>
             <Field label="旋转" tag="顺时针">
               <Segmented
                 value={params.rotation}
@@ -1322,7 +1322,7 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
             </Group>
           ) : null}
 
-          <Group title="变速" icon="gauge">
+          <Group title="变速" icon="gauge" collapsed>
             <Field label="倍速" tag={speedLabel(params.speed)}>
               <Segmented
                 value={String(params.speed)}
@@ -1363,7 +1363,7 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
             </div>
           </Group>
 
-          <Group title="音频" icon="wave">
+          <Group title="音频" icon="wave" collapsed>
             <Field label="音轨">
               <Segmented
                 value={params.audioMode}
@@ -1406,7 +1406,7 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
             ) : null}
           </Group>
 
-          <Group title="音量" icon="wave">
+          <Group title="音量" icon="wave" collapsed>
             <SwitchRow
               label="启用音量增益"
               hint="相对增益：整条音轨统一放大/衰减固定 dB，不改变动态范围"
@@ -1505,7 +1505,7 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
             </Group>
           ) : null}
 
-          <Group title="高级" icon="gpu">
+          <Group title="高级" icon="gpu" collapsed>
             <SwitchRow
               label="硬件解码"
               hint={

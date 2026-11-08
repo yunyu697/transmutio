@@ -231,7 +231,7 @@ function AudioTranscode({
             </div>
           </Group>
 
-          <Group title="变速" icon="gauge">
+          <Group title="变速" icon="gauge" collapsed>
             <Field label="倍速" tag={speedLabel(params.speed)}>
               <Segmented
                 value={String(params.speed)}
@@ -308,7 +308,7 @@ function AudioTranscode({
             />
           </Group>
 
-          <Group title="音量" icon="wave">
+          <Group title="音量" icon="wave" collapsed>
             <SwitchRow
               label="启用音量增益"
               hint="相对增益：整条音轨统一放大/衰减固定 dB，不改变动态范围"
@@ -378,7 +378,7 @@ function AudioTranscode({
             </div>
           </Group>
 
-          <Group title="编码器状态" icon="chip">
+          <Group title="编码器状态" icon="chip" collapsed>
             {caps ? (
               <div className={`note ${encoderReady ? "" : "warn"}`}>
                 {encoderReady

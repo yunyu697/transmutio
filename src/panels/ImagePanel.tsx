@@ -460,7 +460,7 @@ export function ImagePanel({
             </Group>
           ) : null}
 
-          <Group title="裁剪" icon="crop">
+          <Group title="裁剪" icon="crop" collapsed={methodId !== "image-crop"}>
             <Field label="模式" tag="裁剪在旋转与缩放之前">
               <Segmented
                 value={params.cropMode}
@@ -705,7 +705,7 @@ export function ImagePanel({
             </Group>
           ) : null}
 
-          <Group title="方向" icon="crop">
+          <Group title="方向" icon="crop" collapsed>
             <SwitchRow
               label="按 EXIF 自动校正"
               hint="读取照片的 EXIF Orientation；开启后会关闭 FFmpeg 的隐式 autorotate，保证只校正一次"
