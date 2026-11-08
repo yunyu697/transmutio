@@ -649,7 +649,7 @@ async function main() {
       `navCollapsed=${collapsedSettings?.data?.navCollapsed} rail=可见`,
     );
 
-    await page4.locator('.rail-foot button[aria-label="展开侧栏"]').click();
+    await page4.locator('.sidenav button[aria-label="展开侧栏"]').click();
     await page4.waitForSelector(".sidenav:not(.rail) .grow", { timeout: 5000 });
     await openMethod(page4, "视频", "视频转码");
     await field(page4, "分辨率").locator("select").selectOption("720");

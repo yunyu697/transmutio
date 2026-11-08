@@ -1,5 +1,24 @@
 /* 设计令牌由 @formatforge/design-tokens 注入为 --ff-* 变量，这里只写布局与组件样式。 */
 
+/* 间距标尺：全站只允许用这几档，新增样式先对照档位再写数值。
+   --sp-1 行内元素之间（图标与文字、徽标与标题）
+   --sp-2 控件之间（按钮组、图标行、字段内部的标签与控件）
+   --sp-3 面板内部（字段与字段、卡片与卡片）
+   --sp-4 容器内边距（面板、抽屉、卡片内边距）
+   --sp-5 区块之间（页面级分区之间、功能区与任务列表之间）
+   动效时长同样集中在这里，便于统一节奏与「减少动态效果」开关。 */
+:root {
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-block: 24px;
+  --motion-fast: 120ms;
+  --motion-base: 180ms;
+  --motion-ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -47,6 +66,66 @@ select {
   grid-template-rows: 1fr 30px;
   height: 100%;
   background: var(--ff-bg);
+}
+
+/* 首次能力探测期间的占位：只铺底色，不留文字，避免启动时先闪引导页。 */
+.app-boot {
+  flex: 1;
+  min-height: 0;
+  background: var(--ff-bg);
+}
+
+/* 视图容器：切换分区/方法时重建并重放一次入场动画。 */
+.view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  animation: ff-view-in var(--motion-base) var(--motion-ease) both;
+}
+
+@keyframes ff-view-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 展开出来的列表（子分区、任务中心、设置抽屉、可折叠区块）。 */
+@keyframes ff-list-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ff-slide-right {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ff-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 
@@ -135,22 +214,23 @@ select {
   min-height: 0;
 }
 
+/* 左栏：展开 236px / 折叠 64px。两种状态共用同一个 nav 节点，宽度用过渡而不是瞬切。 */
 .sidenav {
+  position: relative;
   width: 236px;
-  flex: 0 0 236px;
+  flex: 0 0 auto;
   border-right: 1px solid var(--ff-line);
   background: var(--ff-bg2);
   display: flex;
   flex-direction: column;
   padding: 8px;
   min-height: 0;
+  transition: width var(--motion-base) var(--motion-ease), padding var(--motion-base) var(--motion-ease);
 }
 .sidenav.rail {
   width: 64px;
-  flex: 0 0 64px;
-  padding: 6px 0;
+  padding: 8px 0;
   align-items: center;
-  gap: 4px;
 }
 
 /* 品牌图标：真实 Tauri 图标按 24px 取景裁切（渲染 34.03px / 偏移 −5.02px）。
@@ -163,8 +243,11 @@ select {
   flex: 0 0 auto;
   border-radius: 6px;
   overflow: hidden;
+  padding: 0;
+  border: 0;
   background: #0a0e14;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
 }
 .appmark img {
   position: absolute;
@@ -174,26 +257,22 @@ select {
   height: 34.03px;
   display: block;
 }
-.appmark.rail-mark {
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
-  padding: 0;
-  border: 0;
-  cursor: pointer;
-}
-.appmark.rail-mark img {
-  left: -5.86px;
-  top: -5.86px;
-  width: 39.71px;
-  height: 39.71px;
-}
 
-.side-top {
+/* 顶部品牌行：先让出左上角的折叠按钮（32 + 8 间距），折叠态品牌图标换到按钮下方并居中。 */
+.side-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 2px 2px 8px;
+  gap: var(--sp-2);
+  height: 24px;
+  padding: 0 2px 0 44px;
+  flex: 0 0 auto;
+}
+.sidenav.rail .side-head {
+  width: 100%;
+  height: 64px;
+  padding: 40px 0 0;
+  justify-content: center;
+  gap: 0;
 }
 .side-brand-name {
   font-size: 13px;
@@ -205,10 +284,14 @@ select {
   cursor: pointer;
   white-space: nowrap;
 }
+/* 折叠/展开按钮：绝对定位在左栏左上角，两种状态坐标完全一致（left/top 8px），只换箭头方向。
+   32×32 与其它图标按钮同一档热区。 */
 .collapse {
-  margin-left: auto;
-  width: 22px;
-  height: 22px;
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 32px;
+  height: 32px;
   border: 1px solid var(--ff-line);
   background: var(--ff-surf);
   border-radius: 6px;
@@ -216,7 +299,8 @@ select {
   display: grid;
   place-items: center;
   cursor: pointer;
-  flex: 0 0 auto;
+  z-index: 2;
+  transition: background var(--motion-fast) ease, color var(--motion-fast) ease;
 }
 .collapse:hover {
   color: var(--ff-fg);
@@ -227,13 +311,14 @@ select {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 0 2px 8px;
-  height: 28px;
+  margin: 10px 2px var(--sp-3);
+  height: 30px;
   border: 1px solid var(--ff-line);
   border-radius: 7px;
   background: var(--ff-surf);
   color: var(--ff-fg3);
   padding: 0 8px;
+  flex: 0 0 auto;
 }
 .searchbox input {
   flex: 1;
@@ -252,29 +337,41 @@ select {
   flex: 1;
   overflow: auto;
   min-height: 0;
-  padding: 0 0 8px;
+  padding: 0 0 var(--sp-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+/* 分组：最近使用 / 转换分区各自成块，块之间用 --sp-3 拉开，块内条目间距 2px。 */
+.side-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .side-label {
   font-size: 11px;
+  font-weight: 600;
   letter-spacing: 0.9px;
   text-transform: uppercase;
   color: var(--ff-fg3);
-  padding: 8px 8px 3px;
+  padding: 0 10px var(--sp-1);
 }
 
 .ritem {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   width: 100%;
-  padding: 5px 8px;
+  min-height: 34px;
+  padding: 0 10px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 8px;
   background: transparent;
   color: var(--ff-fg2);
   font-size: 13px;
   text-align: left;
   cursor: pointer;
+  transition: background var(--motion-fast) ease, color var(--motion-fast) ease;
 }
 .ritem:hover {
   background: var(--ff-surf);
@@ -294,9 +391,10 @@ select {
 .grow {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   width: 100%;
-  padding: 6px 8px;
+  min-height: 34px;
+  padding: 0 10px;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -304,6 +402,7 @@ select {
   font-size: 13px;
   text-align: left;
   cursor: pointer;
+  transition: background var(--motion-fast) ease, color var(--motion-fast) ease;
 }
 .grow:hover {
   background: var(--ff-surf);
@@ -326,22 +425,30 @@ select {
   background: rgba(46, 211, 183, 0.18);
 }
 
+/* 子项：左侧一条竖线做层级引导，文字起点与父级标题对齐。 */
 .subs {
-  padding: 0 0 4px 26px;
   display: flex;
   flex-direction: column;
+  gap: 1px;
+  margin: 2px 0 2px 17px;
+  padding-left: 9px;
+  border-left: 1px solid var(--ff-line);
+  animation: ff-list-in var(--motion-fast) var(--motion-ease) both;
 }
 .sub {
-  display: block;
+  display: flex;
+  align-items: center;
   width: 100%;
+  min-height: 32px;
   text-align: left;
-  padding: 3px 8px;
+  padding: 0 10px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 7px;
   background: transparent;
   font-size: 12.5px;
   color: var(--ff-fg3);
   cursor: pointer;
+  transition: background var(--motion-fast) ease, color var(--motion-fast) ease;
 }
 .sub:hover {
   color: var(--ff-fg2);
@@ -354,16 +461,17 @@ select {
 
 .side-foot {
   border-top: 1px solid var(--ff-line);
-  padding: 8px 2px 2px;
+  margin-top: var(--sp-2);
+  padding: var(--sp-3) 2px 2px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--sp-2);
 }
 .outsum {
   background: var(--ff-surf);
   border: 1px solid var(--ff-line);
   border-radius: 8px;
-  padding: 6px 8px;
+  padding: var(--sp-2) 10px;
   font-size: 11.5px;
   color: var(--ff-fg3);
   line-height: 1.45;
@@ -384,19 +492,20 @@ select {
 }
 .iconrow {
   display: flex;
-  gap: 6px;
+  gap: var(--sp-2);
 }
 .sibtn {
   position: relative;
-  width: 30px;
-  height: 26px;
+  width: 32px;
+  height: 32px;
   border: 1px solid var(--ff-line);
-  border-radius: 7px;
+  border-radius: 8px;
   background: var(--ff-surf);
   color: var(--ff-fg2);
   display: grid;
   place-items: center;
   cursor: pointer;
+  transition: background var(--motion-fast) ease, color var(--motion-fast) ease;
 }
 .sibtn:hover {
   color: var(--ff-fg);
@@ -420,22 +529,21 @@ select {
   line-height: 1.5;
 }
 
-.rail-brand {
-  padding: 2px 0 8px;
-}
 .rail-scroll {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   flex: 1;
   overflow: auto;
   min-height: 0;
   width: 100%;
+  padding-top: var(--sp-2);
+  animation: ff-list-in var(--motion-fast) var(--motion-ease) both;
 }
 .railbtn {
-  width: 38px;
-  height: 34px;
+  width: 40px;
+  height: 36px;
   border-radius: 8px;
   display: grid;
   place-items: center;
@@ -444,6 +552,7 @@ select {
   color: var(--ff-fg3);
   position: relative;
   cursor: pointer;
+  transition: background var(--motion-fast) ease, color var(--motion-fast) ease;
 }
 .railbtn:hover {
   background: var(--ff-surf);
@@ -459,15 +568,11 @@ select {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding-top: 6px;
+  gap: 6px;
+  padding-top: var(--sp-2);
+  margin-top: var(--sp-2);
   border-top: 1px solid var(--ff-line);
-  width: 44px;
-}
-.railsep {
-  width: 26px;
-  border-top: 1px solid var(--ff-line);
-  margin: 4px 0;
+  width: 100%;
 }
 
 .main {
@@ -483,10 +588,10 @@ select {
 
 /* ---------- Method grid ---------- */
 .page-head {
-  padding: 18px 22px 10px;
+  padding: var(--sp-5) var(--sp-5) 10px;
   display: flex;
   align-items: flex-end;
-  gap: 12px;
+  gap: var(--sp-3);
 }
 .page-head h1 {
   margin: 0;
@@ -506,7 +611,7 @@ select {
 .method-scroll {
   flex: 1;
   overflow-y: auto;
-  padding: 4px 22px 24px;
+  padding: 4px var(--sp-5) var(--sp-block);
 }
 
 .method-grid {
@@ -835,6 +940,7 @@ select {
   font-size: 12.5px;
   border-right: 1px solid var(--ff-line);
   white-space: nowrap;
+  transition: background var(--motion-fast) ease, color var(--motion-fast) ease;
 }
 .segmented button:last-child {
   border-right: 0;
@@ -1027,16 +1133,17 @@ select {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  animation: ff-slide-right var(--motion-base) var(--motion-ease) both;
 }
 .taskcenter.collapsed {
   display: none;
 }
 .tc-head {
   height: 46px;
-  padding: 0 14px;
+  padding: 0 var(--sp-4);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   border-bottom: 1px solid var(--ff-line);
 }
 .tc-head b {
@@ -1047,8 +1154,8 @@ select {
 }
 .tc-stats {
   display: flex;
-  gap: 6px;
-  padding: 10px 14px 6px;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4) var(--sp-2);
   flex-wrap: wrap;
 }
 .stat {
@@ -1078,17 +1185,18 @@ select {
 .tc-body {
   flex: 1;
   overflow-y: auto;
-  padding: 6px 14px 14px;
+  padding: var(--sp-2) var(--sp-4) var(--sp-4);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-3);
 }
 
 .task {
   border: 1px solid var(--ff-line);
   border-radius: 11px;
   background: var(--ff-surf);
-  padding: 10px;
+  padding: var(--sp-3);
+  transition: border-color var(--motion-fast) ease;
 }
 .task.running {
   border-color: rgba(46, 211, 183, 0.35);
@@ -1232,6 +1340,7 @@ select {
   display: flex;
   justify-content: flex-end;
   z-index: 30;
+  animation: ff-fade-in var(--motion-fast) var(--motion-ease) both;
 }
 .drawer {
   width: 460px;
@@ -1242,6 +1351,7 @@ select {
   box-shadow: var(--ff-shadow);
   display: flex;
   flex-direction: column;
+  animation: ff-slide-right var(--motion-base) var(--motion-ease) both;
 }
 .drawer header {
   height: 52px;
@@ -1257,10 +1367,10 @@ select {
 .drawer .drawer-body {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
+  padding: var(--sp-4);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--sp-4);
 }
 
 .cap-row {
@@ -1522,6 +1632,7 @@ select {
   gap: 10px;
   align-items: center;
   padding-top: 8px;
+  animation: ff-list-in var(--motion-fast) var(--motion-ease) both;
 }
 .advanced-body .input {
   width: 96px;
@@ -1606,18 +1717,19 @@ select {
 .quick {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  margin: 0 0 14px;
+  gap: var(--sp-3);
+  margin: 0 var(--sp-5) var(--sp-4);
 }
 .qcard {
   border: 1px solid var(--ff-line);
   background: var(--ff-surf);
   border-radius: 10px;
-  padding: 10px 11px;
+  padding: var(--sp-3);
   text-align: left;
   cursor: pointer;
   color: var(--ff-fg);
   min-width: 0;
+  transition: border-color var(--motion-fast) ease, background var(--motion-fast) ease;
 }
 .qcard:hover {
   border-color: rgba(46, 211, 183, 0.35);
@@ -1653,17 +1765,18 @@ select {
 .overviews {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  gap: var(--sp-3);
+  margin: 0 var(--sp-5);
 }
 .ov {
   border: 1px solid var(--ff-line);
   background: var(--ff-bg2);
   border-radius: 10px;
-  padding: 10px 11px;
+  padding: var(--sp-3);
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
 }
 .ovtop {
   display: flex;
@@ -1724,12 +1837,12 @@ select {
 }
 .fmtstrip {
   border-top: 1px dashed var(--ff-line);
-  margin-top: 12px;
-  padding-top: 8px;
+  margin: var(--sp-4) var(--sp-5) 0;
+  padding-top: var(--sp-2);
   font-size: 11.5px;
   color: var(--ff-fg3);
   display: flex;
-  gap: 14px;
+  gap: var(--sp-4);
   flex-wrap: wrap;
 }
 
@@ -1846,3 +1959,70 @@ select {
   cursor: pointer;
   text-decoration: underline;
 }
+
+/* ---------- 硬件能力：默认摘要，明细按需展开 ---------- */
+.cap-sum {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.cap-sum-text {
+  flex: 1 1 220px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.cap-sum-line {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: 13px;
+}
+.cap-sum-line b {
+  font-weight: 600;
+}
+.cap-sum-sub {
+  font-size: 11.5px;
+  color: var(--ff-fg3);
+}
+.cap-sum-meta {
+  font-size: 11px;
+  color: var(--ff-fg3);
+  overflow-wrap: anywhere;
+}
+.cap-sum-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: auto;
+}
+.cap-detail {
+  display: flex;
+  flex-direction: column;
+  padding-top: var(--sp-2);
+  border-top: 1px dashed var(--ff-line);
+  animation: ff-list-in var(--motion-fast) var(--motion-ease) both;
+}
+.rot90 {
+  transform: rotate(90deg);
+  transform-origin: center;
+  transition: transform var(--motion-fast) ease;
+}
+
+/* ---------- 动效开关 ---------- */
+/* 系统开启「减少动态效果」时不做任何过渡/动画，只保留最终状态。 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+

@@ -34,7 +34,17 @@ export function SettingsSheet({
   toast: (text: string, kind?: "ok" | "error" | "info") => void;
 }) {
   const [ffmpegPath, setFfmpegPath] = useState(settings.ffmpegPath);
+  /** 硬件能力明细默认收起：35 项编码器明细会把下面的设置推到很远，只留摘要。 */
+  const [capDetailOpen, setCapDetailOpen] = useState(false);
   if (!open) return null;
+
+  const capOk = caps ? caps.videoEncoders.filter((item) => item.available && item.allowed).length : 0;
+  const capTotal = caps ? caps.videoEncoders.length : 0;
+  const capAudioOk = caps ? caps.audioEncoders.filter((item) => item.available && item.allowed).length : 0;
+  const capAudioTotal = caps ? caps.audioEncoders.length : 0;
+  const capDecodeOk = caps ? caps.decodeAccels.filter((item) => item.available).length : 0;
+  const capDecodeTotal = caps ? caps.decodeAccels.length : 0;
+  const capDetailCount = capTotal + capAudioTotal + capDecodeTotal;
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
@@ -224,17 +234,42 @@ export function SettingsSheet({
           </Group>
 
           <Group title="硬件能力探测" icon="gpu">
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 12, color: "var(--ff-fg3)" }}>
-                {caps ? `探测于 ${new Date(caps.probedAt).toLocaleString("zh-CN")} · ${caps.cacheHit ? "缓存命中" : "重新探测"}` : "尚未探测"}
-              </span>
-              <button className="btn small" style={{ marginLeft: "auto" }} onClick={onReprobe} disabled={probing}>
-                <Icon name="retry" size={12} />
-                {probing ? "探测中…" : "重新探测"}
-              </button>
+            <div className="cap-sum">
+              <div className="cap-sum-text">
+                <div className="cap-sum-line">
+                  <span className={`enc-dot ${caps ? "ok" : "bad"}`} />
+                  <b>{caps ? `视频编码可用 ${capOk} / ${capTotal}` : "尚未探测"}</b>
+                  <span className="cap-sum-sub">
+                    {caps
+                      ? `音频 ${capAudioOk} / ${capAudioTotal} · 解码 ${capDecodeOk} / ${capDecodeTotal}`
+                      : "启动后会自动探测，也可手动触发"}
+                  </span>
+                </div>
+                <div className="cap-sum-meta">
+                  {caps
+                    ? `探测于 ${new Date(caps.probedAt).toLocaleString("zh-CN")} · ${caps.cacheHit ? "缓存命中" : "重新探测"} · 指纹 ${caps.fingerprint}`
+                    : "—"}
+                </div>
+              </div>
+              <div className="cap-sum-actions">
+                <button className="btn small" onClick={onReprobe} disabled={probing}>
+                  <Icon name="retry" size={12} />
+                  {probing ? "探测中…" : "重新探测"}
+                </button>
+                {caps ? (
+                  <button
+                    className="btn small ghost"
+                    aria-expanded={capDetailOpen}
+                    onClick={() => setCapDetailOpen((value) => !value)}
+                  >
+                    <Icon name="chevron-right" size={12} className={capDetailOpen ? "rot90" : undefined} />
+                    {capDetailOpen ? "收起明细" : `展开明细（${capDetailCount} 项）`}
+                  </button>
+                ) : null}
+              </div>
             </div>
-            {caps ? (
-              <>
+            {caps && capDetailOpen ? (
+              <div className="cap-detail">
                 {caps.videoEncoders.map((encoder) => (
                   <div key={encoder.id} className="cap-row">
                     <span className={`enc-dot ${encoder.available && encoder.allowed ? "ok" : "bad"}`} />
@@ -277,10 +312,8 @@ export function SettingsSheet({
                     {note}
                   </div>
                 ))}
-              </>
-            ) : (
-              <div className="note">启动后会自动探测；也可手动触发。</div>
-            )}
+              </div>
+            ) : null}
           </Group>
 
           <Group title="许可策略" icon="alert">

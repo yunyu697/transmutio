@@ -45,6 +45,8 @@ export default function App() {
   const [flavor, setFlavor] = useState<FlavorInfo | null>(null);
   const [appVersion, setAppVersion] = useState("");
   const [probing, setProbing] = useState(false);
+  /** 首次能力探测是否已有结果。未完成前不渲染引导页，避免每次启动先闪一下引导页再跳主界面。 */
+  const [bootDone, setBootDone] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const toastSeq = useRef(0);
   /** 应用预设后递增，用于重建面板以读取新的 localStorage 参数。 */
@@ -130,12 +132,16 @@ export default function App() {
       try {
         const info = await api.resolveTools(customPath || undefined);
         setTools(info);
+        // 工具路径一确定就放开首屏：是否进引导页只取决于 tools，
+        // 编码器探测可能很慢（首次要试编），不能压着首屏一起等。
+        setBootDone(true);
         const capabilities = await api.probeCapabilities(customPath || undefined, settingsStore.get().allowGplEncoders, force);
         setCaps(capabilities);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         logger.error("tools probe failed", { message });
         toast(`初始化失败：${message}`, "error");
+        setBootDone(true);
       } finally {
         setProbing(false);
       }
@@ -246,6 +252,15 @@ export default function App() {
   // 输出位置：默认写回源目录（后端以 @source 解析），自定义时使用表单路径。
   const outputDir = settings.outputDirMode === "custom" ? settings.outputDir : "@source";
 
+  // 视图标识：变化时重建容器并重放一次入场动画（搜索输入不参与，避免每敲一个字闪一次）。
+  const viewKey = activeMethod
+    ? `method:${activeMethod.id}`
+    : query
+      ? "search"
+      : home
+        ? "home"
+        : `section:${activeSection}`;
+
   const renderPanel = () => {
     if (!activeMethod) {
       if (query) {
@@ -312,7 +327,10 @@ export default function App() {
   return (
     <div className="app">
       <div className="body">
-        {needsSetup ? (
+        {!bootDone ? (
+          // 首次探测未完成：只铺应用底色，不渲染引导页（否则每次启动都会先闪一下引导页再跳主界面）。
+          <div className="app-boot" aria-hidden="true" />
+        ) : needsSetup ? (
           <SetupWizard
             tools={tools}
             flavor={flavor}
@@ -353,10 +371,14 @@ export default function App() {
               onToggleTheme={() => patchSettings({ theme: settings.theme === "dark" ? "light" : "dark" })}
               onOpenSettings={() => setSettingsOpen(true)}
             />
-            <main className="main">{renderPanel()}</main>
+            <main className="main">
+              <div className="view" key={viewKey}>
+                {renderPanel()}
+              </div>
+            </main>
           </>
         )}
-        {tasksOpen && !needsSetup ? (
+        {tasksOpen && !needsSetup && bootDone ? (
           <TaskCenter
             tasks={taskState.tasks}
             stats={taskState.stats}
