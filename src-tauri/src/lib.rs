@@ -351,12 +351,16 @@ fn install_panic_hook() {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     install_panic_hook();
+    let mut context = tauri::generate_context!();
+    window_chrome::preset_window_config(&mut context);
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(Arc::new(AppState::default()))
         .setup(|app| {
             let handle = app.handle().clone();
+            // 窗口创建后补齐标题栏颜色；底色与明暗已在创建前按上次设置写进窗口配置。
+            window_chrome::apply_saved_chrome(&handle);
             let shared = app.state::<Arc<AppState>>().inner().clone();
             let boot_handle = handle.clone();
             let boot_state = shared.clone();
@@ -429,6 +433,6 @@ pub fn run() {
             updater::open_homepage,
             window_chrome::set_window_chrome
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running tauri application");
 }
