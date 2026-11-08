@@ -84,8 +84,8 @@ GPU 能力矩阵与实测/文档/待验证标注见 [GPU-能力矩阵.md](GPU-�
   PDF 功能已下线，不再需要、也不再调用 Poppler；`licenses/Poppler.txt` 仅作历史声明保留。
   第三方许可证全文保持原样，位于 `licenses/`。
 
-- 发布页：<https://github.com/yunyu697/transmutio/releases>（当前正式版 `1.2.0`，2026-11-07 发布；
-  `1.1.1` 为上一正式版，`1.1.0`、`1.0.0` 为更早正式版，`0.1.0` 为历史版本）
+- 发布页：<https://github.com/yunyu697/transmutio/releases>（当前正式版 `1.2.1`，2026-11-08 发布；
+  `1.2.0` 为上一正式版，`1.1.1`、`1.1.0`、`1.0.0` 为更早正式版，`0.1.0` 为历史版本）
 - **安装包不包含 FFmpeg 二进制**。仓库与 Release 附件都不分发这个二进制：
   FFmpeg 由用户自行准备并在首次启动时经引导页校验（版本 / 构建配置 / SHA-256）后落位到
   应用数据目录。因此本项目不承担 FFmpeg 二进制再分发的源码提供义务；若你要再分发它，
@@ -386,6 +386,17 @@ npm run test:rust  # 变体策略 + 文件安全 / 命名 / 容器与音频格�
 - 说明：代码中不存在 `last_install` 字段，故以「注册表版本 + 安装耗时 + 启动耗时」作为升级
   落地的等价证据，不额外编造指标
 - 未验证：macOS / Linux 真机运行
+
+`1.2.1` 实测摘要（字号修复，Windows 11 真机）：
+
+- 测量口径：真实安装包窗口（真实 WebView2 + CDP），非 headless 模拟
+- DPI 一致性：`GetDpiForWindow=192`（200%）、`devicePixelRatio=2`、
+  `outerWidth/innerWidth=1.0000` → 感知正常，无位图拉伸
+- 改前：`body` 12.5px / `line-height: normal`；`.side-label` 9px；状态栏与说明文字 10.5px
+- 改后：`body` 13px / 19.5px；状态栏与说明文字 12px / 18px；`.side-label` 11px；文件列表 13px
+- 三档（CDP `Emulation.setDeviceMetricsOverride` 1.0 / 1.25 / 1.5）：
+  `horizontalOverflow=false`、`clipped=0`、`truncated=2`（速览卡副标题单行省略，改前同为 2 条）
+- 回归：`panel-persist` 22/22 PASS（浏览器断言，非真机）
 
 `1.2.0` 实测摘要（破坏性版本，Windows 11 真机）：
 
