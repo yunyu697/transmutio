@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { paletteIds, palettes } from "@formatforge/design-tokens";
 import { api, type Capabilities, type FlavorInfo, type ToolsInfo } from "../lib/api";
 import type { Settings } from "../lib/settings";
 import { Icon } from "./Icon";
@@ -59,16 +60,49 @@ export function SettingsSheet({
 
         <div className="drawer-body">
           <Group title="外观与语言" icon="sun">
-            <Field label="主题">
+            <Field label="明暗">
               <Segmented
-                value={settings.theme}
-                onChange={(value) => onPatch({ theme: value })}
+                value={settings.brightness}
+                onChange={(value) => onPatch({ brightness: value })}
                 options={[
-                  { value: "dark", label: "深色（默认）" },
                   { value: "light", label: "浅色" },
+                  { value: "dark", label: "深色（默认）" },
+                  { value: "system", label: "跟随系统" },
                 ]}
               />
             </Field>
+            <Field label="配色方案">
+              <div className="palette-grid">
+                {paletteIds.map((id) => {
+                  const def = palettes[id];
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      className={`palette ${settings.palette === id ? "on" : ""}`}
+                      onClick={() => onPatch({ palette: id })}
+                      aria-pressed={settings.palette === id}
+                    >
+                      <span className="swatches" aria-hidden>
+                        {[def.dark.bg, def.dark.surf, def.dark.accent].map((color, index) => (
+                          <i key={`d${index}`} style={{ background: color }} />
+                        ))}
+                        {[def.light.bg, def.light.surf, def.light.accent].map((color, index) => (
+                          <i key={`l${index}`} style={{ background: color }} />
+                        ))}
+                      </span>
+                      <span className="meta">
+                        <b>{def.name}</b>
+                        <small>{def.hint}</small>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
+            <div className="note">
+              明暗只决定亮度基调，配色方案是一整套色板（背景、卡片、边框、文字、强调与状态色一起换）；两者可任意组合并分别记住。
+            </div>
             <div className="note">界面语言：本版仅提供简体中文。en-US 词典仅为未完成骨架，暂不提供切换。</div>
           </Group>
 

@@ -1,12 +1,15 @@
 import { createSettingsStore } from "@formatforge/settings";
 import { createI18n, mergeCatalogs, baseCatalogs, type MessageCatalogs } from "@formatforge/i18n";
-import type { ThemeMode } from "@formatforge/design-tokens";
-import { applyTheme, themes } from "@formatforge/design-tokens";
+import type { Brightness, PaletteId, ThemeMode } from "@formatforge/design-tokens";
+import { applyTheme, isPaletteId, paletteColors, resolveMode } from "@formatforge/design-tokens";
 import { invoke } from "@tauri-apps/api/core";
 import { createNamespacedStorage } from "./storage";
 
 export interface Settings {
-  theme: ThemeMode;
+  /** 明暗基调：浅色 / 深色 / 跟随系统。只管亮度，不含配色。 */
+  brightness: Brightness;
+  /** 配色方案：一套完整色板，和明暗可任意组合。 */
+  palette: PaletteId;
   concurrency: number;
   outputDir: string;
   ffmpegPath: string;
@@ -96,7 +99,8 @@ export const i18n = createI18n({
 export const settingsStore = createSettingsStore<Settings>({
   key: "settings",
   defaults: {
-    theme: "dark",
+    brightness: "dark",
+    palette: "graphite",
     concurrency: 4,
     outputDir: "",
     ffmpegPath: "",
@@ -113,20 +117,38 @@ export const settingsStore = createSettingsStore<Settings>({
   },
   storage: createNamespacedStorage(),
   version: 1,
-  sanitize: (value) => ({
-    ...value,
-    concurrency: Math.min(8, Math.max(1, Number(value.concurrency) || 4)),
-    theme: value.theme === "light" ? "light" : "dark",
-  }),
+  sanitize: (value) => {
+    // 旧版本的 theme 只有 light/dark，直接升级成 brightness，避免用户偏好丢失。
+    const legacyTheme = (value as unknown as { theme?: unknown }).theme;
+    return {
+      ...value,
+      concurrency: Math.min(8, Math.max(1, Number(value.concurrency) || 4)),
+      brightness:
+        value.brightness === "light" || value.brightness === "dark" || value.brightness === "system"
+          ? value.brightness
+          : legacyTheme === "light"
+            ? "light"
+            : "dark",
+      palette: isPaletteId(value.palette) ? value.palette : "graphite",
+    };
+  },
 });
 
-export function syncTheme(theme: ThemeMode): void {
-  applyTheme(theme);
+/** 系统是否偏好深色；无 matchMedia（测试环境）时按深色处理。 */
+export function systemPrefersDark(): boolean {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return true;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+export function syncTheme(brightness: Brightness, palette: PaletteId): ThemeMode {
+  const mode = resolveMode(brightness, systemPrefersDark());
+  applyTheme(palette, mode);
   // 只有 Tauri 内需要同步原生标题栏；浏览器预览与无头测试没有 __TAURI_INTERNALS__。
-  if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) return;
-  const { bg, bg2 } = themes[theme].colors;
+  if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) return mode;
+  const { bg, bg2 } = paletteColors(palette, mode);
   // bg = 页面底色；bg2 = 顶栏渐变起点，用作标题栏颜色，避免内容区与标题栏出现色差线。
-  void invoke("set_window_chrome", { theme, bg, caption: bg2 }).catch(() => {
+  void invoke("set_window_chrome", { theme: mode, bg, caption: bg2 }).catch(() => {
     /* 平台不支持标题栏配色时静默回退到 light/dark 标题栏，不影响使用 */
   });
+  return mode;
 }

@@ -5,6 +5,9 @@
  */
 
 export type ThemeMode = "dark" | "light";
+/** 明暗偏好：「跟随系统」在运行时解析成 ThemeMode，只决定亮度基调。 */
+export type Brightness = ThemeMode | "system";
+export type PaletteId = "graphite" | "ocean" | "amber" | "forest";
 
 export interface ColorTokens {
   bg: string;
@@ -36,7 +39,7 @@ export const darkColors: ColorTokens = {
   lineStrong: "#2E3D50",
   fg: "#E9EFF8",
   fg2: "#A7B4C6",
-  fg3: "#71809A",
+  fg3: "#7C8DA8",
   accent: "#2ED3B7",
   accentSoft: "rgba(46,211,183,0.14)",
   accent2: "#4F8CFF",
@@ -56,12 +59,12 @@ export const lightColors: ColorTokens = {
   lineStrong: "#C4D2E3",
   fg: "#15202B",
   fg2: "#4A5A6E",
-  fg3: "#77879B",
-  accent: "#0FAE95",
-  accentSoft: "rgba(15,174,149,0.12)",
+  fg3: "#5F7086",
+  accent: "#0A8571",
+  accentSoft: "rgba(10,133,113,0.12)",
   accent2: "#2E6FE0",
-  ok: "#17A673",
-  warn: "#B36B00",
+  ok: "#0F7F59",
+  warn: "#96600A",
   danger: "#D22F4A",
   shadow: "0 14px 34px rgba(20,40,70,0.12)",
 };
@@ -92,10 +95,179 @@ export interface ThemeDefinition {
   colors: ColorTokens;
 }
 
+/** 默认配色（石墨）。 */
 export const themes: Record<ThemeMode, ThemeDefinition> = {
   dark: { mode: "dark", colors: darkColors },
   light: { mode: "light", colors: lightColors },
 };
+
+export interface PaletteDefinition {
+  id: PaletteId;
+  /** 展示名：能看出气质差异，不做「主题 1/2/3」。 */
+  name: string;
+  hint: string;
+  dark: ColorTokens;
+  light: ColorTokens;
+}
+
+/**
+ * 四套完整色板：背景、表面、边框、主次文字、强调色、状态色、悬停/选中用的 soft 色一起换。
+ * 每一套都同时提供浅色与深色两份，明暗偏好与配色方案可任意组合。
+ */
+export const palettes: Record<PaletteId, PaletteDefinition> = {
+  graphite: {
+    id: "graphite",
+    name: "石墨",
+    hint: "冷灰中性 · 青绿强调",
+    dark: darkColors,
+    light: lightColors,
+  },
+  ocean: {
+    id: "ocean",
+    name: "深海",
+    hint: "蓝调沉着 · 冷光强调",
+    dark: {
+      bg: "#070F1C",
+      bg2: "#0B1626",
+      surf: "#101D31",
+      surf2: "#152540",
+      surf3: "#1B2E4C",
+      line: "#22375A",
+      lineStrong: "#2D4671",
+      fg: "#E6EEFB",
+      fg2: "#A9BCDA",
+      fg3: "#7B90B4",
+      accent: "#5AA6FF",
+      accentSoft: "rgba(90,166,255,0.16)",
+      accent2: "#59E0C6",
+      ok: "#4BD6A0",
+      warn: "#F2AE45",
+      danger: "#F2687E",
+      shadow: "0 18px 44px rgba(2,10,26,0.55)",
+    },
+    light: {
+      bg: "#E9F1FB",
+      bg2: "#F4F8FF",
+      surf: "#FFFFFF",
+      surf2: "#EDF3FC",
+      surf3: "#DCE7F7",
+      line: "#D2E0F2",
+      lineStrong: "#B4C8E4",
+      fg: "#0F1E33",
+      fg2: "#3E5677",
+      fg3: "#5B7395",
+      accent: "#1A64CC",
+      accentSoft: "rgba(26,100,204,0.12)",
+      accent2: "#0B8D7B",
+      ok: "#12865C",
+      warn: "#8F5600",
+      danger: "#BE2A46",
+      shadow: "0 14px 34px rgba(18,52,96,0.14)",
+    },
+  },
+  amber: {
+    id: "amber",
+    name: "暖砂",
+    hint: "米纸暖调 · 琥珀强调",
+    dark: {
+      bg: "#14100C",
+      bg2: "#1A1510",
+      surf: "#221B13",
+      surf2: "#2A2119",
+      surf3: "#33281E",
+      line: "#3F3225",
+      lineStrong: "#54422F",
+      fg: "#F7EEE2",
+      fg2: "#CDBBA6",
+      fg3: "#A08B74",
+      accent: "#F0AE55",
+      accentSoft: "rgba(240,174,85,0.16)",
+      accent2: "#8FB4D8",
+      ok: "#6CC48F",
+      warn: "#F0B44F",
+      danger: "#EE7568",
+      shadow: "0 18px 44px rgba(12,8,4,0.5)",
+    },
+    light: {
+      bg: "#F7F1E8",
+      bg2: "#FCF8F1",
+      surf: "#FFFFFF",
+      surf2: "#F6EEE1",
+      surf3: "#EDE1D0",
+      line: "#E3D5C2",
+      lineStrong: "#CBB89E",
+      fg: "#2A2118",
+      fg2: "#584634",
+      fg3: "#77604A",
+      accent: "#9C5B06",
+      accentSoft: "rgba(156,91,6,0.12)",
+      accent2: "#2A6AA3",
+      ok: "#186E45",
+      warn: "#815100",
+      danger: "#B0332C",
+      shadow: "0 14px 34px rgba(70,50,20,0.14)",
+    },
+  },
+  forest: {
+    id: "forest",
+    name: "苔原",
+    hint: "绿灰低饱和 · 薄荷强调",
+    dark: {
+      bg: "#0A1210",
+      bg2: "#0E1815",
+      surf: "#13201C",
+      surf2: "#182A24",
+      surf3: "#1E332C",
+      line: "#284237",
+      lineStrong: "#345548",
+      fg: "#E7F2ED",
+      fg2: "#ABC5BA",
+      fg3: "#81998B",
+      accent: "#4BD79C",
+      accentSoft: "rgba(75,215,156,0.15)",
+      accent2: "#83C2FF",
+      ok: "#4BD79C",
+      warn: "#EFB055",
+      danger: "#F0707A",
+      shadow: "0 18px 44px rgba(4,14,10,0.5)",
+    },
+    light: {
+      bg: "#ECF3EE",
+      bg2: "#F5FAF6",
+      surf: "#FFFFFF",
+      surf2: "#EEF6F1",
+      surf3: "#DFEBE3",
+      line: "#D2E1D7",
+      lineStrong: "#B6CCBE",
+      fg: "#14261D",
+      fg2: "#3C5949",
+      fg3: "#5A7566",
+      accent: "#0C8159",
+      accentSoft: "rgba(12,129,89,0.12)",
+      accent2: "#2A69A8",
+      ok: "#0F724C",
+      warn: "#8C5A00",
+      danger: "#B42B44",
+      shadow: "0 14px 34px rgba(16,54,36,0.14)",
+    },
+  },
+};
+
+export const paletteIds = Object.keys(palettes) as PaletteId[];
+
+export function isPaletteId(value: unknown): value is PaletteId {
+  return typeof value === "string" && value in palettes;
+}
+
+/** 「跟随系统」在这里落地：只影响亮度，配色方案保持用户所选。 */
+export function resolveMode(brightness: Brightness, systemPrefersDark: boolean): ThemeMode {
+  if (brightness === "system") return systemPrefersDark ? "dark" : "light";
+  return brightness;
+}
+
+export function paletteColors(palette: PaletteId, mode: ThemeMode): ColorTokens {
+  return palettes[palette][mode];
+}
 
 const CSS_VAR_MAP: Array<[keyof ColorTokens, string]> = [
   ["bg", "--ff-bg"],
@@ -118,19 +290,35 @@ const CSS_VAR_MAP: Array<[keyof ColorTokens, string]> = [
 ];
 
 /** 输出 CSS 变量声明文本，宿主工程可直接注入 :root。 */
-export function themeToCss(mode: ThemeMode): string {
-  const { colors } = themes[mode];
+export function themeToCss(mode: ThemeMode, palette: PaletteId = "graphite"): string {
+  const colors = paletteColors(palette, mode);
   const lines = CSS_VAR_MAP.map(([key, cssVar]) => `${cssVar}: ${colors[key]};`);
   lines.push(`--ff-font: ${typography.fontFamily};`);
   lines.push(`--ff-font-mono: ${typography.monoFamily};`);
   return lines.join("\n");
 }
 
-/** 运行时切换主题：只改 <html data-theme>，样式由 CSS 变量接管。 */
-export function applyTheme(mode: ThemeMode, root?: HTMLElement): void {
+/**
+ * 全部配色的 CSS：亮度由 [data-theme] 决定，色板由 [data-palette] 决定，两者正交。
+ * 深色是默认（html 规则），浅色覆盖在 [data-theme="light"]；每套配色再各自覆盖，
+ * 组合选择器优先级更高，保证「深色 + 任意配色」与「浅色 + 任意配色」都成立。
+ */
+export function allThemeCss(): string {
+  const parts = [`html{${themeToCss("dark", "graphite")}}`, `html[data-theme="light"]{${themeToCss("light", "graphite")}}`];
+  for (const id of paletteIds) {
+    if (id === "graphite") continue;
+    parts.push(`html[data-palette="${id}"]{${themeToCss("dark", id)}}`);
+    parts.push(`html[data-palette="${id}"][data-theme="light"]{${themeToCss("light", id)}}`);
+  }
+  return parts.join("\n");
+}
+
+/** 运行时切换：亮度写 data-theme，配色写 data-palette，样式全部由 CSS 变量接管。 */
+export function applyTheme(palette: PaletteId, mode: ThemeMode, root?: HTMLElement): void {
   const el = root ?? (typeof document !== "undefined" ? document.documentElement : undefined);
   if (!el) return;
   el.setAttribute("data-theme", mode);
+  el.setAttribute("data-palette", palette);
   el.style.colorScheme = mode === "dark" ? "dark" : "light";
 }
 

@@ -6,27 +6,39 @@
     <title>Transmutio</title>
     <style>
       /* 首帧底色：WebView2 默认白底，JS/CSS 还没加载时会先闪一下白。
-         这里用内联样式先把窗口底色铺满，再由下面的内联脚本按已保存主题改成浅色。 */
+         这里用内联样式先把窗口底色铺满，再由下面的内联脚本按「已保存的配色 + 明暗」改写。 */
       html,
       body {
         margin: 0;
         height: 100%;
-        background: #0a0e14;
-      }
-      html[data-theme="light"],
-      html[data-theme="light"] body {
-        background: #edf1f6;
+        background: var(--boot-bg, #0a0e14);
       }
     </style>
     <script>
-      // 在首帧之前读出已保存的主题，避免「深色底 → 浅色界面」的跳变。
+      // 在首帧之前读出已保存的明暗与配色，避免「深色底 → 浅色界面」或色板跳变。
       (function () {
         try {
           var raw = localStorage.getItem("transmutio:settings");
-          var data = raw ? JSON.parse(raw).data || {} : {};
-          var light = data.theme === "light";
-          if (light) document.documentElement.setAttribute("data-theme", "light");
-          document.documentElement.style.colorScheme = light ? "light" : "dark";
+          var parsed = raw ? JSON.parse(raw) : null;
+          var data = (parsed && parsed.data) || parsed || {};
+          // 旧版本只有 theme，升级时按它推断一次
+          var pref = data.brightness || (data.theme === "light" ? "light" : "dark");
+          var dark =
+            pref === "system"
+              ? !(window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches)
+              : pref !== "light";
+          var BG = {
+            graphite: { dark: "#0a0e14", light: "#edf1f6" },
+            ocean: { dark: "#070f1c", light: "#e9f1fb" },
+            amber: { dark: "#14100c", light: "#f7f1e8" },
+            forest: { dark: "#0a1210", light: "#ecf3ee" }
+          };
+          var palette = BG[data.palette] ? data.palette : "graphite";
+          var root = document.documentElement;
+          root.setAttribute("data-theme", dark ? "dark" : "light");
+          root.setAttribute("data-palette", palette);
+          root.style.colorScheme = dark ? "dark" : "light";
+          root.style.setProperty("--boot-bg", BG[palette][dark ? "dark" : "light"]);
         } catch (error) {
           /* 读不到设置就按默认深色渲染，不影响启动 */
         }

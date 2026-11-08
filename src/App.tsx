@@ -38,6 +38,8 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [tasksOpen, setTasksOpen] = useState(() => settingsStore.get().taskDrawerOpen);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** 解析后的亮度（「跟随系统」已折算成 light/dark），只用于图标方向，配色由 data-palette 决定。 */
+  const [resolvedDark, setResolvedDark] = useState(() => syncTheme(settingsStore.get().brightness, settingsStore.get().palette) === "dark");
   const [tools, setTools] = useState<ToolsInfo | null>(null);
   const [caps, setCaps] = useState<Capabilities | null>(null);
   const [flavor, setFlavor] = useState<FlavorInfo | null>(null);
@@ -75,10 +77,23 @@ export default function App() {
     setSettings(settingsStore.get());
   }, []);
 
-  // 主题与设置同步（syncTheme 内部同时处理 CSS 变量与原生标题栏）
+  // 主题：明暗与配色方案分开持久化，运行时解析成 data-theme + data-palette
   useEffect(() => {
-    syncTheme(settings.theme);
-  }, [settings.theme]);
+    setResolvedDark(syncTheme(settings.brightness, settings.palette) === "dark");
+  }, [settings.brightness, settings.palette]);
+
+  // 「跟随系统」时监听系统配色变化，只影响亮度，配色方案保持不变
+  useEffect(() => {
+    if (settings.brightness !== "system" || typeof window.matchMedia !== "function") return;
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => setResolvedDark(syncTheme("system", settings.palette) === "dark");
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, [settings.brightness, settings.palette]);
+
+  const toggleBrightness = useCallback(() => {
+    patchSettings({ brightness: resolvedDark ? "light" : "dark" });
+  }, [patchSettings, resolvedDark]);
 
   useEffect(() => {
     const unsubscribe = settingsStore.subscribe((value) => setSettings(value));
@@ -344,13 +359,13 @@ export default function App() {
               search={search}
               taskCount={running}
               tasksOpen={tasksOpen}
-              theme={settings.theme}
+              dark={resolvedDark}
               onSelectSection={selectSection}
               onGoRoot={goRoot}
               onSearch={setSearch}
               onToggleCollapsed={() => patchSettings({ navCollapsed: !settings.navCollapsed })}
               onToggleTasks={toggleTasks}
-              onToggleTheme={() => patchSettings({ theme: settings.theme === "dark" ? "light" : "dark" })}
+              onToggleTheme={toggleBrightness}
               onOpenSettings={() => setSettingsOpen(true)}
             />
             <main className="main">

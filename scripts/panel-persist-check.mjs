@@ -779,6 +779,89 @@ async function main() {
     await page5.screenshot({ path: path.join(OUT_DIR, "output-source.png") });
     await page5.close();
 
+    // ---------- 主题：明暗 × 配色方案分开设置、可组合、可持久化 ----------
+    const page6 = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+    page6.on("pageerror", (error) => pageErrors.push(String(error)));
+    await mockTauri(page6);
+    await page6.goto(origin, { waitUntil: "domcontentloaded" });
+    await page6.waitForSelector(".method-grid", { timeout: 10000 });
+    const readTheme = () =>
+      page6.evaluate(() => {
+        const style = getComputedStyle(document.documentElement);
+        return {
+          theme: document.documentElement.getAttribute("data-theme"),
+          palette: document.documentElement.getAttribute("data-palette"),
+          bg: style.getPropertyValue("--ff-bg").trim().toLowerCase(),
+          surf: style.getPropertyValue("--ff-surf").trim().toLowerCase(),
+          accent: style.getPropertyValue("--ff-accent").trim().toLowerCase(),
+          stored: (() => {
+            try {
+              return JSON.parse(localStorage.getItem("transmutio:settings") || "{}").data || {};
+            } catch {
+              return {};
+            }
+          })(),
+        };
+      });
+    const themeDefault = await readTheme();
+    add(
+      "ui-redesign",
+      "默认主题：深色 + 石墨，data-theme / data-palette 与 CSS 变量一致",
+      themeDefault.theme === "dark" &&
+        themeDefault.palette === "graphite" &&
+        themeDefault.bg === "#0a0e14" &&
+        themeDefault.surf === "#121a24",
+      JSON.stringify(themeDefault),
+    );
+
+    await page6.locator(".side-foot .sibtn").last().click();
+    await page6.waitForSelector(".drawer", { timeout: 5000 });
+    const paletteCount = await page6.locator(".palette-grid .palette").count();
+    add("ui-redesign", "设置页提供明暗三档 + 4 套完整配色", paletteCount === 4, `paletteCards=${paletteCount}`);
+    await page6.waitForTimeout(400); // 等抽屉滑入动画结束再截图
+    await page6.screenshot({ path: path.join(OUT_DIR, "palette-settings.png") });
+
+    await page6.getByRole("button", { name: "浅色", exact: true }).click();
+    const themeLight = await readTheme();
+    add(
+      "ui-redesign",
+      "只改明暗：切到浅色后配色仍是石墨，只有亮度变量变化",
+      themeLight.theme === "light" &&
+        themeLight.palette === "graphite" &&
+        themeLight.bg === "#edf1f6" &&
+        themeLight.stored.brightness === "light",
+      JSON.stringify(themeLight),
+    );
+
+    await page6.getByRole("button", { name: /深海/ }).click();
+    const themeOcean = await readTheme();
+    add(
+      "ui-redesign",
+      "明暗与配色正交组合：浅色 + 深海，背景/卡片/强调色整套切换",
+      themeOcean.theme === "light" &&
+        themeOcean.palette === "ocean" &&
+        themeOcean.bg === "#e9f1fb" &&
+        themeOcean.surf === "#ffffff" &&
+        themeOcean.accent === "#1a64cc" &&
+        themeOcean.stored.palette === "ocean" &&
+        themeOcean.stored.brightness === "light",
+      JSON.stringify(themeOcean),
+    );
+
+    await page6.reload({ waitUntil: "domcontentloaded" });
+    await page6.waitForSelector(".method-grid", { timeout: 10000 });
+    const themePersisted = await readTheme();
+    add(
+      "ui-redesign",
+      "主题持久化：重启后仍是浅色 + 深海",
+      themePersisted.theme === "light" &&
+        themePersisted.palette === "ocean" &&
+        themePersisted.bg === "#e9f1fb",
+      JSON.stringify(themePersisted),
+    );
+    await page6.screenshot({ path: path.join(OUT_DIR, "theme-ocean-light.png") });
+    await page6.close();
+
     const brand = await page4.evaluate(() => {
       const mark = document.querySelector(".sidenav .appmark:not(.rail-mark)");
       const img = mark?.querySelector("img");

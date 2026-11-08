@@ -11,7 +11,8 @@ export interface SideNavProps {
   search: string;
   taskCount: number;
   tasksOpen: boolean;
-  theme: "dark" | "light";
+  /** 解析后的亮度：true = 深色，只用于太阳/月亮图标方向。 */
+  dark: boolean;
   onSelectSection: (section: SectionDef) => void;
   /** 回到当前分区的方法列表（品牌名/图标点击）。 */
   onGoRoot: () => void;
@@ -35,7 +36,7 @@ export function SideNav({
   search,
   taskCount,
   tasksOpen,
-  theme,
+  dark,
   onSelectSection,
   onGoRoot,
   onSearch,
@@ -141,11 +142,11 @@ export function SideNav({
           <button
             type="button"
             className="railbtn"
-            title={theme === "dark" ? "切换到浅色模式" : "切换到深色模式"}
-            aria-label={theme === "dark" ? "切换到浅色模式" : "切换到深色模式"}
+            title={dark ? "切换到浅色模式" : "切换到深色模式"}
+            aria-label={dark ? "切换到浅色模式" : "切换到深色模式"}
             onClick={onToggleTheme}
           >
-            <Icon name={theme === "dark" ? "sun" : "moon"} size={17} />
+            <Icon name={dark ? "sun" : "moon"} size={17} />
           </button>
           <button type="button" className="railbtn" title="设置" aria-label="设置" onClick={onOpenSettings}>
             <Icon name="settings" size={17} />
@@ -167,11 +168,11 @@ export function SideNav({
             <button
               type="button"
               className="sibtn"
-              title={theme === "dark" ? "切换到浅色模式" : "切换到深色模式"}
-              aria-label={theme === "dark" ? "切换到浅色模式" : "切换到深色模式"}
+              title={dark ? "切换到浅色模式" : "切换到深色模式"}
+              aria-label={dark ? "切换到浅色模式" : "切换到深色模式"}
               onClick={onToggleTheme}
             >
-              <Icon name={theme === "dark" ? "sun" : "moon"} size={16} />
+              <Icon name={dark ? "sun" : "moon"} size={16} />
             </button>
             <button type="button" className="sibtn" title="设置" aria-label="设置" onClick={onOpenSettings}>
               <Icon name="settings" size={16} />
