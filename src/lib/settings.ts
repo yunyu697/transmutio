@@ -19,8 +19,6 @@ export interface Settings {
   lastSection: string;
   /** 左栏折叠态（64px rail）；持久化，重启后保持。 */
   navCollapsed: boolean;
-  /** 最近使用的方法 id，最新在前，最多 4 条。 */
-  recentMethods: string[];
   /** 每个方法上次使用的预设 id（按方法粒度记忆）。 */
   lastPresetId: Record<string, string>;
   /** 输出位置模式：source = 与源文件相同目录；custom = 自定义目录。 */
@@ -107,7 +105,6 @@ export const settingsStore = createSettingsStore<Settings>({
     taskCenterOpen: true,
     lastSection: "video",
     navCollapsed: false,
-    recentMethods: [],
     lastPresetId: {},
     outputDirMode: "source",
     afterAction: "none",

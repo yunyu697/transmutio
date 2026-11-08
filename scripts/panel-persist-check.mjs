@@ -248,7 +248,7 @@ async function main() {
     page.on("pageerror", (error) => pageErrors.push(String(error)));
     await mockTauri(page);
     await page.goto(origin, { waitUntil: "domcontentloaded" });
-    await page.waitForSelector(".method-grid, .overviews", { timeout: 10000 });
+    await page.waitForSelector(".method-grid", { timeout: 10000 });
 
     // 视频面板
     await openMethod(page, "视频", "视频转码");
@@ -286,7 +286,7 @@ async function main() {
 
     // 音频面板
     await page.locator(".wb-head .btn").first().click();
-    await page.waitForSelector(".method-grid, .overviews", { timeout: 10000 });
+    await page.waitForSelector(".method-grid", { timeout: 10000 });
     await openMethod(page, "音频", "音频转码");
     await field(page, "码率").locator("select").selectOption("max");
     await field(page, "采样率").locator(".segmented button").filter({ hasText: "48 kHz" }).click();
@@ -301,7 +301,7 @@ async function main() {
 
     // 图片面板
     await page.locator(".wb-head .btn").first().click();
-    await page.waitForSelector(".method-grid, .overviews", { timeout: 10000 });
+    await page.waitForSelector(".method-grid", { timeout: 10000 });
     await openMethod(page, "图片", "图片批量转换");
     await field(page, "格式").locator(".segmented button").filter({ hasText: "WebP" }).click();
     await field(page, "最长边上限").locator("select").selectOption("1920");
@@ -317,7 +317,7 @@ async function main() {
 
     // ---------- reload（同一 WebView，等价于保留数据的重启）----------
     await page.reload({ waitUntil: "domcontentloaded" });
-    await page.waitForSelector(".method-grid, .overviews", { timeout: 10000 });
+    await page.waitForSelector(".method-grid", { timeout: 10000 });
 
     await openMethod(page, "视频", "视频转码");
     const videoRestored = {
@@ -339,7 +339,7 @@ async function main() {
     );
 
     await page.locator(".wb-head .btn").first().click();
-    await page.waitForSelector(".method-grid, .overviews", { timeout: 10000 });
+    await page.waitForSelector(".method-grid", { timeout: 10000 });
     await openMethod(page, "音频", "音频转码");
     const audioRestored = {
       bitrate: await field(page, "码率").locator("select").inputValue(),
@@ -354,7 +354,7 @@ async function main() {
     );
 
     await page.locator(".wb-head .btn").first().click();
-    await page.waitForSelector(".method-grid, .overviews", { timeout: 10000 });
+    await page.waitForSelector(".method-grid", { timeout: 10000 });
     await openMethod(page, "图片", "图片批量转换");
     const imageRestored = {
       format: (await field(page, "格式").locator(".segmented button.on").innerText()).trim(),
@@ -400,7 +400,7 @@ async function main() {
     page2.on("pageerror", (error) => pageErrors.push(String(error)));
     await mockTauri(page2, { prefs: injected });
     await page2.goto(origin, { waitUntil: "domcontentloaded" });
-    await page2.waitForSelector(".method-grid, .overviews", { timeout: 10000 });
+    await page2.waitForSelector(".method-grid", { timeout: 10000 });
     await openMethod(page2, "视频", "视频转码");
     const injectedRestored = {
       codec: (await field(page2, "视频编码").locator(".segmented button.on").innerText()).trim(),
@@ -486,7 +486,7 @@ async function main() {
     }, legacyInjected);
     await mockTauri(page3);
     await page3.goto(origin, { waitUntil: "domcontentloaded" });
-    await page3.waitForSelector(".method-grid, .overviews", { timeout: 10000 });
+    await page3.waitForSelector(".method-grid", { timeout: 10000 });
 
     const legacyPrefixKeys = Object.keys(legacyInjected).filter((k) => k.startsWith("formatforge:"));
     const migrationKeys = [
@@ -537,7 +537,7 @@ async function main() {
 
     const legacyAccessBefore = await page3.evaluate(() => window.__legacyAccessLog || []);
     await page3.reload({ waitUntil: "domcontentloaded" });
-    await page3.waitForSelector(".method-grid, .overviews", { timeout: 10000 });
+    await page3.waitForSelector(".method-grid", { timeout: 10000 });
     const legacyAccessAfter = await page3.evaluate(() => window.__legacyAccessLog || []);
     const legacyAccess = [...legacyAccessBefore, ...legacyAccessAfter];
     add(
@@ -573,26 +573,29 @@ async function main() {
     page4.on("pageerror", (error) => pageErrors.push(String(error)));
     await mockTauri(page4);
     await page4.goto(origin, { waitUntil: "domcontentloaded" });
-    await page4.waitForSelector(".overviews .ov", { timeout: 10000 });
+    await page4.waitForSelector(".method-grid", { timeout: 10000 });
 
-    const home = await page4.evaluate(() => {
-      const cards = Array.from(document.querySelectorAll(".overviews .ov"));
-      return {
-        count: cards.length,
-        chips: cards.map((c) => c.querySelectorAll(".chips .chip").length),
-        metalines: cards.map((c) => c.querySelectorAll(".ovmetaline").length),
-        go: cards.map((c) => Boolean(c.querySelector(".go"))),
-      };
-    });
+    // 入口已合并：启动直接落在当前分区的方法列表，侧栏只有分区一层。
+    const singleEntry = await page4.evaluate(() => ({
+      grid: document.querySelectorAll(".method-grid .card").length,
+      grows: document.querySelectorAll(".sidenav .grow").length,
+      recent: document.querySelectorAll(".sidenav .ritem, .sidenav .side-group .side-label").length,
+      subs: document.querySelectorAll(".sidenav .subs, .sidenav .sub").length,
+      homeBlocks: document.querySelectorAll(".overviews, .quick, .fmtstrip").length,
+      activeSection: document.querySelector(".sidenav .grow.active")?.textContent ?? "",
+    }));
     add(
       "ui-redesign",
-      "首页速览卡 3 张：方法 chips + 格式 / 场景 / 上次 + 继续入口",
-      home.count === 3 &&
-        home.chips.every((n) => n >= 2) &&
-        home.metalines.every((n) => n >= 2) &&
-        home.go.every(Boolean),
-      JSON.stringify(home),
+      "入口合一：启动即方法列表，侧栏仅 3 个分区、无最近使用 / 子项 / 首页速览卡",
+      singleEntry.grid === 11 &&
+        singleEntry.grows === 3 &&
+        singleEntry.recent === 1 &&
+        singleEntry.subs === 0 &&
+        singleEntry.homeBlocks === 0 &&
+        singleEntry.activeSection.includes("视频"),
+      JSON.stringify(singleEntry),
     );
+    await page4.screenshot({ path: path.join(OUT_DIR, "entry-single.png") });
 
     const brand = await page4.evaluate(() => {
       const mark = document.querySelector(".sidenav .appmark:not(.rail-mark)");
@@ -671,7 +674,7 @@ async function main() {
 
     await field(page4, "分辨率").locator("select").selectOption("1080");
     await page4.locator(".wb-head .btn").first().click();
-    await page4.waitForSelector(".method-grid, .overviews", { timeout: 10000 });
+    await page4.waitForSelector(".method-grid", { timeout: 10000 });
     await openMethod(page4, "视频", "视频转码");
     const restored = await field(page4, "分辨率").locator("select").inputValue();
     const toastText = await page4.evaluate(

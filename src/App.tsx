@@ -8,7 +8,6 @@ import { crashReporter, logger } from "./lib/telemetry";
 import { findMethod, sections, type MethodDef, type SectionDef } from "./catalog";
 import { SideNav } from "./components/SideNav";
 import { MethodGrid } from "./components/MethodGrid";
-import { HomeView } from "./components/HomeView";
 import { TaskCenter } from "./components/TaskCenter";
 import { SettingsSheet } from "./components/SettingsSheet";
 import { SetupWizard } from "./components/SetupWizard";
@@ -36,7 +35,6 @@ export default function App() {
     return sections.some((section) => section.id === saved) ? saved : DEFAULT_SECTION.id;
   });
   const [activeMethod, setActiveMethod] = useState<MethodDef | null>(null);
-  const [home, setHome] = useState(true);
   const [search, setSearch] = useState("");
   const [tasksOpen, setTasksOpen] = useState(() => settingsStore.get().taskCenterOpen);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -184,14 +182,13 @@ export default function App() {
   const selectSection = (section: SectionDef) => {
     setActiveSection(section.id);
     setActiveMethod(null);
-    setHome(false);
     setSearch("");
     patchSettings({ lastSection: section.id });
   };
 
-  const openHome = () => {
+  /** 点品牌名 / 图标：回到当前分区的方法列表（入口已合并，不再有独立首页）。 */
+  const goRoot = () => {
     setActiveMethod(null);
-    setHome(true);
     setSearch("");
   };
 
@@ -201,11 +198,8 @@ export default function App() {
       return;
     }
     setActiveSection(method.sectionId);
-    setHome(false);
-    patchSettings({
-      lastSection: method.sectionId,
-      recentMethods: [method.id, ...settings.recentMethods.filter((id) => id !== method.id)].slice(0, 4),
-    });
+    setSearch("");
+    patchSettings({ lastSection: method.sectionId });
 
     // 启动默认载入该「方法」上次用过的预设；带撤销，避免覆盖刚调好的参数。
     const preset = lastPresetFor(method.id);
@@ -253,13 +247,7 @@ export default function App() {
   const outputDir = settings.outputDirMode === "custom" ? settings.outputDir : "@source";
 
   // 视图标识：变化时重建容器并重放一次入场动画（搜索输入不参与，避免每敲一个字闪一次）。
-  const viewKey = activeMethod
-    ? `method:${activeMethod.id}`
-    : query
-      ? "search"
-      : home
-        ? "home"
-        : `section:${activeSection}`;
+  const viewKey = activeMethod ? `method:${activeMethod.id}` : query ? "search" : `section:${activeSection}`;
 
   const renderPanel = () => {
     if (!activeMethod) {
@@ -272,11 +260,6 @@ export default function App() {
             onPick={pickMethod}
             onUnimplemented={pickMethod}
           />
-        );
-      }
-      if (!query && home) {
-        return (
-          <HomeView recentMethods={settings.recentMethods} onPickSection={selectSection} onPickMethod={pickMethod} />
         );
       }
       return (
@@ -356,15 +339,13 @@ export default function App() {
               activeMethodId={activeMethod?.id ?? null}
               collapsed={settings.navCollapsed}
               search={search}
-              recentMethods={settings.recentMethods}
               outputDir={settings.outputDir}
               outputDirMode={settings.outputDirMode}
               taskCount={running}
               tasksOpen={tasksOpen}
               theme={settings.theme}
               onSelectSection={selectSection}
-              onPickMethod={pickMethod}
-              onHome={openHome}
+              onGoRoot={goRoot}
               onSearch={setSearch}
               onToggleCollapsed={() => patchSettings({ navCollapsed: !settings.navCollapsed })}
               onToggleTasks={toggleTasks}
