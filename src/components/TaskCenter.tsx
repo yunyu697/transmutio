@@ -12,6 +12,71 @@ const STATUS_LABEL: Record<Job["status"], string> = {
   skipped: "已跳过",
 };
 
+/**
+ * 底部队列条：常驻在状态栏上方，一行说清「在跑什么、还剩多少、有没有失败」。
+ * 点左侧主体或右上角箭头展开下方抽屉（完整任务列表）。
+ */
+export function QueueBar({
+  stats,
+  tasks,
+  paused,
+  open,
+  onToggle,
+  onPause,
+}: {
+  stats: TaskQueueStats;
+  tasks: Job[];
+  paused: boolean;
+  open: boolean;
+  onToggle: () => void;
+  onPause: (paused: boolean) => void;
+}) {
+  const current = tasks.find((task) => task.status === "running");
+  const percent = current ? Math.round(Math.max(0, Math.min(1, current.progress)) * 100) : 0;
+
+  return (
+    <div className={`queuebar ${open ? "open" : ""}`} role="region" aria-label="任务队列">
+      <button
+        type="button"
+        className="qb-main"
+        onClick={onToggle}
+        aria-expanded={open}
+        title={open ? "收起任务抽屉" : "展开任务抽屉"}
+      >
+        <Icon name={open ? "chevron-down" : "chevron-up"} size={13} />
+        <b>任务队列</b>
+        <span className={`qb-stat ${stats.running ? "run" : ""}`}>运行 {stats.running}</span>
+        <span className="qb-stat">排队 {stats.queued}</span>
+        <span className="qb-stat">完成 {stats.done}</span>
+        {stats.failed ? <span className="qb-stat bad">失败 {stats.failed}</span> : null}
+        {current ? (
+          <>
+            <span className="qb-name" title={current.inputName}>
+              {current.inputName}
+            </span>
+            <span className="qb-progress">
+              <i style={{ width: `${percent}%` }} />
+            </span>
+            <span className="qb-stat">{percent}%</span>
+          </>
+        ) : (
+          <span className="qb-idle">
+            {stats.total === 0 ? "暂无任务 · 选择方法并添加文件即可开始" : "队列空闲"}
+          </span>
+        )}
+      </button>
+      <button
+        type="button"
+        className={`btn small ${paused ? "primary" : "ghost"}`}
+        onClick={() => onPause(!paused)}
+        title={paused ? "继续调度队列中的任务" : "暂停调度：不影响已在运行的任务"}
+      >
+        {paused ? "继续队列" : "暂停队列"}
+      </button>
+    </div>
+  );
+}
+
 export function TaskCenter({
   tasks,
   stats,
@@ -78,8 +143,8 @@ export function TaskCenter({
             </option>
           ))}
         </select>
-        <button className="iconbtn" onClick={onClose} title="收起任务中心">
-          <Icon name="close" size={13} />
+        <button className="iconbtn" onClick={onClose} title="收起任务抽屉">
+          <Icon name="chevron-down" size={14} />
         </button>
       </div>
 

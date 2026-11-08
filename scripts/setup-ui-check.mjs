@@ -285,8 +285,8 @@ async function scenarioMissing(browser, origin, results) {
     Boolean(setupBox && setupBox.width > 900 && setupBox.height > 400) &&
       (await count(page, ".sidenav")) === 0 &&
       (await count(page, ".main")) === 0 &&
-      (await count(page, ".taskcenter")) === 0,
-    `setup 尺寸 ${setupBox?.width}x${setupBox?.height}，侧栏/方法网格/任务中心均未渲染`,
+      (await count(page, ".taskcenter, .queuebar")) === 0,
+    `setup 尺寸 ${setupBox?.width}x${setupBox?.height}，侧栏/方法网格/任务队列均未渲染`,
   );
 
   const title = await text(page, ".setup-head h1");
@@ -343,7 +343,7 @@ async function scenarioMissing(browser, origin, results) {
   );
 
   add("安装后离开引导页进入主界面", (await count(page, ".sidenav")) === 1, "侧栏已渲染");
-  add("安装后任务中心恢复", (await count(page, ".taskcenter")) === 1, "任务中心已重新出现");
+  add("安装后任务队列条恢复", (await count(page, ".queuebar")) === 1, "底部队列条已重新出现");
   const status = await text(page, ".statusbar");
   add("状态栏显示 FFmpeg 就绪", status.includes("FFmpeg"), status.replace(/\s+/g, " ").slice(0, 80));
   add(
@@ -489,7 +489,7 @@ async function scenarioGplVariant(browser, origin, results) {
     status.includes("Transmutio GPL · GPL") && status.includes("FFmpeg 构建：GPL"),
     status.replace(/\s+/g, " ").slice(0, 120),
   );
-  add("GPL 版安装后任务中心恢复", (await count(page, ".taskcenter")) === 1, "任务中心已重新出现");
+  add("GPL 版安装后任务队列条恢复", (await count(page, ".queuebar")) === 1, "底部队列条已重新出现");
   add("页面无未捕获异常", pageErrors.length === 0, pageErrors.join("; ") || "无");
   await page.close();
   return "setup-ui-gpl.png";

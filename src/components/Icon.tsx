@@ -28,6 +28,8 @@ const paths: Record<string, string> = {
   queue: "M4 6h16 M4 12h16 M4 18h10",
   "chevron-left": "M15 6l-6 6 6 6",
   "chevron-right": "M9 6l6 6-6 6",
+  "chevron-up": "M6 15l6-6 6 6",
+  "chevron-down": "M6 9l6 6 6-6",
   bookmark: "M6 3h12v18l-6-4-6 4z",
   save: "M5 3h11l3 3v15H5z M8 3v6h8 M8 14h8v7H8z",
   plus: "M12 5v14 M5 12h14",

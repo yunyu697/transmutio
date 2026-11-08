@@ -15,7 +15,8 @@ export interface Settings {
   /** 内置下载器使用的来源 id；空 = 官方优先、失败按清单顺序回退 */
   ffmpegDownloadSource: string;
   allowGplEncoders: boolean;
-  taskCenterOpen: boolean;
+  /** 底部任务抽屉是否展开；队列条本身常驻，抽屉默认收起。 */
+  taskDrawerOpen: boolean;
   lastSection: string;
   /** 左栏折叠态（64px rail）；持久化，重启后保持。 */
   navCollapsed: boolean;
@@ -102,7 +103,7 @@ export const settingsStore = createSettingsStore<Settings>({
     ffmpegSourceUrl: "",
     ffmpegDownloadSource: "",
     allowGplEncoders: false,
-    taskCenterOpen: true,
+    taskDrawerOpen: false,
     lastSection: "video",
     navCollapsed: false,
     lastPresetId: {},

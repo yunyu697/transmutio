@@ -643,6 +643,58 @@ async function main() {
     );
     await page4.screenshot({ path: path.join(OUT_DIR, "entry-single.png") });
 
+    // 任务中心：底部队列条常驻，抽屉默认收起，点开后才出现完整列表。
+    const barState = await page4.evaluate(() => {
+      const bar = document.querySelector(".queuebar");
+      const status = document.querySelector(".statusbar");
+      const main = document.querySelector(".main");
+      const barBox = bar?.getBoundingClientRect();
+      return {
+        bar: Boolean(bar),
+        barHeight: Math.round(barBox?.height ?? 0),
+        aboveStatus: Boolean(barBox && status && status.getBoundingClientRect().top >= barBox.bottom - 1),
+        drawer: document.querySelectorAll(".taskcenter").length,
+        mainHeight: Math.round(main?.getBoundingClientRect().height ?? 0),
+        text: bar?.textContent?.replace(/\s+/g, " ").trim().slice(0, 80) ?? "",
+      };
+    });
+    add(
+      "ui-redesign",
+      "任务中心降为底部队列条：44px 常驻在状态栏上方，抽屉默认收起",
+      barState.bar &&
+        barState.barHeight === 44 &&
+        barState.aboveStatus &&
+        barState.drawer === 0 &&
+        barState.text.includes("任务队列"),
+      JSON.stringify(barState),
+    );
+
+    await page4.locator(".queuebar .qb-main").click();
+    await page4.waitForSelector(".taskcenter", { timeout: 5000 });
+    const drawerState = await page4.evaluate(() => {
+      const drawer = document.querySelector(".taskcenter");
+      const bar = document.querySelector(".queuebar");
+      return {
+        height: Math.round(drawer?.getBoundingClientRect().height ?? 0),
+        barStillVisible: Boolean(bar && bar.getBoundingClientRect().height > 0),
+        expanded: document.querySelector(".qb-main")?.getAttribute("aria-expanded"),
+      };
+    });
+    add(
+      "ui-redesign",
+      "点击队列条展开任务抽屉，队列条保持可见",
+      drawerState.height >= 200 &&
+        drawerState.height <= 340 &&
+        drawerState.barStillVisible &&
+        drawerState.expanded === "true",
+      JSON.stringify(drawerState),
+    );
+    await page4.screenshot({ path: path.join(OUT_DIR, "queue-drawer.png") });
+
+    await page4.locator(".queuebar .qb-main").click();
+    const drawerClosed = (await page4.locator(".taskcenter").count()) === 0;
+    add("ui-redesign", "再次点击队列条收起抽屉", drawerClosed, `drawerCount=${drawerClosed ? 0 : 1}`);
+
     const brand = await page4.evaluate(() => {
       const mark = document.querySelector(".sidenav .appmark:not(.rail-mark)");
       const img = mark?.querySelector("img");

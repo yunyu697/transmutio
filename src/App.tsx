@@ -8,7 +8,7 @@ import { crashReporter, logger } from "./lib/telemetry";
 import { findMethod, sections, type MethodDef, type SectionDef } from "./catalog";
 import { SideNav } from "./components/SideNav";
 import { MethodGrid } from "./components/MethodGrid";
-import { TaskCenter } from "./components/TaskCenter";
+import { TaskCenter, QueueBar } from "./components/TaskCenter";
 import { SettingsSheet } from "./components/SettingsSheet";
 import { SetupWizard } from "./components/SetupWizard";
 import { VideoPanel } from "./panels/VideoPanel";
@@ -36,7 +36,7 @@ export default function App() {
   });
   const [activeMethod, setActiveMethod] = useState<MethodDef | null>(null);
   const [search, setSearch] = useState("");
-  const [tasksOpen, setTasksOpen] = useState(() => settingsStore.get().taskCenterOpen);
+  const [tasksOpen, setTasksOpen] = useState(() => settingsStore.get().taskDrawerOpen);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [tools, setTools] = useState<ToolsInfo | null>(null);
   const [caps, setCaps] = useState<Capabilities | null>(null);
@@ -229,7 +229,7 @@ export default function App() {
   const toggleTasks = () => {
     const next = !tasksOpen;
     setTasksOpen(next);
-    patchSettings({ taskCenterOpen: next });
+    patchSettings({ taskDrawerOpen: next });
   };
 
   const ffmpegReady = Boolean(tools?.ffmpeg?.exists);
@@ -359,39 +359,52 @@ export default function App() {
             </main>
           </>
         )}
-        {tasksOpen && !needsSetup && bootDone ? (
-          <TaskCenter
-            tasks={taskState.tasks}
-            stats={taskState.stats}
-            concurrency={settings.concurrency}
-            onConcurrency={(value) => patchSettings({ concurrency: value })}
-            paused={settings.queuePaused}
-            onPause={(value) => patchSettings({ queuePaused: value })}
-            onCancel={(id) => {
-              void taskQueue.cancel(id).catch((error) => toast(`取消失败：${error}`, "error"));
-            }}
-            onRetry={(id) => {
-              void taskQueue.retry(id).catch((error) => toast(`重试失败：${error}`, "error"));
-            }}
-            onOpenOutput={(id) => {
-              void taskQueue.openOutput(id).catch((error) => toast(`打开目录失败：${error}`, "error"));
-            }}
-            onOpenLog={(id) => {
-              void api.openJobLog(id).catch((error) => toast(`打开日志失败：${error}`, "error"));
-            }}
-            onClearFinished={() => {
-              void api
-                .removeFinished()
-                .then(() => taskQueue.refresh())
-                .catch((error) => toast(`清理失败：${error}`, "error"));
-            }}
-            onClose={() => {
-              setTasksOpen(false);
-              patchSettings({ taskCenterOpen: false });
-            }}
-          />
-        ) : null}
       </div>
+
+      {bootDone && !needsSetup ? (
+        <div className="queue-slot">
+          {tasksOpen ? (
+            <TaskCenter
+              tasks={taskState.tasks}
+              stats={taskState.stats}
+              concurrency={settings.concurrency}
+              onConcurrency={(value) => patchSettings({ concurrency: value })}
+              paused={settings.queuePaused}
+              onPause={(value) => patchSettings({ queuePaused: value })}
+              onCancel={(id) => {
+                void taskQueue.cancel(id).catch((error) => toast(`取消失败：${error}`, "error"));
+              }}
+              onRetry={(id) => {
+                void taskQueue.retry(id).catch((error) => toast(`重试失败：${error}`, "error"));
+              }}
+              onOpenOutput={(id) => {
+                void taskQueue.openOutput(id).catch((error) => toast(`打开目录失败：${error}`, "error"));
+              }}
+              onOpenLog={(id) => {
+                void api.openJobLog(id).catch((error) => toast(`打开日志失败：${error}`, "error"));
+              }}
+              onClearFinished={() => {
+                void api
+                  .removeFinished()
+                  .then(() => taskQueue.refresh())
+                  .catch((error) => toast(`清理失败：${error}`, "error"));
+              }}
+              onClose={() => {
+                setTasksOpen(false);
+                patchSettings({ taskDrawerOpen: false });
+              }}
+            />
+          ) : null}
+          <QueueBar
+            stats={taskState.stats}
+            tasks={taskState.tasks}
+            paused={settings.queuePaused}
+            open={tasksOpen}
+            onToggle={toggleTasks}
+            onPause={(value) => patchSettings({ queuePaused: value })}
+          />
+        </div>
+      ) : null}
 
       <div className="statusbar">
         <span>
