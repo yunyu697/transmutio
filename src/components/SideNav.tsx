@@ -24,8 +24,9 @@ export interface SideNavProps {
 /**
  * 左栏：只有一个入口层级——分区。方法列表统一放在主区，
  * 不再有「最近使用」和分区子项两套重复入口。
- * 折叠按钮固定在导航容器左上角（top/left 各 8px），两种状态下坐标完全一致，
- * 只换图标方向与 aria-label，避免按钮在屏幕上跳位置。
+ * 折叠按钮固定在左下角、靠右下沿：right/bottom 各 10px，与侧栏其它元素的内边距
+ * 以及底部图标行的底边对齐。两种状态共用同一个按钮、同一组锚点偏移，
+ * 只换图标方向与 aria-label，不换按钮也不跳位置。
  */
 export function SideNav({
   activeSection,
@@ -57,17 +58,6 @@ export function SideNav({
           </button>
         )}
       </div>
-
-      <button
-        type="button"
-        className="collapse"
-        title={collapsed ? "展开侧栏" : "收起侧栏"}
-        aria-label={collapsed ? "展开侧栏" : "收起侧栏"}
-        aria-expanded={!collapsed}
-        onClick={onToggleCollapsed}
-      >
-        <Icon name={collapsed ? "chevron-right" : "chevron-left"} size={14} />
-      </button>
 
       {collapsed ? (
         <div className="rail-scroll">
@@ -178,6 +168,17 @@ export function SideNav({
           </div>
         </div>
       )}
+
+      <button
+        type="button"
+        className="collapse"
+        title={collapsed ? "展开侧栏" : "收起侧栏"}
+        aria-label={collapsed ? "展开侧栏" : "收起侧栏"}
+        aria-expanded={!collapsed}
+        onClick={onToggleCollapsed}
+      >
+        <Icon name={collapsed ? "chevron-right" : "chevron-left"} size={14} />
+      </button>
     </nav>
   );
 }

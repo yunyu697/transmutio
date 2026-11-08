@@ -276,19 +276,19 @@ select {
   display: none;
 }
 
-/* 顶部品牌行：先让出左上角的折叠按钮（32 + 8 间距），折叠态品牌图标换到按钮下方并居中。 */
+/* 顶部品牌行：折叠按钮已移到底部，不再需要为左上角让位。 */
 .side-head {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
   height: 24px;
-  padding: 0 2px 0 44px;
+  padding: 0 2px;
   flex: 0 0 auto;
 }
 .sidenav.rail .side-head {
   width: 100%;
-  height: 64px;
-  padding: 40px 0 0;
+  height: 40px;
+  padding: 0;
   justify-content: center;
   gap: 0;
 }
@@ -302,12 +302,15 @@ select {
   cursor: pointer;
   white-space: nowrap;
 }
-/* 折叠/展开按钮：绝对定位在左栏左上角，两种状态坐标完全一致（left/top 8px），只换箭头方向。
-   32×32 与其它图标按钮同一档热区。 */
+/* 折叠/展开按钮：固定在左栏底部靠右，距右边、底边各 10px。
+   10px = 侧栏内边距 8px + 底部图标行内边距 2px，所以展开态正好和最右侧 .sibtn
+   的右沿、底沿对齐，不会只贴一边像浮在外面。
+   两种状态共用同一个按钮、同一组锚点（只换箭头方向与 aria-label，不换节点不换位置）：
+   折叠态右侧栏只剩一列居中图标，按钮跟着改成列居中，与 .railbtn 同一轴线。 */
 .collapse {
   position: absolute;
-  top: 8px;
-  left: 8px;
+  right: 10px;
+  bottom: 10px;
   width: 32px;
   height: 32px;
   border: 1px solid var(--ff-line);
@@ -323,6 +326,11 @@ select {
 .collapse:hover {
   color: var(--ff-fg);
   background: var(--ff-surf2);
+}
+.sidenav.rail .collapse {
+  right: auto;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .searchbox {
@@ -503,6 +511,11 @@ select {
   margin-top: var(--sp-2);
   border-top: 1px solid var(--ff-line);
   width: 100%;
+}
+/* 折叠态底部让位：.collapse 占住底部 10px + 32px = 42px 的高度区间，
+   图标列底边收到 42px 处，最低的 .railbtn 与按钮之间留 8px，不会挤在一起。 */
+.sidenav.rail .rail-foot {
+  padding-bottom: 42px;
 }
 
 .main {

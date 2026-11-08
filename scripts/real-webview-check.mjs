@@ -575,6 +575,119 @@ try {
 
   await page.screenshot({ path: path.join(OUT, "real-08-after-reload.png") });
 
+  /* ---------------- 6. 侧栏折叠按钮：底部靠右 + 两态同节点零位移 ---------------- */
+  const measureCollapse = () =>
+    page.evaluate(() => {
+      const nav = document.querySelector(".sidenav");
+      const buttons = [...document.querySelectorAll(".collapse")];
+      const navBox = nav.getBoundingClientRect();
+      // 侧栏有 1px 右边框：留白按内容盒算，才是视觉上看到的边距
+      const innerRight = navBox.left + nav.clientWidth;
+      const innerBottom = navBox.top + nav.clientHeight;
+      const btn = buttons[0];
+      const rect = (el) => {
+        const b = el.getBoundingClientRect();
+        return { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width), h: Math.round(b.height), right: Math.round(b.right), bottom: Math.round(b.bottom) };
+      };
+      const box = rect(btn);
+      const neighbors = nav.classList.contains("rail")
+        ? [...nav.querySelectorAll(".rail-foot .railbtn")]
+        : [...nav.querySelectorAll(".side-foot .sibtn")];
+      const near = neighbors.length ? neighbors[neighbors.length - 1] : null;
+      const nearBox = near ? rect(near) : null;
+      // 对齐参照：搜索框与底部图标行的右沿（都是内容盒内缩 2px 后的 225），图标行的底沿
+      const rightOf = (sel) => {
+        const el = document.querySelector(sel);
+        return el ? Math.round(el.getBoundingClientRect().right) : null;
+      };
+      const bottomOf = (sel) => {
+        const el = document.querySelector(sel);
+        return el ? Math.round(el.getBoundingClientRect().bottom) : null;
+      };
+      const refs = {
+        searchboxRight: rightOf(".sidenav .searchbox"),
+        iconrowRight: rightOf(".sidenav .iconrow"),
+        iconrowBottom: bottomOf(".sidenav .iconrow"),
+        railbtnRight: rightOf(".sidenav .rail-foot .railbtn:last-of-type"),
+      };
+      return {
+        state: nav.classList.contains("rail") ? "collapsed" : "expanded",
+        navWidth: Math.round(navBox.width),
+        navRight: Math.round(navBox.right),
+        navBottom: Math.round(navBox.bottom),
+        count: buttons.length,
+        sameNode: btn.dataset.probe === "collapse",
+        label: btn.getAttribute("aria-label"),
+        ariaExpanded: btn.getAttribute("aria-expanded"),
+        iconPath: (btn.querySelector("svg path")?.getAttribute("d") ?? "").slice(0, 16),
+        rect: box,
+        rightGap: Math.round(innerRight - box.right),
+        bottomGap: Math.round(innerBottom - box.bottom),
+        near: nearBox,
+        // 展开态：与底部图标行同一基线；折叠态：与图标列同轴
+        edgeDelta: nearBox ? box.bottom - nearBox.bottom : null,
+        centerDelta: nearBox ? Math.round((box.x + box.w / 2) - (nearBox.x + nearBox.w / 2)) : null,
+        // 与相邻控件的水平/垂直净间距（正数=分开，负数=重叠）
+        gapH: nearBox ? Math.round(box.x - nearBox.right) : null,
+        gapV: nearBox ? Math.round(box.y - nearBox.bottom) : null,
+        refs,
+      };
+    });
+  const labelCollapse = (m) =>
+    `${m.state === "collapsed" ? "折叠态" : "展开态"}：按钮 ${m.rect.w}×${m.rect.h} @ (${m.rect.x},${m.rect.y})，右留白 ${m.rightGap}px、底留白 ${m.bottomGap}px；` +
+    `相邻=${m.near ? `${m.near.w}×${m.near.h} @ (${m.near.x},${m.near.y})` : "无"}，` +
+    `水平间距 ${m.gapH}px / 垂直间距 ${m.gapV}px，底边差 ${m.edgeDelta}px，轴心差 ${m.centerDelta}px；` +
+    `参照 搜索框右沿=${m.refs.searchboxRight} 图标行右沿=${m.refs.iconrowRight}/底沿=${m.refs.iconrowBottom}`;
+
+  await page.locator(".collapse").first().evaluate((el) => {
+    el.dataset.probe = "collapse";
+  });
+  await sleep(400);
+  const openState = await measureCollapse();
+  check(
+    "6.1",
+    "展开态：按钮在底部靠右，右沿/底沿与侧栏内其它元素对齐",
+    openState.count === 1 &&
+      openState.rightGap === 10 &&
+      openState.bottomGap === 10 &&
+      openState.edgeDelta === 0 &&
+      openState.gapH > 0 &&
+      openState.refs.searchboxRight === openState.rect.right &&
+      openState.refs.iconrowRight === openState.rect.right &&
+      openState.refs.iconrowBottom === openState.rect.bottom,
+    `右沿 ${openState.rect.right}＝搜索框 ${openState.refs.searchboxRight}＝图标行 ${openState.refs.iconrowRight}，底沿 ${openState.rect.bottom}＝图标行 ${openState.refs.iconrowBottom}；` +
+      labelCollapse(openState),
+  );
+  await page.screenshot({ path: path.join(OUT, "real-09-collapse-expanded.png") });
+
+  await page.locator(".collapse").first().click();
+  await sleep(600);
+  const railState = await measureCollapse();
+  check(
+    "6.2",
+    "折叠态：同一个按钮、同一锚点，不与底部图标列重叠",
+    railState.count === 1 && railState.sameNode && railState.bottomGap === 10 && railState.centerDelta === 0 && railState.gapV === 8 && railState.label !== openState.label,
+    labelCollapse(railState),
+  );
+  check(
+    "6.3",
+    "两态只有图标方向与 aria-label 变化，节点与偏移不变",
+    railState.sameNode && railState.iconPath !== openState.iconPath && railState.ariaExpanded === "false" && openState.ariaExpanded === "true",
+    `节点复用=${railState.sameNode}, 图标 d=${openState.iconPath}… → ${railState.iconPath}…, aria-expanded=${openState.ariaExpanded} → ${railState.ariaExpanded}, aria-label=${openState.label} → ${railState.label}`,
+  );
+  await page.screenshot({ path: path.join(OUT, "real-10-collapse-collapsed.png") });
+
+  await page.locator(".collapse").first().click();
+  await sleep(600);
+  const backState = await measureCollapse();
+  check(
+    "6.4",
+    "再点回到展开态，坐标复位",
+    backState.state === "expanded" && backState.rect.x === openState.rect.x && backState.rect.y === openState.rect.y,
+    `复位后 @ (${backState.rect.x},${backState.rect.y})，展开态原值 (${openState.rect.x},${openState.rect.y})`,
+  );
+  console.log(`COLLAPSE ${JSON.stringify({ open: openState, rail: railState })}`);
+
   // 复原为默认深色 + 石墨，避免把验证用的配色留在用户设置里
   await page.locator('.sibtn[title="设置"]').click();
   await page.waitForSelector(".drawer", { timeout: 8000 });
