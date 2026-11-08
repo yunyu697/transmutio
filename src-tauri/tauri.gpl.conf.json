@@ -34,6 +34,7 @@
     "copyright": "Transmutio",
     "windows": {
       "nsis": {
+        "installerIcon": "icons/icon.ico",
         "installerHooks": "installer-hooks.nsh"
       },
       "wix": {
