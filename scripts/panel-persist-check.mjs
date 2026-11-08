@@ -864,31 +864,29 @@ async function main() {
 
     const brand = await page4.evaluate(() => {
       const mark = document.querySelector(".sidenav .appmark:not(.rail-mark)");
-      const img = mark?.querySelector("img");
-      if (!mark || !img) return null;
+      const imgs = [...(mark?.querySelectorAll("img") ?? [])];
+      if (!mark || imgs.length !== 2) return null;
       const ms = getComputedStyle(mark);
-      const is = getComputedStyle(img);
+      const shown = imgs.filter((i) => getComputedStyle(i).display !== "none");
       return {
-        src: img.getAttribute("src"),
+        sources: imgs.map((i) => i.getAttribute("src")),
+        visible: shown.map((i) => i.getAttribute("src")),
         box: `${ms.width}x${ms.height}`,
-        overflow: ms.overflow,
-        radius: ms.borderRadius,
-        inset: ms.boxShadow.includes("inset"),
-        img: parseFloat(is.width),
-        offset: `${is.left}/${is.top}`,
+        radius: getComputedStyle(imgs[0]).borderRadius,
+        theme: document.documentElement.dataset.theme,
       };
     });
+    const expectedBrand = brand?.theme === "light" ? "brand-light" : "brand-dark";
     add(
       "ui-redesign",
-      "品牌图标：真实 PNG + 24px 取景盒（34.03px 渲染 / −5.02px 偏移 / 圆角 6 / 内描边）",
+      "品牌图标：明暗两版 SVG，只按 data-theme 切换（24px / 圆角 6）",
       Boolean(brand) &&
-        brand.src.includes("128x128") &&
+        brand.sources.some((s) => s.includes("brand-light")) &&
+        brand.sources.some((s) => s.includes("brand-dark")) &&
+        brand.visible.length === 1 &&
+        brand.visible[0].includes(expectedBrand) &&
         brand.box === "24pxx24px" &&
-        brand.overflow === "hidden" &&
-        brand.radius === "6px" &&
-        brand.inset &&
-        Math.abs(brand.img - 34.03) < 0.05 &&
-        brand.offset === "-5.02px/-5.02px",
+        brand.radius === "6px",
       JSON.stringify(brand),
     );
 

@@ -1,8 +1,6 @@
 import { sections, type SectionDef } from "../catalog";
+import { BrandMark } from "./BrandMark";
 import { Icon } from "./Icon";
-
-/** 真实应用图标（打包用 Tauri 图标集，不新增文件）。 */
-const appIconUrl = new URL("../../src-tauri/icons/128x128.png", import.meta.url).href;
 
 export interface SideNavProps {
   activeSection: string;
@@ -51,7 +49,7 @@ export function SideNav({
     <nav className={`sidenav ${collapsed ? "rail" : ""}`} aria-label="转换分区">
       <div className="side-head">
         <button type="button" className="appmark" title="返回方法列表" aria-label="返回方法列表" onClick={onGoRoot}>
-          <img src={appIconUrl} alt="" />
+          <BrandMark />
         </button>
         {collapsed ? null : (
           <button type="button" className="side-brand-name" onClick={onGoRoot} title="返回方法列表">

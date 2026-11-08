@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- 16/24/32px 光学版本：去掉投影、玻璃高光与细描边，卡片加宽、间距拉开、字形加粗。
+       小尺寸下只保留「三张彩色卡片 + 白色字形」这一层信息，其余装饰全部舍去。 -->
+  <rect x="0.5" y="0.5" width="63" height="63" rx="14" fill="#FFFFFF" stroke="#C7D3E8" stroke-width="1"/>
+  <g transform="translate(32 32)">
+    <g transform="rotate(-20)">
+      <g transform="translate(-13 0)">
+        <rect x="-8" y="-13" width="16" height="26" rx="4" fill="#0D9488" stroke="#FFFFFF" stroke-width="1.6"/>
+        <path d="M-3.4 -5.4 L-3.4 5.4 L4 0 Z" fill="#FFFFFF"/>
+      </g>
+    </g>
+    <g transform="rotate(20)">
+      <g transform="translate(13 0)">
+        <rect x="-8" y="-13" width="16" height="26" rx="4" fill="#7C3AED" stroke="#FFFFFF" stroke-width="1.6"/>
+        <rect x="-4.6" y="-4.6" width="9.2" height="7.6" rx="1.4" fill="none" stroke="#FFFFFF" stroke-width="2"/>
+        <circle cx="-1.9" cy="-1.9" r="0.9" fill="#FFFFFF"/>
+        <path d="M-4 2.6 L-1 0 L1 2 L3 0.2 L4.6 2.6" stroke="#FFFFFF" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+    </g>
+    <g>
+      <rect x="-10.5" y="-14" width="21" height="28" rx="4" fill="#4F6BFF" stroke="#FFFFFF" stroke-width="1.6"/>
+      <g stroke="#FFFFFF" stroke-width="3" stroke-linecap="round">
+        <path d="M-4.6 -4.6 L-4.6 4.6"/>
+        <path d="M0 -6.4 L0 6.4"/>
+        <path d="M4.6 -3 L4.6 3"/>
+      </g>
+    </g>
+  </g>
+</svg>

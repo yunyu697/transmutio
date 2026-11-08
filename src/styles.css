@@ -244,29 +244,36 @@ select {
   align-items: center;
 }
 
-/* 品牌图标：真实 Tauri 图标按 24px 取景裁切（渲染 34.03px / 偏移 −5.02px）。
-   深色主题下底板 #0A0E14 与侧栏同色，用极淡内描边保住轮廓。 */
+/* 品牌图标：两套 SVG（浅色底 / 深色底）常驻，只按 data-theme 切换，不跟 data-palette。 */
 .appmark {
   position: relative;
   display: inline-block;
   width: 24px;
   height: 24px;
   flex: 0 0 auto;
-  border-radius: 6px;
-  overflow: hidden;
   padding: 0;
   border: 0;
-  background: #0a0e14;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.35);
+  border-radius: 6px;
+  background: none;
   cursor: pointer;
 }
-.appmark img {
-  position: absolute;
-  left: -5.02px;
-  top: -5.02px;
-  width: 34.03px;
-  height: 34.03px;
+.brandmark {
+  position: relative;
   display: block;
+  width: 24px;
+  height: 24px;
+}
+.brandmark img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: 6px;
+}
+:root[data-theme="light"] .brandmark-dark,
+:root[data-theme="dark"] .brandmark-light {
+  display: none;
 }
 
 /* 顶部品牌行：先让出左上角的折叠按钮（32 + 8 间距），折叠态品牌图标换到按钮下方并居中。 */

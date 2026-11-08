@@ -271,6 +271,19 @@ try {
       return parsed?.data ?? parsed ?? {};
     });
 
+  /** 界内品牌图标只看 data-theme，不看 data-palette：返回当前显示的是哪一版。 */
+  const brandShown = () =>
+    page.evaluate(() => {
+      const imgs = [...document.querySelectorAll(".sidenav .appmark img")];
+      const shown = imgs.filter((i) => getComputedStyle(i).display !== "none");
+      return {
+        theme: document.documentElement.dataset.theme,
+        palette: document.documentElement.dataset.palette,
+        total: imgs.length,
+        shown: shown.map((i) => i.getAttribute("src").split("/").pop()),
+      };
+    });
+
   /* ---------------- 1. 启动形态：左栏一层分区 + 单一方法列表 ---------------- */
   const theme0 = await readTheme();
   const side = await page.evaluate(() => ({
@@ -481,6 +494,14 @@ try {
   );
   await page.screenshot({ path: path.join(OUT, "real-06-ocean-light.png") });
 
+  const brandLight = await brandShown();
+  check(
+    "5.3",
+    "浅色下界内图标用浅色底版",
+    brandLight.theme === "light" && brandLight.total === 2 && brandLight.shown.length === 1 && brandLight.shown[0].includes("brand-light"),
+    `theme=${brandLight.theme}, palette=${brandLight.palette}, 共 ${brandLight.total} 张，显示=${brandLight.shown.join(",")}`,
+  );
+
   await page.locator(".drawer .segmented button", { hasText: "深色" }).click();
   await sleep(250);
   await page.locator(".drawer .palette", { hasText: "苔原" }).click();
@@ -492,16 +513,23 @@ try {
     fg3OnSurf: contrast(parseRgb(darkForest.fg3), parseRgb(darkForest.surf)),
   };
   check(
-    "5.3",
+    "5.4",
     "深色 + 苔原即时生效（组合可换）",
     darkForest.theme === "dark" && darkForest.palette === "forest" && darkForest.bg.toLowerCase() === "#0a1210",
     `data-theme=${darkForest.theme}, data-palette=${darkForest.palette}, bg=${darkForest.bg}, surf=${darkForest.surf}, accent=${darkForest.accent}`,
   );
   check(
-    "5.4",
+    "5.5",
     "深色+苔原实渲染对比度可读",
     contrastDark.fgOnBg >= 7 && contrastDark.fgOnSurf >= 7 && contrastDark.fg3OnSurf >= 4.5,
     `正文/底=${contrastDark.fgOnBg.toFixed(2)}, 正文/卡=${contrastDark.fgOnSurf.toFixed(2)}, 次要/卡=${contrastDark.fg3OnSurf.toFixed(2)}`,
+  );
+  const brandDark = await brandShown();
+  check(
+    "5.6",
+    "深色下界内图标用深色底版（换配色不换图标）",
+    brandDark.theme === "dark" && brandDark.total === 2 && brandDark.shown.length === 1 && brandDark.shown[0].includes("brand-dark"),
+    `theme=${brandDark.theme}, palette=${brandDark.palette}, 共 ${brandDark.total} 张，显示=${brandDark.shown.join(",")}`,
   );
   await page.screenshot({ path: path.join(OUT, "real-07-forest-dark.png") });
 
@@ -511,7 +539,7 @@ try {
   await sleep(450);
   const lightAmber = await readTheme();
   check(
-    "5.5",
+    "5.7",
     "浅色 + 暖砂（第三种组合）",
     lightAmber.theme === "light" && lightAmber.palette === "amber" && lightAmber.bg.toLowerCase() === "#f7f1e8",
     `data-theme=${lightAmber.theme}, data-palette=${lightAmber.palette}, bg=${lightAmber.bg}, surf=${lightAmber.surf}, accent=${lightAmber.accent}`,
@@ -532,7 +560,7 @@ try {
   await sleep(1200);
   const afterReload = await readTheme();
   check(
-    "5.6",
+    "5.8",
     "主题设置重启后保持",
     persisted.brightness === "dark" &&
       persisted.palette === "forest" &&
@@ -543,7 +571,7 @@ try {
   );
 
   const persistedOutput = await storedSettings();
-  check("5.7", "输出目录设置重启后保持 source", persistedOutput.outputDirMode === "source" && persistedOutput.outputDir === customDir, `mode=${persistedOutput.outputDirMode}, custom=${persistedOutput.outputDir}`);
+  check("5.9", "输出目录设置重启后保持 source", persistedOutput.outputDirMode === "source" && persistedOutput.outputDir === customDir, `mode=${persistedOutput.outputDirMode}, custom=${persistedOutput.outputDir}`);
 
   await page.screenshot({ path: path.join(OUT, "real-08-after-reload.png") });
 
