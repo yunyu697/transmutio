@@ -660,9 +660,9 @@ async function main() {
     });
     add(
       "ui-redesign",
-      "任务中心降为底部队列条：44px 常驻在状态栏上方，抽屉默认收起",
+      "任务中心降为底部队列条：40px 常驻在状态栏上方，抽屉默认收起",
       barState.bar &&
-        barState.barHeight === 44 &&
+        barState.barHeight === 40 &&
         barState.aboveStatus &&
         barState.drawer === 0 &&
         barState.text.includes("任务队列"),
@@ -879,14 +879,14 @@ async function main() {
     const expectedBrand = brand?.theme === "light" ? "brand-light" : "brand-dark";
     add(
       "ui-redesign",
-      "品牌图标：明暗两版 SVG，只按 data-theme 切换（24px / 圆角 6）",
+      "品牌图标：明暗两版 SVG，只按 data-theme 切换（24px / 圆角 8）",
       Boolean(brand) &&
         brand.sources.some((s) => s.includes("brand-light")) &&
         brand.sources.some((s) => s.includes("brand-dark")) &&
         brand.visible.length === 1 &&
         brand.visible[0].includes(expectedBrand) &&
         brand.box === "24pxx24px" &&
-        brand.radius === "6px",
+        brand.radius === "8px",
       JSON.stringify(brand),
     );
 

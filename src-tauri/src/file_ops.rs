@@ -242,10 +242,7 @@ mod tests {
 
     #[test]
     fn batch_template_pads_numbers() {
-        let paths = vec![
-            "/tmp/a.mp4".to_string(),
-            "/tmp/b.mp4".to_string(),
-        ];
+        let paths = vec!["/tmp/a.mp4".to_string(), "/tmp/b.mp4".to_string()];
         let plans = plan_batch_rename(&paths, "{name}-{n}", 1, 2).unwrap();
         assert_eq!(plans[0].name, "a-01.mp4");
         assert_eq!(plans[1].name, "b-02.mp4");
@@ -253,10 +250,7 @@ mod tests {
 
     #[test]
     fn batch_marks_duplicate_targets() {
-        let paths = vec![
-            "/tmp/clip.mp4".to_string(),
-            "/tmp/clip.mov".to_string(),
-        ];
+        let paths = vec!["/tmp/clip.mp4".to_string(), "/tmp/clip.mov".to_string()];
         // 显式扩展名让两个不同源文件撞到同一个目标名
         let plans = plan_batch_rename(&paths, "{name}.mp4", 1, 0).unwrap();
         assert_eq!(plans[0].conflict.as_deref(), Some("与列表中另一项重名"));
