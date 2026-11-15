@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import "./styles/design-system-tokens.css";
 import "./styles.css";
 import { allThemeCss } from "@formatforge/design-tokens";
 import { cleanupRetiredKeys } from "./lib/storage";

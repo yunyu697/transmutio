@@ -55,7 +55,8 @@ function AudioTranscode({
   toast,
   onBack,
 }: AudioPanelProps) {
-  const { files, busy, notice, pick, remove, clear } = useMediaFiles(["audio", "video"]);
+  const list = useMediaFiles(["audio", "video"]);
+  const { files, busy, notice, pick, remove, clear } = list;
   const defaults: AudioParams = {
     ...DEFAULT_PARAMS,
     format: methodId === "audio-aac" ? "aac" : "mp3",
@@ -177,11 +178,11 @@ function AudioTranscode({
         </div>
         <DropZone kind={["audio", "video"]} busy={busy} onPick={pick} />
         {notice ? (
-          <div className="note warn" style={{ margin: "10px 20px 0" }}>
+          <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>
             {notice}
           </div>
         ) : null}
-        <FileTable files={files} onRemove={remove} onClear={clear} />
+        <FileTable list={list} onNotify={toast} />
       </div>
 
       <aside className="inspector">
@@ -559,7 +560,8 @@ function AudioMergePanel({
   }: AudioPanelProps & { mix?: boolean }) {
   const key = mix ? "audio-mix" : "audio-merge";
   const action = mix ? "混音" : "合并";
-  const { files, busy, notice, pick, remove, clear } = useMediaFiles(["audio", "video"]);
+  const list = useMediaFiles(["audio", "video"]);
+  const { files, busy, notice, pick, remove, clear } = list;
   const [params, setParams] = useState<AudioMergeParams>(() =>
     loadPanelPrefs(`audio:${key}`, DEFAULT_OUTPUT),
   );
@@ -639,16 +641,16 @@ function AudioMergePanel({
         </div>
         <DropZone kind={["audio", "video"]} busy={busy} onPick={pick} />
         {notice ? (
-          <div className="note warn" style={{ margin: "10px 20px 0" }}>
+          <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>
             {notice}
           </div>
         ) : null}
-        <div className="note" style={{ margin: "10px 20px 0" }}>
+        <div className="note" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>
           {mix
             ? "所有文件同时开始播放并混合（时长取最长的一路）；每路按 1/N 等权衰减避免削波。至少需要 2 个文件，源文件是视频时只取第一条音轨。"
             : "文件按添加顺序拼接；需要调整顺序请移除后重新添加。至少需要 2 个文件，源文件是视频时只取第一条音轨。"}
         </div>
-        <FileTable files={files} onRemove={remove} onClear={clear} />
+        <FileTable list={list} onNotify={toast} />
       </div>
 
       <aside className="inspector">
@@ -705,7 +707,8 @@ function AudioTrimPanel({
   toast,
   onBack,
 }: AudioPanelProps) {
-  const { files, busy, notice, pick, remove, clear } = useMediaFiles(["audio", "video"]);
+  const list = useMediaFiles(["audio", "video"]);
+  const { files, busy, notice, pick, remove, clear } = list;
   const [params, setParams] = useState<AudioTrimParams>(() =>
     loadPanelPrefs("audio:audio-trim", { ...DEFAULT_OUTPUT, startSec: 0, endSec: 30 }),
   );
@@ -790,14 +793,14 @@ function AudioTrimPanel({
         </div>
         <DropZone kind={["audio", "video"]} busy={busy} onPick={pick} />
         {notice ? (
-          <div className="note warn" style={{ margin: "10px 20px 0" }}>
+          <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>
             {notice}
           </div>
         ) : null}
-        <div className="note" style={{ margin: "10px 20px 0" }}>
+        <div className="note" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>
           同一区间会应用到列表里的每个文件；源文件是视频时只取第一条音轨。终点超出源时长会在入队阶段被拒绝并给出原因。
         </div>
-        <FileTable files={files} onRemove={remove} onClear={clear} />
+        <FileTable list={list} onNotify={toast} />
       </div>
 
       <aside className="inspector">

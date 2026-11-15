@@ -1,0 +1,232 @@
+/* =============================================================
+   统一界面设计令牌 · 生成物，不要手改
+   source: D:/Users/Tyler Zhang/Documents/Trae-CN/design-system/tokens.json
+   source-sha256: 46ab98f3e68a
+   更新：node <design-system>/tools/install.mjs <project>
+   ============================================================= */
+:root {
+
+  /* 间距阶梯。2px 子网格只用于 ≤8px 的微观间距，≥12px 走 4px 倍数。 */
+  --ds-space-1: 2px;
+  /*   图标与文字之间的光学间隙、徽标内边距；不用于：控件之间、面板内边距 */
+  --ds-space-2: 4px;
+  /*   相邻图标按钮之间、紧凑行内块之间；不用于：字段之间 */
+  --ds-space-3: 6px;
+  /*   紧凑控件纵向内边距、紧凑表格单元格水平内边距、徽标与标题之间；不用于：面板内边距 */
+  --ds-space-4: 8px;
+  /*   同级控件之间的默认间距、列表行水平内边距；不用于：区块之间 */
+  --ds-space-5: 12px;
+  /*   字段与字段之间、紧凑密度下的面板内边距；不用于：页面级留白 */
+  --ds-space-6: 16px;
+  /*   默认密度的面板/卡片内边距、栅格间距；不用于：行内元素之间 */
+  --ds-space-7: 24px;
+  /*   区块与区块之间、对话框内边距；不用于：字段内部 */
+  --ds-space-8: 32px;
+  /*   页面级分区之间、空状态上下留白下限；不用于：控件内部 */
+  --ds-space-9: 48px;
+  /*   页面级大留白、空状态居中区的上下留白；不用于：任何组件内部 */
+
+  /* 字体栈。界面字体不随项目变化；只有品牌字标可以用项目自带字体。 */
+  --ds-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Source Han Sans SC", "Noto Sans CJK SC", sans-serif;
+  /*   全部界面文字；不用于：代码、数字对齐列 */
+  --ds-font-mono: "JetBrains Mono", "Cascadia Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  /*   文件名、路径、代码、等宽数字；不用于：普通正文 */
+
+  /* 字号阶梯。半像素字号（10.5/11.5/12.5/13.5）一律向下并入相邻整数档（见 SPEC §1.2 归并表）；因此 compact 密度的正文基准只能是 12，13 是强调档。 */
+  --ds-font-size-10: 10px;
+  /*   徽标、密集表格的辅助单位、图表轴标签；不用于：正文、按钮、表单标签 */
+  --ds-font-size-11: 11px;
+  /*   次要说明、表格表头、时间戳、帮助文字；不用于：正文段落 */
+  --ds-font-size-12: 12px;
+  /*   正文基准（compact 密度项目的 body：Renomio、Transmutio、Sidebay）、表单标签、列表副文本；不用于：页面标题、营销数字 */
+  --ds-font-size-13: 13px;
+  /*   强调档：页面小标题、关键数值、需要比正文略大一级的正文；按钮文字（仅 compact）；不用于：整段正文的默认值；不与 12 混用于同一层级 */
+  --ds-font-size-14: 14px;
+  /*   正文基准（comfortable 密度项目的 body，如 Berthio）；不用于：与 13 同时用于同一层级 */
+  --ds-font-size-16: 16px;
+  /*   小标题、对话框标题、卡片主数值；不用于：正文 */
+  --ds-font-size-20: 20px;
+  /*   区块标题、空状态标题；不用于：正文、按钮 */
+  --ds-font-size-24: 24px;
+  /*   页面主标题、营销数字；不用于：控件内部 */
+
+  /* 只允许四档。550/650 这类中间字重不提供。 */
+  --ds-font-weight-400: 400;
+  /*   正文、说明文字、输入值；不用于：标题 */
+  --ds-font-weight-500: 500;
+  /*   强调型正文、可点击的次级标签、表头；不用于：主标题 */
+  --ds-font-weight-600: 600;
+  /*   标题、按钮文字、当前选中项的标签；不用于：大段正文 */
+  --ds-font-weight-700: 700;
+  /*   页面主标题、需要与 600 区分的品牌字标；不用于：正文、表单标签 */
+
+  /* 行高只允许四档。行高按「文字角色」选，不按容器高度选；单行控件的垂直居中由控件高度负责，不靠行高撑。 */
+  --ds-leading-tight: 1.25;
+  /*   单行控件内文字（按钮、输入框、标签、表格单元格）；不用于：多行段落 */
+  --ds-leading-snug: 1.4;
+  /*   紧凑多行：列表副文本、帮助文字、表单错误提示；不用于：长段落 */
+  --ds-leading-base: 1.5;
+  /*   正文段落（默认）；不用于：单行按钮文字 */
+  --ds-leading-loose: 1.7;
+  /*   阅读型长文本：文档、说明页、协议正文；不用于：任何控件内部 */
+
+  /* 圆角只允许六档 + 胶囊。同层级容器与内部控件的圆角差值固定为 2px，不做「差不多」的手调。 */
+  --ds-radius-hairline: 2px;
+  /*   徽标、标签内的小色块；不用于：按钮、输入框 */
+  --ds-radius-tag: 4px;
+  /*   标签、键盘键帽、代码片段；不用于：面板 */
+  --ds-radius-sm: 6px;
+  /*   图标按钮、小徽标、进度条；不用于：对话框 */
+  --ds-radius-md: 8px;
+  /*   按钮、输入框、下拉（默认控件圆角）；不用于：窗口外框 */
+  --ds-radius-lg: 10px;
+  /*   列表行、卡片、下拉面板、Toast；不用于：输入框 */
+  --ds-radius-xl: 14px;
+  /*   面板、对话框、侧栏浮层；不用于：控件 */
+  --ds-radius-pill: 999px;
+  /*   开关、头像、胶囊标签、圆形图标按钮；不用于：矩形卡片 */
+
+  /* 控件高度阶梯，含图标按钮与行内小按钮。控件高度一律用这些值，禁止用 padding 撑出高度。本表不定义「默认控件高」：同一密度档内各项目取值可不同（Transmutio 28、Renomio 32），以各项目在 SPEC §4.2 接入表里的声明为准。 */
+  --ds-control-h-xs: 20px;
+  /*   行内微型按钮（清除、加号、行内状态点）；不用于：主要操作 */
+  --ds-control-h-sm: 24px;
+  /*   紧凑工具栏、分段控件、密度切换；不用于：表单主控件 */
+  --ds-control-h-md: 28px;
+  /*   工具栏与表格行内的次级控件；不用于：对话框主按钮 */
+  --ds-control-h-lg: 32px;
+  /*   标准桌面控件；不用于：触控界面 */
+  --ds-control-h-xl: 36px;
+  /*   主操作按钮、对话框底部按钮、大号输入框；不用于：工具栏图标按钮 */
+  --ds-control-h-touch: 44px;
+  /*   触控目标；comfortable 项目按 §4.2 声明使用；不用于：桌面密集表格 */
+
+  /* 图标尺寸。图标盒子取栅格尺寸，图形本身可略小但不得超出盒子。 */
+  --ds-icon-xs: 12px;
+  /*   行内状态图标、徽标前缀；不用于：工具栏主图标 */
+  --ds-icon-sm: 14px;
+  /*   紧凑按钮内图标、表格行内图标；不用于：主操作按钮 */
+  --ds-icon-md: 16px;
+  /*   默认图标（按钮、导航、工具栏）；不用于：空状态插画 */
+  --ds-icon-lg: 20px;
+  /*   主导航图标、卡片标题图标；不用于：按钮内图标 */
+  --ds-icon-xl: 24px;
+  /*   空状态、错误页、大号操作入口；不用于：任何按钮内文字旁图标 */
+
+  /* 列表行与表格行高。行高与控件高度是两个体系：行内控件高度 ≤ 行高 − 2×行内边距。 */
+  --ds-row-h-sm: 28px;
+  /*   紧凑表格行、树形列表行；不用于：可点击的大卡片行 */
+  --ds-row-h-md: 32px;
+  /*   默认列表行 / 表格行；不用于：移动端 */
+  --ds-row-h-lg: 36px;
+  /*   带副文本的列表行、设置项；不用于：密集表格 */
+  --ds-row-h-touch: 44px;
+  /*   触控列表行、comfortable 密度表格行；不用于：桌面紧凑表格 */
+  --ds-row-h-header: 32px;
+  /*   表格表头（不随 body 行高变化）；不用于：普通列表行 */
+
+  /* 边框与分隔线。只允许 1px 发丝线与 2px 焦点环两种宽度；分隔线不写宽度以外的样式，颜色由语义槽 --ds-color-line 提供。 */
+  --ds-border-hairline: 1px;
+  /*   边框、分隔线、表格网格线；不用于：强调选中态 */
+  --ds-border-focus: 2px;
+  /*   键盘焦点环、当前选中项指示条；不用于：普通边框 */
+  --ds-border-offset: 2px;
+  /*   焦点环与控件的间距（outline-offset）；不用于：其他用途 */
+
+  /* 阴影层级，只允许四档。层级表达「浮起来的先后」，不表达美观；同一时刻页面上深色阴影不超过两层。 */
+  --ds-elevation-1: 0 1px 2px rgba(0,0,0,.06);
+  /*   贴合页面的卡片、工具栏、粘性表头；不用于：浮层 */
+  --ds-elevation-2: 0 2px 8px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04);
+  /*   下拉、气泡、Tooltip、右键菜单；不用于：对话框 */
+  --ds-elevation-3: 0 12px 32px rgba(0,0,0,.14), 0 2px 6px rgba(0,0,0,.06);
+  /*   对话框、抽屉、侧栏浮层；不用于：页面级卡片 */
+  --ds-elevation-4: 0 24px 64px rgba(0,0,0,.20);
+  /*   Toast、命令面板、置顶浮层；不用于：常驻元素 */
+
+  /* 动效时长。面积越大时长越长；超过 320ms 的一律视为拖沓。 */
+  --ds-dur-0: 0ms;
+  /*   「减少动态效果」开启时的替代值；不用于：默认值 */
+  --ds-dur-1: 80ms;
+  /*   按下反馈、图标变形、开关拨动；不用于：面板展开 */
+  --ds-dur-2: 120ms;
+  /*   hover / focus 的颜色与边框过渡；不用于：位移 */
+  --ds-dur-3: 160ms;
+  /*   小面积出现：下拉、气泡、Tooltip；不用于：整页切换 */
+  --ds-dur-4: 200ms;
+  /*   默认：抽屉、侧栏、列表展开；不用于：大面积淡出 */
+  --ds-dur-5: 260ms;
+  /*   对话框、遮罩、页面级过渡；不用于：hover 反馈 */
+  --ds-dur-6: 320ms;
+  /*   上限：需要强调的大面积入场；不用于：重复性交互 */
+
+  /* 缓动只允许三条曲线。进入用 ease-out 系，退出用 ease-in 系，来回切换用 standard。 */
+  --ds-ease-standard: cubic-bezier(.2,0,0,1);
+  /*   位置与尺寸变化（默认）；不用于：退场 */
+  --ds-ease-enter: cubic-bezier(0,0,.2,1);
+  /*   元素出现、展开；不用于：元素消失 */
+  --ds-ease-exit: cubic-bezier(.4,0,1,1);
+  /*   元素消失、收起；不用于：元素出现 */
+
+  /* 断点。桌面应用按窗口宽度；Web 面板按视口宽度。断点只控制布局切换，不控制字号缩放。 */
+  --ds-bp-sm: 640px;
+  /*   窄窗口：侧栏折叠为抽屉；不用于：字号变化 */
+  --ds-bp-md: 900px;
+  /*   双栏 → 单栏；不用于：字号变化 */
+  --ds-bp-lg: 1200px;
+  /*   三栏布局的最低宽度；不用于：字号变化 */
+  --ds-bp-xl: 1600px;
+  /*   宽屏：增加留白而非增加内容密度；不用于：字号变化 */
+
+  /* 窗口骨架尺寸。每个项目在自身 layout 段选一套并在文档登记；组件 CSS 不得再写这些数值。 */
+  --ds-layout-sidebar-sm: 200px;
+  /*   窄侧栏（仅图标或短标签）；不用于：主导航 */
+  --ds-layout-sidebar-md: 220px;
+  /*   主导航侧栏（compact 项目默认，如 Renomio）；不用于：属性面板 */
+  --ds-layout-sidebar-lg: 240px;
+  /*   带副标题/分组的导航侧栏（Transmutio、Berthio）；不用于：窄屏 */
+  --ds-layout-sidebar-xl: 280px;
+  /*   带预览的宽侧栏；不用于：主内容区 */
+  --ds-layout-statusbar-sm: 24px;
+  /*   状态栏（compact）；不用于：工具栏 */
+  --ds-layout-statusbar-md: 28px;
+  /*   状态栏（comfortable）；不用于：工具栏 */
+  --ds-layout-toolbar-sm: 40px;
+  /*   次级工具栏、内容区工具条；不用于：窗口标题栏 */
+  --ds-layout-toolbar-md: 48px;
+  /*   主工具栏 / 无自绘标题栏时的顶栏；不用于：次级工具条 */
+  --ds-layout-toolbar-lg: 56px;
+  /*   带品牌区的主顶栏（comfortable）；不用于：内容区工具条 */
+  --ds-layout-dialog-sm: 400px;
+  /*   单一确认、输入一两个字段的对话框；不用于：含表格的对话框 */
+  --ds-layout-dialog-md: 520px;
+  /*   默认对话框宽度；不用于：全屏向导 */
+  --ds-layout-dialog-lg: 680px;
+  /*   含表单分组或预览的对话框；不用于：简单确认 */
+  --ds-layout-popover-min: 160px;
+  /*   下拉/气泡/右键菜单的最小宽度；不用于：对话框 */
+
+  /* VR 角度制令牌（单位 deg / uv）。仅在 Gazeline 的 HUD 使用，桌面项目不得引用。 */
+  --ds-vr-uvPerDeg: 0.55;
+  --ds-vr-fovH: 90deg;
+  --ds-vr-space-1: 0.6deg;
+  --ds-vr-space-2: 1.2deg;
+  --ds-vr-space-3: 2.4deg;
+  --ds-vr-row-height: 5.8deg;
+  --ds-vr-row-height-dense: 5.3deg;
+  --ds-vr-row-pitch: 6.4deg;
+  --ds-vr-hit-min-w: 5deg;
+  --ds-vr-hit-min-h: 4deg;
+  --ds-vr-hit-slop: 1deg;
+  --ds-vr-panel-w: 58deg;
+  --ds-vr-panel-h: 70deg;
+  --ds-vr-radius: 1.2deg;
+  --ds-vr-type-body: 1.35deg;
+  --ds-vr-type-title: 2.05deg;
+  --ds-vr-type-caption: 1.05deg;
+  --ds-vr-type-large: 2.2deg;
+}
+
+/*
+   颜色语义槽位（本文件不提供色值）：
+   --ds-color-bg --ds-color-surface --ds-color-surface-2 --ds-color-surface-3 --ds-color-text --ds-color-text-2 --ds-color-text-muted --ds-color-line --ds-color-line-strong --ds-color-accent --ds-color-accent-weak --ds-color-on-accent --ds-color-danger --ds-color-danger-weak --ds-color-success --ds-color-success-weak --ds-color-warn --ds-color-warn-weak --ds-color-focus-ring --ds-color-overlay --ds-color-hover --ds-color-selected
+   每个项目在 adapters/<project>.css 中把这些槽位指向自身色板；具体色值仍由项目调色板文件定义。
+*/

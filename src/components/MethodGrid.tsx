@@ -77,7 +77,7 @@ export function MethodGrid({
             <div style={{ fontSize: 12, opacity: 0.8 }}>试试「MP4」「MP3」「缩放」等关键词</div>
           </div>
         )}
-        <div className="note" style={{ marginTop: 18 }}>
+        <div className="note" style={{ marginTop: 16 }}>
           未实现的方法保留入口，方便查看后续规划；点击会明确提示「未实现」，不会执行任何假转换。
         </div>
       </div>

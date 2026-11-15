@@ -184,7 +184,7 @@ export function UpdatePanel({ toast }: { toast: (text: string, kind?: "ok" | "er
               {progress.percent.toFixed(1)}% · {human(progress.received)} / {human(progress.total)}
             </b>
           </div>
-          <div style={{ height: 6, background: "var(--border, #333)", borderRadius: 3, overflow: "hidden" }}>
+          <div style={{ height: 6, background: "var(--border, #333)", borderRadius: 2, overflow: "hidden" }}>
             <div
               style={{
                 height: "100%",
@@ -201,7 +201,7 @@ export function UpdatePanel({ toast }: { toast: (text: string, kind?: "ok" | "er
       ) : null}
 
       {pending ? (
-        <div style={{ marginTop: 10 }}>
+        <div style={{ marginTop: 8 }}>
           <div className="kv">
             <span>已下载更新</span>
             <b>{pending.version}</b>

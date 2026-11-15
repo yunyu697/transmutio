@@ -132,7 +132,7 @@ export function TaskCenter({
         </span>
         <select
           className="select"
-          style={{ width: 64, height: 26 }}
+          style={{ width: 64, height: 24 }}
           value={concurrency}
           onChange={(event) => onConcurrency(Number(event.target.value))}
           title="同时运行的任务数"
@@ -200,7 +200,7 @@ export function TaskCenter({
                       title={`质量 ${task.qualityUsed ?? "—"} · 尝试 ${task.attemptsUsed ?? "—"} 次`}
                       style={{
                         fontSize: 11,
-                        padding: "2px 7px",
+                        padding: "var(--ds-space-1) var(--ds-space-3)",
                         borderRadius: 999,
                         color: "var(--ff-warn)",
                         background: "rgba(240, 196, 84, 0.12)",

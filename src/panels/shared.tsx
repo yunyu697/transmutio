@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { formatBytes, formatDuration } from "@formatforge/design-tokens";
-import { api, type MediaInfo } from "../lib/api";
+import { api, type BatchRenameResult, type MediaInfo } from "../lib/api";
+import { registerDropController, routeDrop } from "../lib/fileDropTarget";
+import { moveBlock, sortEntries, type SortDir, type SortKey } from "../lib/fileQueue";
 import { Icon } from "../components/Icon";
 import {
   AUDIO_BITRATE_TIERS,
@@ -22,30 +23,129 @@ const FILTERS: Record<FileKind, { name: string; extensions: string[] }[]> = {
   image: [{ name: "图片", extensions: ["jpg", "jpeg", "png", "webp", "bmp", "tif", "tiff", "gif", "avif"] }],
 };
 
-export function useMediaFiles(kind: FileKind | FileKind[]) {
+export interface MediaFilesController {
+  /** 该队列在外部拖放路由表里的身份，供 FileTable 注册命中测试。 */
+  dropId: string;
+  files: MediaInfo[];
+  busy: boolean;
+  notice: string | null;
+  /** 最初的添加顺序（恢复添加顺序用）。 */
+  addedOrder: string[];
+  /** 当前排序；null = 自定义顺序。 */
+  sort: { key: SortKey; dir: SortDir } | null;
+  /** 重复拖入的路径 + 触发令牌（供列表闪烁提示）。 */
+  duplicatePaths: string[];
+  duplicateToken: number;
+  addPaths: (paths: string[], at?: number) => Promise<void>;
+  pick: () => Promise<void>;
+  remove: (path: string) => void;
+  removeMany: (paths: string[]) => void;
+  clear: () => void;
+  move: (paths: string[], toIndex: number) => void;
+  rename: (path: string, name: string) => Promise<{ ok: boolean; newPath?: string; error?: string }>;
+  renameMany: (args: {
+    paths: string[];
+    template: string;
+    start: number;
+    pad: number;
+    dryRun: boolean;
+  }) => Promise<BatchRenameResult>;
+  refresh: () => Promise<void>;
+  sortBy: (key: SortKey, dir: SortDir) => void;
+  restoreAddedOrder: () => void;
+}
+
+/**
+ * 窗口级拖放桥：整个窗口只订阅一次系统拖放，再按坐标路由到命中的队列。
+ * 之前每个 useMediaFiles 各订阅一次，一个面板挂多个列表时，一次拖放会把
+ * 同一批文件同时塞进多个列表。
+ */
+let windowDropBridgeStarted = false;
+
+function startWindowDropBridge() {
+  if (windowDropBridgeStarted) return;
+  windowDropBridgeStarted = true;
+  void (async () => {
+    try {
+      const webview = getCurrentWebview();
+      await webview.onDragDropEvent((event) => {
+        const payload = event.payload as {
+          type: string;
+          paths?: string[];
+          position?: { x: number; y: number };
+        };
+        if (payload.type !== "drop" || !payload.paths?.length) return;
+        const ratio = window.devicePixelRatio || 1;
+        const point =
+          payload.position == null
+            ? null
+            : { x: payload.position.x / ratio, y: payload.position.y / ratio };
+        void routeDrop(payload.paths, point);
+      });
+    } catch {
+      // 订阅失败时允许下次挂载重试。
+      windowDropBridgeStarted = false;
+    }
+  })();
+}
+
+export function useMediaFiles(kind: FileKind | FileKind[]): MediaFilesController {
   const kinds = Array.isArray(kind) ? kind : [kind];
+  const dropId = useId();
   const [files, setFiles] = useState<MediaInfo[]>([]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [addedOrder, setAddedOrder] = useState<string[]>([]);
+  const [sort, setSort] = useState<{ key: SortKey; dir: SortDir } | null>(null);
+  const [duplicatePaths, setDuplicatePaths] = useState<string[]>([]);
+  const [duplicateToken, setDuplicateToken] = useState(0);
+  // 同步镜像：读取最新列表时不依赖上一次渲染的闭包。
+  const filesRef = useRef<MediaInfo[]>([]);
+  const addedRef = useRef<string[]>([]);
+
+  const commitFiles = useCallback((next: MediaInfo[]) => {
+    filesRef.current = next;
+    setFiles(next);
+  }, []);
+
+  const commitAdded = useCallback((next: string[]) => {
+    addedRef.current = next;
+    setAddedOrder(next);
+  }, []);
 
   const addPaths = useCallback(
-    async (paths: string[]) => {
+    async (paths: string[], at?: number) => {
       if (!paths.length) return;
       setBusy(true);
       try {
         const infos = await api.probeFiles(paths);
-        const accepted: MediaInfo[] = [];
+        const seen = new Set(filesRef.current.map((f) => f.path));
+        const fresh: MediaInfo[] = [];
+        const duplicates: string[] = [];
         let skipped = 0;
         for (const info of infos) {
-          if (kinds.includes(info.kind as FileKind)) accepted.push(info);
-          else skipped += 1;
+          if (!kinds.includes(info.kind as FileKind)) skipped += 1;
+          else if (seen.has(info.path)) duplicates.push(info.path);
+          else {
+            seen.add(info.path);
+            fresh.push(info);
+          }
         }
-        setFiles((prev) => {
-          const existing = new Set(prev.map((f) => f.path));
-          return [...prev, ...accepted.filter((f) => !existing.has(f.path))];
-        });
-        if (skipped > 0) setNotice(`已跳过 ${skipped} 个不受支持的文件`);
-        else setNotice(null);
+        if (fresh.length) {
+          const current = filesRef.current;
+          const index = at == null ? current.length : Math.max(0, Math.min(current.length, at));
+          commitFiles([...current.slice(0, index), ...fresh, ...current.slice(index)]);
+          commitAdded([...addedRef.current, ...fresh.map((f) => f.path)]);
+          setSort(null);
+        }
+        const notes: string[] = [];
+        if (skipped > 0) notes.push(`已跳过 ${skipped} 个不受支持的文件`);
+        if (duplicates.length) notes.push(`${duplicates.length} 个文件已在列表中`);
+        setNotice(notes.length ? notes.join("；") : null);
+        if (duplicates.length) {
+          setDuplicatePaths(duplicates);
+          setDuplicateToken((token) => token + 1);
+        }
       } catch (error) {
         setNotice(`读取文件信息失败：${error instanceof Error ? error.message : String(error)}`);
       } finally {
@@ -54,7 +154,7 @@ export function useMediaFiles(kind: FileKind | FileKind[]) {
     },
     // kinds 由调用方字面量传入，数组等价于同一组过滤条件
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [kinds.join(",")],
+    [kinds.join(","), commitFiles, commitAdded],
   );
 
   const pick = useCallback(async () => {
@@ -65,33 +165,167 @@ export function useMediaFiles(kind: FileKind | FileKind[]) {
     await addPaths(paths);
   }, [addPaths, kinds.join(",")]);
 
-  const remove = useCallback((path: string) => {
-    setFiles((prev) => prev.filter((f) => f.path !== path));
-  }, []);
+  const remove = useCallback(
+    (path: string) => {
+      commitFiles(filesRef.current.filter((f) => f.path !== path));
+      commitAdded(addedRef.current.filter((p) => p !== path));
+    },
+    [commitFiles, commitAdded],
+  );
 
-  const clear = useCallback(() => setFiles([]), []);
+  const removeMany = useCallback(
+    (paths: string[]) => {
+      const drop = new Set(paths);
+      commitFiles(filesRef.current.filter((f) => !drop.has(f.path)));
+      commitAdded(addedRef.current.filter((p) => !drop.has(p)));
+    },
+    [commitFiles, commitAdded],
+  );
+
+  const clear = useCallback(() => {
+    commitFiles([]);
+    commitAdded([]);
+    setSort(null);
+    setDuplicatePaths([]);
+  }, [commitFiles, commitAdded]);
+
+  /** 拖动排序：选中项整理成连续块整体插入。 */
+  const move = useCallback(
+    (paths: string[], toIndex: number) => {
+      const current = filesRef.current;
+      if (!current.length) return;
+      const byPath = new Map(current.map((f) => [f.path, f]));
+      const order = moveBlock(current.map((f) => f.path), new Set(paths), toIndex);
+      commitFiles(order.map((path) => byPath.get(path)!).filter(Boolean));
+      setSort(null);
+    },
+    [commitFiles],
+  );
+
+  /** 真改磁盘文件名：成功后把该行路径替换掉并重新探测；失败时列表保持原样。 */
+  const rename = useCallback(
+    async (path: string, name: string) => {
+      try {
+        const result = await api.renameSourceFile(path, name);
+        let info: MediaInfo | undefined;
+        try {
+          info = (await api.probeFiles([result.to]))[0];
+        } catch {
+          // 探测失败不影响改名结果：先按新路径改名，元数据下轮刷新再补。
+        }
+        const fallback: MediaInfo | undefined = filesRef.current.find((f) => f.path === path);
+        commitFiles(
+          filesRef.current.map((f) =>
+            f.path !== path
+              ? f
+              : (info ?? {
+                  ...(fallback ?? f),
+                  path: result.to,
+                  name: result.name,
+                  ext: result.name.split(".").pop()?.toLowerCase() ?? f.ext,
+                }),
+          ),
+        );
+        commitAdded(addedRef.current.map((p) => (p === path ? result.to : p)));
+        return { ok: true, newPath: result.to };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+    [commitFiles, commitAdded],
+  );
+
+  const renameMany = useCallback(
+    async (args: { paths: string[]; template: string; start: number; pad: number; dryRun: boolean }) => {
+      const result = await api.batchRenameSourceFiles(args);
+      if (!result.applied) return result;
+      const mapping = new Map(result.plans.map((plan) => [plan.from, plan.to]));
+      let infos: MediaInfo[] = [];
+      try {
+        infos = await api.probeFiles(result.plans.map((plan) => plan.to));
+      } catch {
+        // 探测失败时保留旧元数据，只换路径与名字。
+      }
+      const byPath = new Map(infos.map((info) => [info.path, info]));
+      commitFiles(
+        filesRef.current.map((f) => {
+          const next = mapping.get(f.path);
+          if (!next) return f;
+          const info = byPath.get(next);
+          const name = next.split(/[\\/]/).pop() ?? f.name;
+          return info ?? { ...f, path: next, name, ext: name.split(".").pop()?.toLowerCase() ?? f.ext };
+        }),
+      );
+      commitAdded(addedRef.current.map((p) => mapping.get(p) ?? p));
+      return result;
+    },
+    [commitFiles, commitAdded],
+  );
+
+  /** 刷新：重新探测当前列表里的所有源文件（只更新元数据，不改顺序）。 */
+  const refresh = useCallback(async () => {
+    const current = filesRef.current;
+    if (!current.length) return;
+    setBusy(true);
+    try {
+      const infos = await api.probeFiles(current.map((f) => f.path));
+      const byPath = new Map(infos.map((info) => [info.path, info]));
+      commitFiles(current.map((f) => byPath.get(f.path) ?? f));
+      setNotice(null);
+    } catch (error) {
+      setNotice(`刷新失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  }, [commitFiles]);
+
+  const sortBy = useCallback(
+    (key: SortKey, dir: SortDir) => {
+      commitFiles(sortEntries(filesRef.current, key, dir));
+      setSort({ key, dir });
+    },
+    [commitFiles],
+  );
+
+  const restoreAddedOrder = useCallback(() => {
+    const rank = new Map(addedRef.current.map((path, index) => [path, index]));
+    commitFiles(
+      [...filesRef.current].sort(
+        (a, b) => (rank.get(a.path) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.path) ?? Number.MAX_SAFE_INTEGER),
+      ),
+    );
+    setSort(null);
+  }, [commitFiles]);
 
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    let disposed = false;
-    void (async () => {
-      const webview = getCurrentWebview();
-      const stop = await webview.onDragDropEvent((event) => {
-        const payload = event.payload as { type: string; paths?: string[] };
-        if (payload.type === "drop" && payload.paths?.length) {
-          void addPaths(payload.paths);
-        }
-      });
-      if (disposed) stop();
-      else unlisten = stop;
-    })();
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, [addPaths]);
+    return registerDropController({ id: dropId, addPaths });
+  }, [dropId, addPaths]);
 
-  return { files, busy, notice, addPaths, pick, remove, clear };
+  useEffect(() => {
+    startWindowDropBridge();
+  }, []);
+
+  return {
+    dropId,
+    files,
+    busy,
+    notice,
+    addedOrder,
+    sort,
+    duplicatePaths,
+    duplicateToken,
+    addPaths,
+    pick,
+    remove,
+    removeMany,
+    clear,
+    move,
+    rename,
+    renameMany,
+    refresh,
+    sortBy,
+    restoreAddedOrder,
+  };
 }
 
 export function kindLabel(kind: FileKind | FileKind[]): string {
@@ -122,77 +356,8 @@ export function DropZone({
   );
 }
 
-export function FileTable({
-  files,
-  onRemove,
-  onClear,
-}: {
-  files: MediaInfo[];
-  onRemove: (path: string) => void;
-  onClear: () => void;
-}) {
-  if (!files.length) {
-    return (
-      <div className="filetable">
-        <div className="empty">
-          <div className="big">
-            <Icon name="film" size={22} />
-          </div>
-          <div>拖入文件，或点击「添加文件」。</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>文件只读取信息，不会被改动</div>
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className="filetable">
-      <table>
-        <thead>
-          <tr>
-            <th>文件</th>
-            <th>类型</th>
-            <th>时长 / 尺寸</th>
-            <th>大小</th>
-            <th />
-            <th style={{ width: 56 }} />
-          </tr>
-        </thead>
-        <tbody>
-          {files.map((file) => (
-            <tr key={file.path}>
-              <td className="name" title={file.path}>
-                {file.name}
-              </td>
-              <td className="muted">{file.videoCodec || file.audioCodec || file.ext}</td>
-              <td className="muted">
-                {file.kind === "image"
-                  ? `${file.width ?? "?"}×${file.height ?? "?"}`
-                  : `${formatDuration(file.durationSec)}${file.width ? ` · ${file.width}×${file.height}` : ""}`}
-              </td>
-              <td className="muted">{formatBytes(file.sizeBytes)}</td>
-              <td className={file.error ? "err" : "muted"} title={file.error ?? ""}>
-                {file.error ? file.error.slice(0, 42) : ""}
-              </td>
-              <td>
-                <button className="btn small ghost" onClick={() => onRemove(file.path)}>
-                  移除
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <div style={{ display: "flex", gap: 8, padding: "8px 10px", borderTop: "1px solid var(--ff-line)" }}>
-        <span className="muted" style={{ fontSize: 12 }}>
-          共 {files.length} 个文件
-        </span>
-        <button className="btn small ghost" style={{ marginLeft: "auto" }} onClick={onClear}>
-          清空列表
-        </button>
-      </div>
-    </div>
-  );
-}
+/** 列表视图实现见 components/FileTable；这里保留导出，面板调用点不用改。 */
+export { FileTable } from "../components/FileTable";
 
 /**
  * 输出位置：放在开始按钮上方，可就地更改。

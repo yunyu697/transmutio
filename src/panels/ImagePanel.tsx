@@ -84,7 +84,8 @@ export function ImagePanel({
   toast: (text: string, kind?: "ok" | "error" | "info") => void;
   onBack: () => void;
 }) {
-  const { files, busy, notice, pick, remove, clear } = useMediaFiles("image");
+  const list = useMediaFiles("image");
+  const { files, busy, notice, pick, remove, clear } = list;
   const defaults: ImageParams = {
     ...DEFAULT_PARAMS,
     format: methodId === "image-resize" ? "png" : "jpg",
@@ -233,11 +234,11 @@ export function ImagePanel({
         </div>
         <DropZone kind="image" busy={busy} onPick={pick} />
         {notice ? (
-          <div className="note warn" style={{ margin: "10px 20px 0" }}>
+          <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>
             {notice}
           </div>
         ) : null}
-        <FileTable files={files} onRemove={remove} onClear={clear} />
+        <FileTable list={list} onNotify={toast} />
       </div>
 
       <aside className="inspector">

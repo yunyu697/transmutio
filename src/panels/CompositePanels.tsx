@@ -70,7 +70,8 @@ function BottomBar({
 // ---------------------------------------------------------------------------
 
 export function MergePanel({ methodId, outputDir, ffmpegReady, onChangeOutputDir, onEnqueued, toast, onBack }: CompositePanelProps) {
-  const { files, busy, notice, pick, remove, clear } = useMediaFiles("video");
+  const list = useMediaFiles("video");
+  const { files, busy, notice, pick, remove, clear } = list;
   const defaults: MergeParams = {
     mode: "auto",
     resolution: "source",
@@ -141,11 +142,11 @@ export function MergePanel({ methodId, outputDir, ffmpegReady, onChangeOutputDir
           </button>
         </div>
         <DropZone kind="video" busy={busy} onPick={pick} />
-        {notice ? <div className="note warn" style={{ margin: "10px 20px 0" }}>{notice}</div> : null}
-        <div className="note" style={{ margin: "10px 20px 0" }}>
+        {notice ? <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>{notice}</div> : null}
+        <div className="note" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>
           文件按添加顺序拼接；需要调整顺序请移除后重新添加。至少需要 2 个文件。
         </div>
-        <FileTable files={files} onRemove={remove} onClear={clear} />
+        <FileTable list={list} onNotify={toast} />
       </div>
 
       <aside className="inspector">
@@ -306,19 +307,19 @@ export function MuxPanel({ methodId, outputDir, ffmpegReady, onChangeOutputDir, 
           </div>
         </div>
 
-        <div style={{ padding: "0 20px" }}>
+        <div style={{ padding: "0 var(--ds-space-6)" }}>
           <div className="note" style={{ marginBottom: 8 }}>视频（画面来源，流复制）</div>
         </div>
         <DropZone kind="video" busy={video.busy} onPick={video.pick} />
-        {video.notice ? <div className="note warn" style={{ margin: "10px 20px 0" }}>{video.notice}</div> : null}
-        <FileTable files={video.files} onRemove={video.remove} onClear={video.clear} />
+        {video.notice ? <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>{video.notice}</div> : null}
+        <FileTable list={video} onNotify={toast} />
 
-        <div style={{ padding: "0 20px" }}>
-          <div className="note" style={{ margin: "14px 0 8px" }}>音频（音轨来源）</div>
+        <div style={{ padding: "0 var(--ds-space-6)" }}>
+          <div className="note" style={{ margin: "var(--ds-space-5) 0 var(--ds-space-4)" }}>音频（音轨来源）</div>
         </div>
         <DropZone kind="audio" busy={audio.busy} onPick={audio.pick} />
-        {audio.notice ? <div className="note warn" style={{ margin: "10px 20px 0" }}>{audio.notice}</div> : null}
-        <FileTable files={audio.files} onRemove={audio.remove} onClear={audio.clear} />
+        {audio.notice ? <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>{audio.notice}</div> : null}
+        <FileTable list={audio} onNotify={toast} />
       </div>
 
       <aside className="inspector">
@@ -396,7 +397,8 @@ export function MuxPanel({ methodId, outputDir, ffmpegReady, onChangeOutputDir, 
 // ---------------------------------------------------------------------------
 
 export function GifPanel({ methodId, outputDir, ffmpegReady, onChangeOutputDir, onEnqueued, toast, onBack }: CompositePanelProps) {
-  const { files, busy, notice, pick, remove, clear } = useMediaFiles("video");
+  const list = useMediaFiles("video");
+  const { files, busy, notice, pick, remove, clear } = list;
   const defaults: GifParams = { fps: 10, width: 480, startSec: 0, durationSec: 0, optimize: true };
   const [params, setParams] = useState<GifParams>(() => loadPanelPrefs(`video-${methodId}`, defaults));
   const [naming, setNaming] = useNaming(methodId);
@@ -459,8 +461,8 @@ export function GifPanel({ methodId, outputDir, ffmpegReady, onChangeOutputDir, 
           </button>
         </div>
         <DropZone kind="video" busy={busy} onPick={pick} />
-        {notice ? <div className="note warn" style={{ margin: "10px 20px 0" }}>{notice}</div> : null}
-        <FileTable files={files} onRemove={remove} onClear={clear} />
+        {notice ? <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>{notice}</div> : null}
+        <FileTable list={list} onNotify={toast} />
       </div>
 
       <aside className="inspector">

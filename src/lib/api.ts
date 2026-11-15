@@ -69,6 +69,25 @@ export interface Capabilities {
   notes: string[];
 }
 
+export interface RenamePlan {
+  from: string;
+  to: string;
+  name: string;
+  conflict: string | null;
+}
+
+export interface RenameResult {
+  from: string;
+  to: string;
+  name: string;
+}
+
+export interface BatchRenameResult {
+  plans: RenamePlan[];
+  /** false = 仅预检，或有冲突未执行 */
+  applied: boolean;
+}
+
 export interface MediaInfo {
   path: string;
   name: string;
@@ -717,6 +736,28 @@ export const api = {
   setAfterAction: (action: "none" | "open-folder" | "shutdown") =>
     invoke<string>("set_after_action", { action }),
   openFolder: (path: string) => invoke<void>("open_folder", { path }),
+  /** 用系统默认程序打开源文件。 */
+  openSourceFile: (path: string) => invoke<void>("open_source_file", { path }),
+  /** 在系统文件管理器中定位源文件。 */
+  revealSourceFile: (path: string) => invoke<void>("reveal_source_file", { path }),
+  /** 同目录内改源文件名；不带扩展名时沿用原扩展名。 */
+  renameSourceFile: (path: string, name: string) =>
+    invoke<RenameResult>("rename_source_file", { path, name }),
+  /** 批量模板改名；dryRun=true 只预检冲突，不落盘。 */
+  batchRenameSourceFiles: (args: {
+    paths: string[];
+    template: string;
+    start: number;
+    pad: number;
+    dryRun: boolean;
+  }) =>
+    invoke<BatchRenameResult>("batch_rename_source_files", {
+      paths: args.paths,
+      template: args.template,
+      start: args.start,
+      pad: args.pad,
+      dryRun: args.dryRun,
+    }),
   openJobFolder: (id: string) => invoke<void>("open_job_folder", { id }),
   openJobLog: (id: string) => invoke<void>("open_job_log", { id }),
   defaultOutputDir: () => invoke<string>("default_output_dir"),

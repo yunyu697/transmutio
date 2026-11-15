@@ -6,6 +6,7 @@ pub mod containers;
 pub mod device_presets;
 pub mod download;
 pub mod exif_write;
+pub mod file_ops;
 pub mod flavor;
 pub mod flavor_check;
 pub mod headless;
@@ -205,6 +206,38 @@ fn open_folder(app: AppHandle, path: String) -> Result<(), String> {
     app.opener()
         .open_path(path, None::<&str>)
         .map_err(|e| format!("打开目录失败：{e}"))
+}
+
+#[tauri::command]
+fn open_source_file(app: AppHandle, path: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_path(path, None::<&str>)
+        .map_err(|e| format!("打开文件失败：{e}"))
+}
+
+#[tauri::command]
+fn reveal_source_file(app: AppHandle, path: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .reveal_item_in_dir(path)
+        .map_err(|e| format!("定位文件失败：{e}"))
+}
+
+#[tauri::command]
+fn rename_source_file(path: String, name: String) -> Result<file_ops::RenameResult, String> {
+    file_ops::rename_file(&path, &name)
+}
+
+#[tauri::command]
+fn batch_rename_source_files(
+    paths: Vec<String>,
+    template: String,
+    start: usize,
+    pad: usize,
+    dry_run: bool,
+) -> Result<file_ops::BatchRenameResult, String> {
+    file_ops::batch_rename_files(&paths, &template, start, pad, dry_run)
 }
 
 #[tauri::command]
@@ -412,6 +445,10 @@ pub fn run() {
             import_preset,
             set_after_action,
             open_folder,
+            open_source_file,
+            reveal_source_file,
+            rename_source_file,
+            batch_rename_source_files,
             open_job_folder,
             open_job_log,
             write_exif,

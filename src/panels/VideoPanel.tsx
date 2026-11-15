@@ -298,7 +298,8 @@ export function VideoPanel(props: VideoPanelProps) {
 }
 
 function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutputDir, onEnqueued, toast, onBack }: VideoPanelProps) {
-  const { files, busy, notice, pick, remove, clear } = useMediaFiles("video");
+  const list = useMediaFiles("video");
+  const { files, busy, notice, pick, remove, clear } = list;
   // 面板参数持久化：重启后恢复上次选择（按方法隔离，避免不同方法互相污染默认值）。
   const [params, setParams] = useState<VideoParams>(() => {
     const loaded = loadPanelPrefs(`video:${methodId}`, initialParams(methodId));
@@ -601,8 +602,8 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
           </button>
         </div>
         <DropZone kind="video" busy={busy} onPick={pick} />
-        {notice ? <div className="note warn" style={{ margin: "10px 20px 0" }}>{notice}</div> : null}
-        <FileTable files={files} onRemove={remove} onClear={clear} />
+        {notice ? <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>{notice}</div> : null}
+        <FileTable list={list} onNotify={toast} />
       </div>
 
       <aside className="inspector">

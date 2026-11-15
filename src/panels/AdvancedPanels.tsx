@@ -52,7 +52,8 @@ const DEFAULT_COLLAGE: CollageParams = {
 
 /** 图片序列 → 视频：帧率、尺寸统一策略、编码器（起始编号按文件名自动推导）。 */
 export function SequencePanel({ outputDir, ffmpegReady, onChangeOutputDir, onEnqueued, toast, onBack }: CommonProps) {
-  const { files, busy, notice, pick, remove, clear } = useMediaFiles("image");
+  const list = useMediaFiles("image");
+  const { files, busy, notice, pick, remove, clear } = list;
   const [params, setParams] = useState<SeqParams>(() => loadPanelPrefs("seq:params", DEFAULT_SEQ));
   const [naming, setNaming] = useState<NamingPrefs>(() => loadPanelPrefs("seq:naming", { template: "", conflict: "suffix" }));
   const [starting, setStarting] = useState(false);
@@ -103,8 +104,8 @@ export function SequencePanel({ outputDir, ffmpegReady, onChangeOutputDir, onEnq
           </button>
         </div>
         <DropZone kind="image" busy={busy} onPick={pick} />
-        {notice ? <div className="note warn" style={{ margin: "10px 20px 0" }}>{notice}</div> : null}
-        <FileTable files={files} onRemove={remove} onClear={clear} />
+        {notice ? <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>{notice}</div> : null}
+        <FileTable list={list} onNotify={toast} />
       </div>
       <aside className="inspector">
         <div className="inspector-head"><Icon name="film" size={15} /><b>视频参数</b><span className="sub">{files.length} 张图片</span></div>
@@ -179,7 +180,8 @@ export function SequencePanel({ outputDir, ffmpegReady, onChangeOutputDir, onEnq
 
 /** 视频 → 图片序列。 */
 export function FramesPanel({ outputDir, ffmpegReady, onChangeOutputDir, onEnqueued, toast, onBack }: CommonProps) {
-  const { files, busy, notice, pick, remove, clear } = useMediaFiles("video");
+  const list = useMediaFiles("video");
+  const { files, busy, notice, pick, remove, clear } = list;
   const [params, setParams] = useState<FramesParams>(() => loadPanelPrefs("frames:params", DEFAULT_FRAMES));
   const [starting, setStarting] = useState(false);
   useEffect(() => savePanelPrefs("frames:params", params), [params]);
@@ -223,8 +225,8 @@ export function FramesPanel({ outputDir, ffmpegReady, onChangeOutputDir, onEnque
           </button>
         </div>
         <DropZone kind="video" busy={busy} onPick={pick} />
-        {notice ? <div className="note warn" style={{ margin: "10px 20px 0" }}>{notice}</div> : null}
-        <FileTable files={files.slice(0, 1)} onRemove={remove} onClear={clear} />
+        {notice ? <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>{notice}</div> : null}
+        <FileTable list={{ ...list, files: list.files.slice(0, 1) }} onNotify={toast} />
       </div>
       <aside className="inspector">
         <div className="inspector-head"><Icon name="camera" size={15} /><b>抽帧参数</b></div>
@@ -268,7 +270,8 @@ export function FramesPanel({ outputDir, ffmpegReady, onChangeOutputDir, onEnque
 
 /** 图片拼图。 */
 export function CollagePanel({ outputDir, ffmpegReady, onChangeOutputDir, onEnqueued, toast, onBack }: CommonProps) {
-  const { files, busy, notice, pick, remove, clear } = useMediaFiles("image");
+  const list = useMediaFiles("image");
+  const { files, busy, notice, pick, remove, clear } = list;
   const [params, setParams] = useState<CollageParams>(() => loadPanelPrefs("collage:params", DEFAULT_COLLAGE));
   const [naming, setNaming] = useState<NamingPrefs>(() => loadPanelPrefs("collage:naming", { template: "", conflict: "suffix" }));
   const [starting, setStarting] = useState(false);
@@ -326,8 +329,8 @@ export function CollagePanel({ outputDir, ffmpegReady, onChangeOutputDir, onEnqu
           </button>
         </div>
         <DropZone kind="image" busy={busy} onPick={pick} />
-        {notice ? <div className="note warn" style={{ margin: "10px 20px 0" }}>{notice}</div> : null}
-        <FileTable files={files} onRemove={remove} onClear={clear} />
+        {notice ? <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>{notice}</div> : null}
+        <FileTable list={list} onNotify={toast} />
       </div>
       <aside className="inspector">
         <div className="inspector-head"><Icon name="grid" size={15} /><b>网格参数</b><span className="sub">{canvas.w}x{canvas.h} px</span></div>
@@ -429,7 +432,8 @@ const toExifDate = (local: string): string | undefined => {
 };
 
 export function ExifPanel({ outputDir, onChangeOutputDir, toast, onBack }: CommonProps) {
-  const { files, busy, notice, pick, remove, clear } = useMediaFiles("image");
+  const list = useMediaFiles("image");
+  const { files, busy, notice, pick, remove, clear } = list;
   const [form, setForm] = useState<ExifForm>(() => loadPanelPrefs("exif:form", DEFAULT_EXIF));
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState<ExifWriteResult[] | null>(null);
@@ -484,10 +488,10 @@ export function ExifPanel({ outputDir, onChangeOutputDir, toast, onBack }: Commo
           </button>
         </div>
         <DropZone kind="image" busy={busy} onPick={pick} />
-        {notice ? <div className="note warn" style={{ margin: "10px 20px 0" }}>{notice}</div> : null}
-        <FileTable files={files} onRemove={remove} onClear={clear} />
+        {notice ? <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>{notice}</div> : null}
+        <FileTable list={list} onNotify={toast} />
         {results ? (
-          <div style={{ padding: "0 20px 16px" }}>
+          <div style={{ padding: "0 var(--ds-space-6) var(--ds-space-6)" }}>
             {results.map((item) => (
               <div key={item.src} className={`note ${item.ok ? "" : "warn"}`} style={{ marginTop: 8 }}>
                 <b>{item.ok ? "OK" : "FAIL"}</b> · {item.src}
@@ -558,7 +562,8 @@ const DEFAULT_AVIF: AvifParams = { quality: 70, speed: 6 };
 
 /** AVIF 编码（纯 Rust ravif，不依赖 FFmpeg 的 avif muxer）。 */
 export function AvifPanel({ outputDir, onChangeOutputDir, toast, onBack }: CommonProps) {
-  const { files, busy, notice, pick, remove, clear } = useMediaFiles("image");
+  const list = useMediaFiles("image");
+  const { files, busy, notice, pick, remove, clear } = list;
   const [prefs, setPrefs] = useState<AvifParams>(() => loadPanelPrefs("avif:prefs", DEFAULT_AVIF));
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState<AvifResult[] | null>(null);
@@ -592,10 +597,10 @@ export function AvifPanel({ outputDir, onChangeOutputDir, toast, onBack }: Commo
           </button>
         </div>
         <DropZone kind="image" busy={busy} onPick={pick} />
-        {notice ? <div className="note warn" style={{ margin: "10px 20px 0" }}>{notice}</div> : null}
-        <FileTable files={files} onRemove={remove} onClear={clear} />
+        {notice ? <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>{notice}</div> : null}
+        <FileTable list={list} onNotify={toast} />
         {results ? (
-          <div style={{ padding: "0 20px 16px" }}>
+          <div style={{ padding: "0 var(--ds-space-6) var(--ds-space-6)" }}>
             {results.map((item) => (
               <div key={item.src} className={`note ${item.ok ? "" : "warn"}`} style={{ marginTop: 8 }}>
                 <b>{item.ok ? "OK" : "FAIL"}</b> · {item.src}

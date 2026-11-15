@@ -42,6 +42,16 @@ const paths: Record<string, string> = {
   moon: "M20 14a8 8 0 1 1-9-11 7 7 0 0 0 9 11z",
   chip: "M7 7h10v10H7z M4 9v2 M4 13v2 M20 9v2 M20 13v2 M9 4v3 M13 4v3 M9 17v3 M13 17v3",
   gpu: "M4 6h16v9H4z M4 18h16 M8 9v3 M12 9v3 M16 9v3",
+  check: "M5 12.5l4.5 4.5L19 6.5",
+  copy: "M9 9h11v11H9z M15 9V4H4v11h5",
+  clipboard: "M9 4h6v3H9z M7 6H5v15h14V6h-2",
+  pencil: "M4 20l4.5-1L19 8.5 15.5 5 5 15.5z M14 6.5l3.5 3.5",
+  trash: "M4 7h16 M9 7V4h6v3 M6 7l1 14h10l1-14",
+  refresh: "M20 12a8 8 0 1 1-2.6-5.9 M20 4v6h-6",
+  file: "M6 3h8l4 4v14H6z M14 3v4h4",
+  external: "M14 4h6v6 M20 4l-9 9 M10 5H5v14h14v-5",
+  link: "M9.5 14.5l5-5 M8 12l-2 2a3 3 0 0 0 4.2 4.2l2-2 M16 12l2-2a3 3 0 0 0-4.2-4.2l-2 2",
+  sort: "M8 7h12 M8 12h9 M8 17h6 M4 5v14 M2 17l2 2 2-2",
 };
 
 export function Icon({ name, size = 18, ...rest }: { name: string; size?: number } & SVGProps<SVGSVGElement>) {
