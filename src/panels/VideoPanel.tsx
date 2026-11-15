@@ -1360,7 +1360,7 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
           <Group title="音量" icon="wave" collapsed>
             <SwitchRow
               label="启用音量增益"
-              hint="相对增益：整条音轨统一放大/衰减固定 dB，不改变动态范围"
+              hint="音量＝相对增益：整条音轨统一放大/衰减固定 dB，不改变动态范围；响度归一化（音频卡）＝把整体拉到 -16 LUFS，两者互斥"
               on={params.volume.enabled}
               onChange={(value) =>
                 setParams((prev) => ({

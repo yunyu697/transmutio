@@ -1817,6 +1817,11 @@ body.fl-marquee {
   padding: var(--ds-space-5) var(--ds-space-6) var(--ds-space-4);
   flex-wrap: wrap;
 }
+.tc-sum {
+  padding: 0 var(--ds-space-6) var(--ds-space-4);
+  font-size: var(--ds-type-role-caption);
+  color: var(--ds-color-text-2);
+}
 .stat {
   flex: 0 0 auto;
   min-width: 104px;

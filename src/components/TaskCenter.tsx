@@ -171,6 +171,12 @@ export function TaskCenter({
         </div>
       </div>
 
+      {compressSummary ? (
+        <div className="tc-sum">
+          图片压缩：成功 {compressSummary.ok} / 未达标 {compressSummary.unmet} / 失败 {compressSummary.failed}
+        </div>
+      ) : null}
+
       <div className="tc-body">
         {ordered.length ? (
           ordered.map((task) => {

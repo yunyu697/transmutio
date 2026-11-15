@@ -331,7 +331,7 @@ export function ImagePanel({
           </Group> : null}
 
           {isCompress ? (
-            <Group title="压缩" icon="compress">
+            <Group title="压缩" icon="compress" hint="压缩不改变尺寸；若同时裁剪 / 缩放 / 水印，先做那些再编码">
               <Field label="模式" tag={params.compress.mode === "target" ? "二分逼近目标" : "固定质量重编码"}>
                 <Segmented
                   value={params.compress.mode}
@@ -355,7 +355,15 @@ export function ImagePanel({
                     />
                   </Field>
                   {params.compress.targetMode === "absolute" ? (
-                    <Field label="目标大小（KB）" tag="1–5000">
+                    <Field
+                      label="目标大小（KB）"
+                      tag="1–5000"
+                      hint={
+                        params.format === "png"
+                          ? "PNG 重编码几乎不减小体积，目标大小模式只做最大压缩/调色板量化，可能仍达不到目标"
+                          : "target 模式用二分逼近目标大小（最多 8 次）；JPEG 质量下限 40、WebP 35，压到下限仍超目标时任务仍为完成但会标记「未达标」"
+                      }
+                    >
                       <input
                         className="input"
                         type="number"
