@@ -438,7 +438,7 @@ export default function App() {
           {flavor ? (flavor.id === "gpl" ? `${flavor.productName} · GPL` : `${flavor.productName} · LGPL`) : "变体未知"}
           <span
             className="flavor-build"
-            style={tools?.build.nonfree ? { color: "var(--ff-warn)" } : undefined}
+            style={tools?.build.nonfree ? { color: "var(--ds-color-warn)" } : undefined}
           >
             {tools
               ? ` · FFmpeg 构建：${tools.build.nonfree ? "nonfree" : tools.build.gpl ? "GPL" : "LGPL"}${

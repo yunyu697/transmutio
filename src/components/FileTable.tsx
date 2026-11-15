@@ -1098,7 +1098,7 @@ export function FileTable({ list, onNotify }: { list: MediaFilesController; onNo
               <Icon name="film" size={22} />
             </div>
             <div>拖入文件，或点击「添加文件」。</div>
-            <div style={{ fontSize: 12, opacity: 0.8 }}>文件不会被复制；仅「重命名」会改动磁盘上的文件名</div>
+            <div style={{ fontSize: "var(--ds-type-role-body)", color: "var(--ds-color-text-muted)" }}>文件不会被复制；仅「重命名」会改动磁盘上的文件名</div>
           </div>
         )}
         {marqueeBox ? (

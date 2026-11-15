@@ -1,7 +1,7 @@
 /* =============================================================
    统一界面设计令牌 · 生成物，不要手改
    source: D:/Users/Tyler Zhang/Documents/Trae-CN/design-system/tokens.json
-   source-sha256: 46ab98f3e68a
+   source-sha256: 05c7ebc58070
    更新：node <design-system>/tools/install.mjs <project>
    ============================================================= */
 :root {
@@ -26,6 +26,20 @@
   --ds-space-9: 48px;
   /*   页面级大留白、空状态居中区的上下留白；不用于：任何组件内部 */
 
+  /* 间距角色。角色回答「这一段关系该留多少」，值仍然是 space 阶梯里的档；角色不得引入阶梯外的新值（build-tokens 会校验）。一个关系只用一个角色，不允许因为「差 2px 更紧」跳到相邻档。 */
+  --ds-space-role-inline: 4px;
+  /*   图标与文字、相邻图标按钮、徽标与文字之间；不用于：控件之间、字段之间 */
+  --ds-space-role-control: 8px;
+  /*   同一水平容器内同级控件之间、列表行水平内边距、表格单元格内边距；不用于：字段之间、区块之间 */
+  --ds-space-role-field: 12px;
+  /*   字段与字段之间、compact 面板内边距、表头单元格内边距；不用于：页面级留白 */
+  --ds-space-role-block: 16px;
+  /*   面板/卡片内边距、区块内的分组间距；不用于：行内元素之间 */
+  --ds-space-role-region: 24px;
+  /*   区块与区块之间、对话框内边距、导航分组之间；不用于：字段内部 */
+  --ds-space-role-page: 32px;
+  /*   页面级分区之间、内容区四周留白；不用于：任何组件内部 */
+
   /* 字体栈。界面字体不随项目变化；只有品牌字标可以用项目自带字体。 */
   --ds-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Source Han Sans SC", "Noto Sans CJK SC", sans-serif;
   /*   全部界面文字；不用于：代码、数字对齐列 */
@@ -49,6 +63,20 @@
   /*   区块标题、空状态标题；不用于：正文、按钮 */
   --ds-font-size-24: 24px;
   /*   页面主标题、营销数字；不用于：控件内部 */
+
+  /* 字号角色（compact 基准）。角色是阶梯值的别名，不是新数值：每个角色的值必须命中 type.size 的某一档，build-tokens 会校验。组件按角色选字号，不按「这里看着该大一点」选档。comfortable / vr 密度项目在自己的适配文件里把同名变量改指上一档（body 14 / card 16 / section 20 / page 24），组件代码不变。13 号档不在角色表内：它只为兼容存量文字而保留，新代码不得使用；需要强调时用字重 600，不要 +1px。 */
+  --ds-type-role-page: 20px;
+  /*   页面主标题（h1），一屏最多一个，正文的 1.67 倍；不用于：区块标题、对话框标题 */
+  --ds-type-role-section: 16px;
+  /*   区块标题、对话框标题、面板分组标题；不用于：正文、按钮 */
+  --ds-type-role-card: 14px;
+  /*   卡片标题、列表行主标题、表格里需要一眼扫到的名称；不用于：整段正文、按钮 */
+  --ds-type-role-body: 12px;
+  /*   正文基准（compact）与控制文字：按钮、输入值、单元格、页签；不用于：页面标题、表头 */
+  --ds-type-role-caption: 11px;
+  /*   表头、单位、时间戳、行内元数据、帮助文字、分组标题；不用于：正文段落、按钮 */
+  --ds-type-role-micro: 10px;
+  /*   徽标、计数、图表轴标签；不用于：任何需要读清的内容 */
 
   /* 只允许四档。550/650 这类中间字重不提供。 */
   --ds-font-weight-400: 400;
@@ -84,6 +112,18 @@
   --ds-radius-xl: 14px;
   /*   面板、对话框、侧栏浮层；不用于：控件 */
   --ds-radius-pill: 999px;
+  /*   开关、头像、胶囊标签、圆形图标按钮；不用于：矩形卡片 */
+
+  /* 圆角角色。角色是 radius 阶梯值的别名，不得引入新值（build-tokens 会校验）。嵌套只允许相邻角色：tag ⊂ control ⊂ card ⊂ panel，差值 4 / 2 / 4；禁止跳级嵌套。6 与 2 不在角色表内：6 的场合改用 control，2 只留作进度条内部件。 */
+  --ds-radius-role-tag: 4px;
+  /*   徽标、标签、键帽、复选框；不用于：按钮、输入框 */
+  --ds-radius-role-control: 8px;
+  /*   按钮、输入框、下拉、分段控件、图标按钮；不用于：面板外框 */
+  --ds-radius-role-card: 10px;
+  /*   列表行、卡片、下拉面板、Toast；不用于：对话框 */
+  --ds-radius-role-panel: 14px;
+  /*   面板、对话框、侧栏浮层；不用于：控件 */
+  --ds-radius-role-pill: 999px;
   /*   开关、头像、胶囊标签、圆形图标按钮；不用于：矩形卡片 */
 
   /* 控件高度阶梯，含图标按钮与行内小按钮。控件高度一律用这些值，禁止用 padding 撑出高度。本表不定义「默认控件高」：同一密度档内各项目取值可不同（Transmutio 28、Renomio 32），以各项目在 SPEC §4.2 接入表里的声明为准。 */

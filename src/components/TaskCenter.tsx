@@ -127,7 +127,7 @@ export function TaskCenter({
         >
           {paused ? "继续队列" : "暂停队列"}
         </button>
-        <span className="muted" style={{ fontSize: 12, color: "var(--ff-fg3)" }}>
+        <span className="muted" style={{ fontSize: "var(--ds-type-role-body)", color: "var(--ds-color-text-muted)" }}>
           并发
         </span>
         <select
@@ -199,12 +199,12 @@ export function TaskCenter({
                     <span
                       title={`质量 ${task.qualityUsed ?? "—"} · 尝试 ${task.attemptsUsed ?? "—"} 次`}
                       style={{
-                        fontSize: 11,
+                        fontSize: "var(--ds-type-role-caption)",
                         padding: "var(--ds-space-1) var(--ds-space-3)",
-                        borderRadius: 999,
-                        color: "var(--ff-warn)",
-                        background: "rgba(240, 196, 84, 0.12)",
-                        border: "1px solid rgba(240, 196, 84, 0.3)",
+                        borderRadius: "var(--ds-radius-role-pill)",
+                        color: "var(--ds-color-warn)",
+                        background: "var(--ds-color-warn-weak)",
+                        border: "1px solid color-mix(in srgb, var(--ds-color-warn) 30%, transparent)",
                         whiteSpace: "nowrap",
                       }}
                     >
@@ -280,13 +280,13 @@ export function TaskCenter({
               <Icon name="grid" size={22} />
             </div>
             <div>还没有任务</div>
-            <div style={{ fontSize: 12, opacity: 0.8 }}>选择一条转换方法并添加文件即可开始</div>
+            <div style={{ fontSize: "var(--ds-type-role-body)", color: "var(--ds-color-text-muted)" }}>选择一条转换方法并添加文件即可开始</div>
           </div>
         )}
       </div>
 
       <div className="inspector-foot" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-        <span className="muted" style={{ fontSize: 12, color: "var(--ff-fg3)" }}>
+        <span className="muted" style={{ fontSize: "var(--ds-type-role-body)", color: "var(--ds-color-text-muted)" }}>
           排队 {stats.queued} · 取消 {stats.cancelled}
         </span>
         <button className="btn small ghost" style={{ marginLeft: "auto" }} onClick={onClearFinished}>

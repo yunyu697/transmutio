@@ -745,10 +745,10 @@ export function ImagePanel({
       <div className="bottombar">
         <PresetBar methodId={methodId} title={findMethod(methodId)?.title ?? methodId} />
         <OutputDirBar outputDir={outputDir} onChange={onChangeOutputDir} />
-        <div style={{ fontSize: 12, color: "var(--ff-fg3)" }}>
+        <div style={{ fontSize: "var(--ds-type-role-body)", color: "var(--ds-color-text-muted)" }}>
           {totals.count ? (
             <>
-              共 <b style={{ color: "var(--ff-fg2)" }}>{totals.count}</b> 张 · 源文件 {formatBytes(totals.bytes)}
+              共 <b style={{ color: "var(--ds-color-text-2)" }}>{totals.count}</b> 张 · 源文件 {formatBytes(totals.bytes)}
               {totals.duration ? ` · 时长 ${formatDuration(totals.duration)}` : ""}
             </>
           ) : (

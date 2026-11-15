@@ -401,10 +401,10 @@ function AudioTranscode({
       <div className="bottombar">
         <PresetBar methodId={methodId} title={findMethod(methodId)?.title ?? methodId} />
         <OutputDirBar outputDir={outputDir} onChange={onChangeOutputDir} />
-        <div style={{ fontSize: 12, color: "var(--ff-fg3)" }}>
+        <div style={{ fontSize: "var(--ds-type-role-body)", color: "var(--ds-color-text-muted)" }}>
           {estimate ? (
             <>
-              粗估体积 <b style={{ color: "var(--ff-fg2)" }}>{formatBytes(estimate.bytes)}</b> · 时长{" "}
+              粗估体积 <b style={{ color: "var(--ds-color-text-2)" }}>{formatBytes(estimate.bytes)}</b> · 时长{" "}
               {formatDuration(estimate.duration)}
             </>
           ) : (
@@ -539,7 +539,7 @@ function AudioBottomBar({
     <div className="bottombar">
       <PresetBar methodId={methodId} title={findMethod(methodId)?.title ?? methodId} />
       <OutputDirBar outputDir={outputDir} onChange={onChangeOutputDir} />
-      <div style={{ fontSize: 12, color: "var(--ff-fg3)" }}>{hint}</div>
+      <div style={{ fontSize: "var(--ds-type-role-body)", color: "var(--ds-color-text-muted)" }}>{hint}</div>
       <button className="btn primary" onClick={onStart} disabled={starting || !canStart}>
         <Icon name="play" size={14} />
         {starting ? "正在入队…" : label}
@@ -687,7 +687,7 @@ function AudioMergePanel({
           estimate ? (
             <>
               {mix ? "最长一路" : "总时长"} {formatDuration(estimate.duration)} · 粗估体积{" "}
-              <b style={{ color: "var(--ff-fg2)" }}>{formatBytes(estimate.bytes)}</b>
+              <b style={{ color: "var(--ds-color-text-2)" }}>{formatBytes(estimate.bytes)}</b>
             </>
           ) : (
             `至少添加 2 个文件后开始${action}`
@@ -871,7 +871,7 @@ function AudioTrimPanel({
           estimate ? (
             <>
               {usable.length} 个任务 · 合计时长 {formatDuration(estimate.duration)} · 粗估体积{" "}
-              <b style={{ color: "var(--ff-fg2)" }}>{formatBytes(estimate.bytes)}</b>
+              <b style={{ color: "var(--ds-color-text-2)" }}>{formatBytes(estimate.bytes)}</b>
             </>
           ) : (
             "添加文件并填写有效区间后开始"

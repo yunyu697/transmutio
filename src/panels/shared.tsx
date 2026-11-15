@@ -351,7 +351,7 @@ export function DropZone({
           {busy ? "读取中…" : "选择文件"}
         </button>
       </span>
-      <span style={{ marginLeft: "auto", fontSize: 11.5, opacity: 0.7 }}>支持批量 · 不覆盖已有文件</span>
+      <span style={{ marginLeft: "auto", fontSize: "var(--ds-type-role-caption)", color: "var(--ds-color-text-muted)" }}>支持批量 · 不覆盖已有文件</span>
     </div>
   );
 }
@@ -632,7 +632,7 @@ export function SwitchRow({
   return (
     <div className="switchrow">
       <div>
-        <div style={{ fontSize: 13 }}>{label}</div>
+        <div style={{ fontSize: "var(--ds-type-role-body)" }}>{label}</div>
         {hint ? <div className="hint">{hint}</div> : null}
       </div>
       <button

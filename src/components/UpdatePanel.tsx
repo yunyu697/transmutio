@@ -16,7 +16,7 @@ function Attempts({ attempts }: { attempts: UpdateSourceAttempt[] }) {
     <div className="note" style={{ marginTop: 6 }}>
       来源尝试（成功 {attempts.length - failed} / 失败 {failed}）：
       {attempts.map((a) => (
-        <div key={a.id} style={{ fontSize: 12, marginTop: 2 }}>
+        <div key={a.id} style={{ fontSize: "var(--ds-type-role-body)", marginTop: 2 }}>
           {a.ok ? "✓" : "✗"} {a.label} · {a.elapsedMs} ms{a.error ? ` · ${a.error}` : ""}
         </div>
       ))}
@@ -159,7 +159,7 @@ export function UpdatePanel({ toast }: { toast: (text: string, kind?: "ok" | "er
           </div>
           <div className="kv">
             <span>安装包</span>
-            <b style={{ fontSize: 12 }}>{candidate.assetName}</b>
+            <b style={{ fontSize: "var(--ds-type-role-body)" }}>{candidate.assetName}</b>
           </div>
           <div className="note">
             {result?.installModeLabel}
@@ -208,7 +208,7 @@ export function UpdatePanel({ toast }: { toast: (text: string, kind?: "ok" | "er
           </div>
           <div className="kv">
             <span>安装包</span>
-            <b style={{ fontSize: 12 }}>{pending.assetName}</b>
+            <b style={{ fontSize: "var(--ds-type-role-body)" }}>{pending.assetName}</b>
           </div>
           <div className="kv">
             <span>校验状态</span>

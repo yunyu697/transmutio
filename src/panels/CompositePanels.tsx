@@ -58,7 +58,7 @@ function BottomBar({
     <div className="bottombar">
       <PresetBar methodId={methodId} title={findMethod(methodId)?.title ?? methodId} />
       <OutputDirBar outputDir={outputDir} onChange={onChangeOutputDir} />
-      <div style={{ fontSize: 12, color: "var(--ff-fg3)" }}>{hint}</div>
+      <div style={{ fontSize: "var(--ds-type-role-body)", color: "var(--ds-color-text-muted)" }}>{hint}</div>
       <button className="btn primary" onClick={onStart} disabled={starting || !canStart}>
         <Icon name="play" size={14} />
         {starting ? "正在入队…" : "开始处理"}
