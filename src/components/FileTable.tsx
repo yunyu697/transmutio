@@ -893,6 +893,16 @@ export function FileTable({ list, onNotify }: { list: MediaFilesController; onNo
         setSelection(clearSelection());
         return;
       }
+      if (key === "/") {
+        event.preventDefault();
+        document.querySelector<HTMLInputElement>(".searchbox input")?.focus();
+        return;
+      }
+      if (key === " ") {
+        event.preventDefault();
+        if (leadPath) setSelection(toggle(current, leadPath));
+        return;
+      }
       if (key === "ArrowDown" || key === "ArrowUp") {
         event.preventDefault();
         setSelection(moveFocus(current, visible, key === "ArrowDown" ? 1 : -1, event.shiftKey));
@@ -1074,6 +1084,11 @@ export function FileTable({ list, onNotify }: { list: MediaFilesController; onNo
                       {file.error ? file.error.slice(0, 42) : ""}
                     </td>
                     <td className="fl-actions">
+                      <span className="row-keys" aria-hidden="true">
+                        <kbd>Space</kbd>
+                        <kbd>F2</kbd>
+                        <kbd>Del</kbd>
+                      </span>
                       <button
                         className="fl-row-remove"
                         title="从列表移除"

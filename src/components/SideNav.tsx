@@ -85,6 +85,7 @@ export function SideNav({
               placeholder="搜索转换方法…"
               aria-label="搜索转换方法"
             />
+            <kbd className="kbd">/</kbd>
           </label>
 
           <div className="side-scroll">

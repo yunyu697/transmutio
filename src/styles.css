@@ -869,6 +869,63 @@ select {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+
+/* ---------- 键位提示（不常驻，悬停或聚焦时浮出） ---------- */
+.kbd,
+.row-keys kbd {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px var(--ds-space-2);
+  border: var(--ds-border-hairline) solid var(--ds-color-line-strong);
+  border-radius: var(--ds-radius-role-tag);
+  background: var(--ds-color-surface-3);
+  color: var(--ds-color-text-2);
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-type-role-caption);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.filetable td.fl-actions {
+  position: relative;
+}
+.row-keys {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + var(--ds-space-3));
+  transform: translateY(-50%);
+  display: inline-flex;
+  gap: var(--ds-space-2);
+  padding-left: var(--ds-space-6);
+  background: linear-gradient(to right, transparent, var(--ds-color-surface) 28%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--ds-dur-2) var(--ds-ease-standard);
+}
+.filetable tbody tr:hover .row-keys {
+  background: linear-gradient(
+    to right,
+    transparent,
+    color-mix(in srgb, var(--ds-color-surface-2) 60%, var(--ds-color-surface)) 28%
+  );
+}
+.filetable tbody tr.sel .row-keys {
+  background: linear-gradient(to right, transparent, var(--ds-color-accent-weak) 28%);
+}
+.filetable tbody tr:hover .row-keys,
+.fl-scroll:focus-visible tbody tr.lead .row-keys {
+  opacity: 1;
+}
+.searchbox .kbd,
+.btn .kbd {
+  opacity: 0;
+  transition: opacity var(--ds-dur-2) var(--ds-ease-standard);
+}
+.searchbox:hover .kbd,
+.searchbox:focus-within .kbd,
+.btn:hover .kbd,
+.btn:focus-visible .kbd {
+  opacity: 1;
+}
 .fl-row-remove {
   display: grid;
   place-items: center;
