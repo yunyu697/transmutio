@@ -114,7 +114,7 @@ export function SequencePanel({ outputDir, ffmpegReady, onChangeOutputDir, onEnq
               <input className="input" type="number" min={1} max={60} value={params.fps}
                 onChange={(event) => set("fps", Number(event.target.value))} />
             </Field>
-            <div className="note">起始编号由所选文件名自动推导（首个文件的编号就是起始编号），不提供手动输入。若选择的文件编号不连续，任务会在入队阶段被拒绝并指出缺哪一张。</div>
+
           </Group>
           <Group title="尺寸统一" icon="resize">
             <Field label="策略">
@@ -158,7 +158,7 @@ export function SequencePanel({ outputDir, ffmpegReady, onChangeOutputDir, onEnq
               <input className="slider" type="range" min={14} max={40} value={params.quality}
                 onChange={(event) => set("quality", Number(event.target.value))} />
             </Field>
-            <div className="note">「自动」会按当前 FFmpeg 实际可用的软件编码器选择：LGPL 包通常是 libopenh264，GPL 包优先 libx264。</div>
+
           </Group>
           <OutputNaming naming={naming} onChange={setNaming} />
         </div>
@@ -251,7 +251,7 @@ export function FramesPanel({ outputDir, ffmpegReady, onChangeOutputDir, onEnque
                   onChange={(event) => set("quality", Number(event.target.value))} />
               </Field>
             ) : null}
-            <div className="note">先写临时目录，全部成功后才移入输出目录；失败不会留下半套图片。</div>
+
           </Group>
         </div>
       </aside>
@@ -381,7 +381,7 @@ export function CollagePanel({ outputDir, ffmpegReady, onChangeOutputDir, onEnqu
                   onChange={(event) => set("quality", Number(event.target.value))} />
               </Field>
             ) : null}
-            <div className="note">画布 = 列数×单元格宽 + 间距；超出网格容量的图片会在入队阶段被拒绝。</div>
+
           </Group>
           <OutputNaming naming={naming} onChange={setNaming} />
         </div>
@@ -537,12 +537,6 @@ export function ExifPanel({ outputDir, onChangeOutputDir, toast, onBack }: Commo
               <Segmented value={form.orientation} onChange={(value) => set("orientation", value)} options={orientationOptions} />
             </Field>
           </Group>
-          <Group title="写在哪里" icon="folder">
-            <div className="note">
-              输出目录留空 = 与源文件同目录，同名冲突自动加 (1)、(2)。源文件不会被修改；
-              失败时删除中间文件，绝不留下半套输出。支持 JPG / PNG / TIFF / WebP（仅无损或扩展格式）/ HEIC / AVIF / JXL。
-            </div>
-          </Group>
         </div>
       </aside>
       <div className="bottombar">
@@ -625,7 +619,7 @@ export function AvifPanel({ outputDir, onChangeOutputDir, toast, onBack }: Commo
                 onChange={(event) => setPrefs((prev) => ({ ...prev, quality: Number(event.target.value) }))}
               />
             </Field>
-            <div className="note">1–100，越大越接近原图；70 左右适合网页图片。</div>
+
           </Group>
           <Group title="速度" icon="speed">
             <Field label={`速度 ${prefs.speed}`}>
@@ -638,13 +632,7 @@ export function AvifPanel({ outputDir, onChangeOutputDir, toast, onBack }: Commo
                 onChange={(event) => setPrefs((prev) => ({ ...prev, speed: Number(event.target.value) }))}
               />
             </Field>
-            <div className="note">1 最慢但压缩率最高，10 最快；批量大图建议 8。</div>
-          </Group>
-          <Group title="说明" icon="info">
-            <div className="note">
-              FFmpeg 的 AV1 编码器存在，但没有 AVIF 封装器（命令行没有对应的输出格式），因此这里用
-              ravif（纯 Rust）直接编码，不依赖外部二进制。输入支持 JPG / PNG / WebP / BMP / TIFF / GIF。
-            </div>
+
           </Group>
         </div>
       </aside>

@@ -297,10 +297,7 @@ export function ImagePanel({
                 on={gif.dither}
                 onChange={(value) => setGifField("dither", value)}
               />
-              <div className="note">
-                按文件名自然排序（img2 在 img10 之前）后合成一个任务；每张图显示 1/fps 秒。GIF 只使用本组参数，
-                上方格式 / 裁剪 / 尺寸设置不参与。GIF 后端固定用两遍调色板，避免单遍编码产生偏色。
-              </div>
+
             </Group>
           ) : null}
 
@@ -329,9 +326,8 @@ export function ImagePanel({
                   onChange={(event) => set("quality", Number(event.target.value))}
                 />
               </Field>
-            ) : (
-              <div className="note">{params.format.toUpperCase()} 为无损 / 无损压缩格式，质量滑块不生效。</div>
-            )}
+            ) : null
+            }
           </Group> : null}
 
           {isCompress ? (
@@ -408,9 +404,7 @@ export function ImagePanel({
                       </div>
                     </Field>
                   )}
-                  <div className="note">
-                    target 模式用二分逼近目标大小（最多 8 次）；JPEG 质量下限 40、WebP 35，压到下限仍超目标时任务仍为完成但会标记「未达标」。
-                  </div>
+
                 </>
               ) : (
                 <Field label={`质量 ${params.compress.quality}`} tag="1–100">
@@ -448,19 +442,16 @@ export function ImagePanel({
                 on={params.compress.keepMetadata}
                 onChange={(value) => setCompress("keepMetadata", value)}
               />
-              {params.format === "png" ? (
-                <div className="note warn">
-                  PNG 重编码几乎不减小体积，目标大小模式只做最大压缩/调色板量化，可能仍达不到目标
-                </div>
-              ) : null}
-              {compressUnsupported ? (
-                <div className="note warn">BMP / TIFF 不支持压缩，请改选 JPG / PNG / WebP 后再开始</div>
-              ) : null}
-              <div className="note">压缩不改变尺寸；若同时裁剪 / 缩放 / 水印，先做那些再编码。</div>
+
             </Group>
           ) : null}
 
-          <Group title="裁剪" icon="crop" collapsed={methodId !== "image-crop"}>
+          <Group
+            title="裁剪"
+            icon="crop"
+            collapsed={methodId !== "image-crop"}
+            hint="宽 / 高必须大于 0，且矩形必须完整落在源图内；越界会在入队阶段被拒绝并指出「矩形 @ 源图尺寸」，不会输出黑边。"
+          >
             <Field label="模式" tag="裁剪在旋转与缩放之前">
               <Segmented
                 value={params.cropMode}
@@ -532,9 +523,6 @@ export function ImagePanel({
                     />
                   </Field>
                 </div>
-                <div className="note">
-                  宽 / 高必须大于 0，且矩形必须完整落在源图内；越界会在入队阶段被拒绝并指出「矩形 @ 源图尺寸」，不会输出黑边。
-                </div>
               </>
             ) : null}
           </Group>
@@ -576,19 +564,16 @@ export function ImagePanel({
                   }}
                 />
               </Field>
-              <Field label="当前结果">
-                <div className="note" style={{ height: 32, display: "flex", alignItems: "center" }}>
-                  {params.maxEdge > 0 ? `最长边 ≤ ${params.maxEdge} px` : "保持原始尺寸"}
-                </div>
-              </Field>
             </div>
-            <div className="note">
-              缩放使用 <code>force_original_aspect_ratio=decrease</code>，只缩不放，不会拉伸；小于上限的图片保持原样。
-            </div>
+
           </Group>
 
           {isWatermark ? (
-            <Group title="水印" icon="watermark">
+            <Group
+              title="水印"
+              icon="watermark"
+              hint="水印按输出画面短边百分比缩放，九宫格会自动留出边距；自定义坐标为水印左上角像素位置。水印图仅支持 png / jpg / jpeg / webp。"
+            >
               <SwitchRow
                 label="启用水印"
                 hint="为每张图片叠加同一张水印图；关闭时不向 ffmpeg 传任何水印参数"
@@ -697,9 +682,6 @@ export function ImagePanel({
                       />
                     </Field>
                   </div>
-                  <div className="note">
-                    水印按输出画面短边百分比缩放，九宫格会自动留出边距；自定义坐标为水印左上角像素位置。水印图仅支持 png / jpg / jpeg / webp。
-                  </div>
                 </>
               ) : null}
             </Group>
@@ -724,17 +706,7 @@ export function ImagePanel({
                 ]}
               />
             </Field>
-            <div className="note">
-              自动校正与手动旋转是两次独立的像素变换：EXIF 修正「照片原本该朝哪」，手动旋转是你在修正后的基础上再做调整。
-              不会出现「FFmpeg 自动转一次 + 我们又转一次」的双重旋转。
-            </div>
-          </Group>
 
-          <Group title="说明" icon="info">
-            <div className="note">
-              图片编码由 FFmpeg 完成：JPG 走 mjpeg、PNG 走内置 png、WebP 走 libwebp。图片编码器没有做逐项试编，
-              若当前构建缺少某个编码器（例如没有 libwebp），任务会失败并在任务中心给出原因，不会生成损坏文件。
-            </div>
           </Group>
 
           <OutputNaming naming={naming} onChange={setNaming} />
@@ -758,7 +730,7 @@ export function ImagePanel({
           className="btn primary"
           onClick={start}
           disabled={starting || !files.length || compressUnsupported}
-          title={compressUnsupported ? "BMP / TIFF 不支持压缩" : undefined}
+          title={compressUnsupported ? "BMP / TIFF 不支持压缩，请改选 JPG / PNG / WebP 后再开始" : undefined}
         >
           <Icon name="play" size={14} />
           {starting ? "正在入队…" : isGif ? "生成 GIF" : isCompress ? "开始压缩" : "开始转换"}

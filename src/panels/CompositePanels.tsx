@@ -142,9 +142,7 @@ export function MergePanel({ methodId, outputDir, ffmpegReady, onChangeOutputDir
         </div>
         {files.length ? null : <DropZone kind="video" busy={busy} onPick={pick} />}
         {notice ? <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>{notice}</div> : null}
-        <div className="note" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>
-          文件按添加顺序拼接；需要调整顺序请移除后重新添加。至少需要 2 个文件。
-        </div>
+
         <FileTable list={list} onNotify={toast} />
       </div>
 
@@ -155,7 +153,11 @@ export function MergePanel({ methodId, outputDir, ffmpegReady, onChangeOutputDir
           <span className="sub">{usable.length} 个输入</span>
         </div>
         <div className="inspector-body">
-          <Group title="拼接方式" icon="film">
+          <Group
+            title="拼接方式"
+            icon="film"
+            hint="自动：编码/分辨率/帧率/音轨参数完全一致时直接复制流（最快、无损）；任一项不同则先统一转码再拼接。直接拼接遇到参数不同会明确拒绝，不会产出损坏文件。"
+          >
             <Field label="模式">
               <Segmented
                 value={params.mode}
@@ -167,10 +169,6 @@ export function MergePanel({ methodId, outputDir, ffmpegReady, onChangeOutputDir
                 ]}
               />
             </Field>
-            <div className="note">
-              自动：编码/分辨率/帧率/音轨参数完全一致时直接复制流（最快、无损）；任一项不同则先统一转码再拼接。
-              直接拼接遇到不同参会明确拒绝，不会产出损坏文件。
-            </div>
           </Group>
 
           {needTranscode ? (
@@ -206,11 +204,7 @@ export function MergePanel({ methodId, outputDir, ffmpegReady, onChangeOutputDir
                 />
               </Field>
             </Group>
-          ) : (
-            <Group title="统一转码" icon="compress">
-              <div className="note">「直接拼接」不重新编码，分辨率/帧率/质量设置不生效。</div>
-            </Group>
-          )}
+          ) : null}
 
           <OutputNaming naming={naming} onChange={setNaming} />
         </div>
@@ -306,14 +300,14 @@ export function MuxPanel({ methodId, outputDir, ffmpegReady, onChangeOutputDir, 
         </div>
 
         <div style={{ padding: "0 var(--ds-space-6)" }}>
-          <div className="note" style={{ marginBottom: 8 }}>视频（画面来源，流复制）</div>
+
         </div>
         {video.files.length ? null : <DropZone kind="video" busy={video.busy} onPick={video.pick} />}
         {video.notice ? <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>{video.notice}</div> : null}
         <FileTable list={video} onNotify={toast} />
 
         <div style={{ padding: "0 var(--ds-space-6)" }}>
-          <div className="note" style={{ margin: "var(--ds-space-5) 0 var(--ds-space-4)" }}>音频（音轨来源）</div>
+
         </div>
         {audio.files.length ? null : <DropZone kind="audio" busy={audio.busy} onPick={audio.pick} />}
         {audio.notice ? <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>{audio.notice}</div> : null}
@@ -338,9 +332,7 @@ export function MuxPanel({ methodId, outputDir, ffmpegReady, onChangeOutputDir, 
                 ]}
               />
             </Field>
-            <div className="note">
-              替换：丢弃视频原音轨，只保留新音频；追加：保留原音轨（若有）并新增一条。视频流始终直接复制。
-            </div>
+
           </Group>
 
           <Group title="音频编码" icon="wave">
@@ -367,12 +359,9 @@ export function MuxPanel({ methodId, outputDir, ffmpegReady, onChangeOutputDir, 
                   }))
                 }
               />
-            ) : (
-              <div className="note">
-                原样复制要求编码能被 MP4 直接容纳（AAC/MP3/AC3/Opus 等）；PCM、FLAC 等会被明确拒绝并提示改用 AAC。
-              </div>
-            )}
-            <div className="note">音频比视频长时按视频时长截断；比视频短时尾部无声音，不会补静音。</div>
+            ) : null
+            }
+
           </Group>
 
           <OutputNaming naming={naming} onChange={setNaming} />
@@ -507,9 +496,7 @@ export function GifPanel({ methodId, outputDir, ffmpegReady, onChangeOutputDir, 
               on={params.optimize}
               onChange={(value) => set("optimize", value)}
             />
-            <div className="note">
-              调色板优化会先统计全片颜色再量化到 256 色，文件通常更小且色带更少；直接转码只做逐帧量化，速度更快但色彩明显更差。
-            </div>
+
           </Group>
 
           <OutputNaming naming={naming} onChange={setNaming} />

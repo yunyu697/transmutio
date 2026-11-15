@@ -77,9 +77,6 @@ export function MethodGrid({
             <div style={{ fontSize: "var(--ds-type-role-body)", color: "var(--ds-color-text-muted)" }}>试试「MP4」「MP3」「缩放」等关键词</div>
           </div>
         )}
-        <div className="note" style={{ marginTop: 16 }}>
-          未实现的方法保留入口，方便查看后续规划；点击会明确提示「未实现」，不会执行任何假转换。
-        </div>
       </div>
     </>
   );

@@ -171,18 +171,6 @@ export function TaskCenter({
         </div>
       </div>
 
-      {compressSummary ? (
-        <div className="note" style={{ margin: "0 12px 8px" }}>
-          图片压缩：成功 {compressSummary.ok} / 未达标 {compressSummary.unmet} / 失败 {compressSummary.failed}
-        </div>
-      ) : null}
-
-      {paused ? (
-        <div className="note" style={{ margin: "0 12px 8px" }}>
-          队列已暂停：不会启动新任务，正在运行的任务会继续跑完。点「继续队列」恢复调度。
-        </div>
-      ) : null}
-
       <div className="tc-body">
         {ordered.length ? (
           ordered.map((task) => {

@@ -406,17 +406,19 @@ export function Group({
   icon,
   children,
   collapsed,
+  hint,
 }: {
   title: string;
   icon: string;
   children: ReactNode;
   collapsed?: boolean;
+  hint?: string;
 }) {
   const head = (
-    <>
+    <span className="group-head" title={hint}>
       <Icon name={icon} size={14} />
       {title}
-    </>
+    </span>
   );
   if (collapsed) {
     return (
@@ -437,10 +439,10 @@ export function Group({
   );
 }
 
-export function Field({ label, tag, children }: { label: string; tag?: string; children: ReactNode }) {
+export function Field({ label, tag, hint, children }: { label: string; tag?: string; hint?: string; children: ReactNode }) {
   return (
     <div className="field">
-      <label>
+      <label title={hint}>
         {label}
         {tag ? <span className={tag === "硬编" ? "tag hw" : "tag"}>{tag}</span> : null}
       </label>
@@ -492,7 +494,10 @@ export function QualityTierField({
   const tier = tierForCrf(crf);
   return (
     <>
-      <Field label={label}>
+      <Field
+        label={label}
+        hint={`${tier.hint} 当前档位「${tier.name}」对应 CRF ${tier.min}–${tier.max}；数值越小越清晰、体积越大。`}
+      >
         <select
           className="select"
           value={tier.id}
@@ -508,7 +513,6 @@ export function QualityTierField({
           ))}
         </select>
       </Field>
-      <div className="note">{tier.hint}</div>
       <details className="advanced">
         <summary>高级：手动微调 CRF</summary>
         <div className="advanced-body">
@@ -588,7 +592,7 @@ export function AudioBitrateField({
       : "固定档位：按所选码率编码，体积可预期。";
   return (
     <>
-      <Field label="音频码率">
+      <Field label="音频码率" hint={hint}>
         <select
           className="select"
           value={value}
@@ -611,7 +615,6 @@ export function AudioBitrateField({
           {current === "bitrate" && !tier ? <option value="custom">自定义（{kbps} kbps）</option> : null}
         </select>
       </Field>
-      <div className="note">{hint}</div>
     </>
   );
 }
@@ -681,12 +684,6 @@ export function OutputNaming({
           <option value="overwrite">覆盖（先备份旧文件）</option>
         </select>
       </Field>
-      <div className="note">
-        模板留空等于保持源文件名。占位符：{`{name}`} 源文件名、{`{date}`} 日期(YYYYMMDD)、{`{index}`} 批次内序号、{`{ext}`} 扩展名。
-      </div>
-      {naming.conflict === "overwrite" ? (
-        <div className="note warn">覆盖是破坏性操作：会在替换前把旧文件挪到备份名，成功后删除备份。</div>
-      ) : null}
     </Group>
   );
 }

@@ -222,13 +222,9 @@ function AudioTranscode({
                   }))
                 }
               />
-            ) : (
-              <div className="note">{formatSpec.label} 为无损格式，不使用码率参数，输出大小由源决定。</div>
-            )}
-            <div className="note">
-              源文件为视频时只提取第一条音轨；视频画面不会被保留。若源文件没有音轨，任务会失败并给出原因。
-              源码率读不到（ffprobe 失败）时，「保持原始」按 128 kbps 编码。
-            </div>
+            ) : null
+            }
+
           </Group>
 
           <Group title="变速" icon="gauge" collapsed>
@@ -267,9 +263,7 @@ function AudioTranscode({
               on={params.keepPitch}
               onChange={(value) => set("keepPitch", value)}
             />
-            <div className="note">
-              无损格式（FLAC/WAV）变速同样生效；保持音高用 atempo 链。
-            </div>
+
           </Group>
 
           <Group title="采样与声道" icon="wave">
@@ -373,9 +367,7 @@ function AudioTranscode({
                 setParams((prev) => ({ ...prev, volume: { ...prev.volume, mute: value } }))
               }
             />
-            <div className="note">
-              音量＝相对增益；响度归一化＝把整体拉到 -16 LUFS，两者不同且不能同时开启。
-            </div>
+
           </Group>
 
           <Group title="编码器状态" icon="chip" collapsed>
@@ -388,9 +380,7 @@ function AudioTranscode({
             ) : (
               <div className="note">正在探测本机编码能力…</div>
             )}
-            <div className="note">
-              默认走 LGPL 路线：仅使用 FFmpeg 内置 AAC 与 LAME（LGPL）等许可友好编码器，不启用 fdk-aac 等 nonfree 组件。
-            </div>
+
           </Group>
 
           <OutputNaming naming={naming} onChange={setNaming} />
@@ -475,12 +465,10 @@ function AudioOutputSettings({
               patch({ rateMode: mode === "" ? "bitrate" : mode, bitrateKbps: kbps })
             }
           />
-        ) : (
-          <div className="note">{spec.label} 为无损格式，不使用码率参数。</div>
-        )}
+        ) : null}
       </Group>
 
-      <Group title="采样与声道" icon="wave">
+      <Group title="采样与声道" icon="wave" hint={sourceHint}>
         <Field label="采样率">
           <Segmented
             value={params.sampleRate}
@@ -503,7 +491,6 @@ function AudioOutputSettings({
             ]}
           />
         </Field>
-        <div className="note">{sourceHint}</div>
         <SwitchRow
           label="音量归一化"
           hint="EBU R128（-16 LUFS），输出整体响度统一"
@@ -644,11 +631,7 @@ function AudioMergePanel({
             {notice}
           </div>
         ) : null}
-        <div className="note" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>
-          {mix
-            ? "所有文件同时开始播放并混合（时长取最长的一路）；每路按 1/N 等权衰减避免削波。至少需要 2 个文件，源文件是视频时只取第一条音轨。"
-            : "文件按添加顺序拼接；需要调整顺序请移除后重新添加。至少需要 2 个文件，源文件是视频时只取第一条音轨。"}
-        </div>
+
         <FileTable list={list} onNotify={toast} />
       </div>
 
@@ -795,9 +778,7 @@ function AudioTrimPanel({
             {notice}
           </div>
         ) : null}
-        <div className="note" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>
-          同一区间会应用到列表里的每个文件；源文件是视频时只取第一条音轨。终点超出源时长会在入队阶段被拒绝并给出原因。
-        </div>
+
         <FileTable list={list} onNotify={toast} />
       </div>
 

@@ -646,11 +646,7 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
                 ))}
               </select>
             </Field>
-            <div className="note">
-              {activePreset
-                ? activePreset.note
-                : "模板只覆盖容器、编码、分辨率、帧率与音轨码率；裁剪、水印等其它设置保持不变。"}
-            </div>
+
             <Field label="容器" tag={`输出 .${containerSpec.ext}`}>
               <Segmented
                 value={params.container}
@@ -684,10 +680,7 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
                 options={codecOptions}
               />
             </Field>
-            <div className="note">
-              容器与编码器按探测结果联动：不兼容的组合不会出现在可选项里；缺少编码器的选项灰显并说明原因。
-              WebM 使用 VP9 / VP8 / AV1，音频自动改用 Opus / Vorbis；MP4 / MOV 固定 AAC。faststart 仅 MP4 / MOV 生效。
-            </div>
+
           </Group>
 
           <Group title="编码器" icon="chip" collapsed>
@@ -731,16 +724,9 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
                       </span>
                     </button>
                   ))
-                ) : (
-                  <div className="note warn">当前构建没有与所选编码格式匹配的编码器。</div>
-                )
-              ) : (
-                <div className="note">正在探测本机编码能力…探测完成后可手动指定编码器。</div>
-              )}
+                ) : null
+              ) : null}
             </div>
-            {params.encoder === "auto" ? (
-              <div className="note">自动策略：优先硬件编码；初始化失败、参数被拒或显存不足时自动回退软件编码，并在任务中心标注回退原因。</div>
-            ) : null}
           </Group>
 
           <Group title="画质与尺寸" icon="compress">
@@ -760,12 +746,6 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
             ) : null}
             {params.rateMode === "bitrate" ? (
               <VideoBitrateField kbps={params.bitrateKbps} onChange={(kbps) => set("bitrateKbps", kbps)} />
-            ) : null}
-            {params.rateMode === "source" ? (
-              <div className="note">
-                保持原始：沿用源文件的视频码率作为目标，输出体积接近源。
-                读取不到源码率（ffprobe 失败）时按 4000 kbps 编码；新编码器无法逐字节复现原码率，实际码率会有偏差。
-              </div>
             ) : null}
             <div className="row2">
               <Field label="分辨率">
@@ -857,11 +837,7 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
                 />
               </Field>
             )}
-            <div className="note">
-              {isCrop && rectCrop
-                ? "矩形按源画面宽高的百分比裁剪，宽高自动取偶并夹在画面内；处理顺序仍为「裁剪 → 旋转 → 缩放」。"
-                : "处理顺序为「裁剪 → 旋转 → 缩放」；裁剪从画面中心取最大可用区域，不会拉伸。"}
-            </div>
+
           </Group>
 
           {isWatermark ? (
@@ -1091,11 +1067,7 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
                       />
                     </Field>
                   )}
-                  <div className="note">
-                    {params.watermark.mode === "text"
-                      ? "文字水印由 ffmpeg drawtext 绘制：使用系统字体（不随应用打包），不支持换行与旋转；字体缺失或格式不支持时任务会直接失败并给出原因。"
-                      : "水印按输出画面短边百分比缩放，九宫格会自动留出边距；自定义坐标为水印左上角像素位置。水印图仅支持 png / jpg / jpeg / webp。"}
-                  </div>
+
                 </>
               ) : null}
             </Group>
@@ -1138,19 +1110,6 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
                       ]}
                     />
                   </Field>
-                  {subtitleBurnUnavailable ? (
-                    <div className="note warn">当前 FFmpeg 未包含 libass，无法烧录字幕：请改用内嵌字幕，或安装带 libass 的 FFmpeg 构建。</div>
-                  ) : null}
-                  {subtitleSoftContainerBad ? (
-                    <div className="note warn">
-                      当前容器 {containerSpec.label} 不承载内嵌字幕轨，请改 MP4/MKV/MOV 或改用烧录。
-                    </div>
-                  ) : null}
-                  {subtitleSpeedConflict ? (
-                    <div className="note warn">
-                      变速时不能烧录字幕（字幕时间轴会与变速后的画面/音频不同步）：请改为内嵌字幕，或把倍速设回 1。
-                    </div>
-                  ) : null}
                   <Field label="主字幕文件" tag="srt / ass / ssa / vtt">
                     <button
                       className="btn small"
@@ -1213,9 +1172,7 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
                             </div>
                           ))}
                         </div>
-                      ) : (
-                        <div className="note">主字幕始终保留为第一条轨道；可继续添加上限内的附加字幕轨。</div>
-                      )}
+                      ) : null}
                     </Field>
                   ) : null}
                   <Field label="字幕语言" tag="默认 chi">
@@ -1315,9 +1272,7 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
                       </Field>
                     </>
                   ) : null}
-                  <div className="note">
-                    内嵌字幕仅 MP4 / MOV / MKV 承载（MP4 / MOV 用 mov_text，MKV 直接复制流）；WebM / TS / AVI 请改用烧录。烧录在任意视频容器可用，但不能与变速同时使用。
-                  </div>
+
                 </>
               ) : null}
             </Group>
@@ -1359,9 +1314,7 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
               on={params.keepPitch}
               onChange={(value) => set("keepPitch", value)}
             />
-            <div className="note">
-              变速改变视频时长与音轨时长；与裁剪/旋转/缩放同时使用时顺序为「裁剪 → 旋转 → 缩放 → 变速」。音轨「原样复制」不能与变速同时使用。
-            </div>
+
           </Group>
 
           <Group title="音频" icon="wave" collapsed>
@@ -1401,9 +1354,6 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
                   }));
                 }}
               />
-            ) : null}
-            {params.audioMode === "copy" ? (
-              <div className="note">原样复制不重新编码，速度快；若源音轨不被 MP4 支持会失败，届时可改为转 AAC。</div>
             ) : null}
           </Group>
 
@@ -1462,13 +1412,15 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
                 setParams((prev) => ({ ...prev, volume: { ...prev.volume, mute: value } }))
               }
             />
-            <div className="note">
-              音量＝相对增益；响度归一化（音频卡）＝把整体拉到 -16 LUFS，两者不同。
-            </div>
+
           </Group>
 
           {isSplit ? (
-            <Group title="分割" icon="split">
+            <Group
+              title="分割"
+              icon="split"
+              hint="每行生成一个独立任务（文件名自动加 -partN）：任一段失败可在任务中心单独定位。输出容器沿用上方「目标格式」所选容器。流复制只能切在关键帧，起点偏移属正常；需要帧级准确请选重编码。"
+            >
               <Field label="分割模式" tag={params.split.mode === "copy" ? "快，关键帧对齐" : "慢，帧级准确"}>
                 <Segmented
                   value={params.split.mode}
@@ -1499,10 +1451,6 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
                   style={{ resize: "vertical", fontFamily: "inherit" }}
                 />
               </Field>
-              <div className="note">
-                每行生成一个独立任务（文件名自动加 -partN）：任一段失败可在任务中心单独定位。输出容器沿用上方「目标格式」所选容器。
-                流复制只能切在关键帧，起点偏移属正常；需要帧级准确请选重编码。
-              </div>
             </Group>
           ) : null}
 
@@ -1519,11 +1467,6 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
               disabled={!caps?.decodeAccels.some((d) => d.available)}
             />
             <SwitchRow label="faststart" hint="把 moov 前置，便于网页边下边播" on={params.faststart} onChange={(value) => set("faststart", value)} />
-            {caps && !caps.softwareH264Available ? (
-              <div className="note warn">
-                默认（LGPL）路线下本机没有软件 H.264 编码器。若硬件编码不可用，任务会失败并提示原因，不会偷偷改用 GPL 编码器。
-              </div>
-            ) : null}
           </Group>
 
           <OutputNaming naming={naming} onChange={setNaming} />
