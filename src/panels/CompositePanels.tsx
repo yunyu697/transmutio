@@ -135,9 +135,9 @@ export function MergePanel({ methodId, outputDir, ffmpegReady, onChangeOutputDir
           <div>
             <h1>视频合并</h1>
           </div>
-          <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
+          <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy} title="添加文件">
             <Icon name="plus" size={14} />
-            {busy ? "读取中…" : "添加文件"}
+            <span className="btn-label">{busy ? "读取中…" : "添加文件"}</span>
           </button>
         </div>
         {files.length ? null : <DropZone kind="video" busy={busy} onPick={pick} />}
@@ -441,9 +441,9 @@ export function GifPanel({ methodId, outputDir, ffmpegReady, onChangeOutputDir, 
           <div>
             <h1>视频转 GIF</h1>
           </div>
-          <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
+          <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy} title="添加文件">
             <Icon name="plus" size={14} />
-            {busy ? "读取中…" : "添加文件"}
+            <span className="btn-label">{busy ? "读取中…" : "添加文件"}</span>
           </button>
         </div>
         {files.length ? null : <DropZone kind="video" busy={busy} onPick={pick} />}

@@ -170,9 +170,9 @@ function AudioTranscode({
           <div>
             <h1>{title}</h1>
           </div>
-          <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
+          <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy} title="添加文件">
             <Icon name="plus" size={14} />
-            {busy ? "读取中…" : "添加文件"}
+            <span className="btn-label">{busy ? "读取中…" : "添加文件"}</span>
           </button>
         </div>
         {files.length ? null : <DropZone kind={["audio", "video"]} busy={busy} onPick={pick} />}
@@ -620,9 +620,9 @@ function AudioMergePanel({
                 : "按列表顺序拼接 · 逐路统一采样率与声道后重编码 · 绝不覆盖原文件"}
             </p>
           </div>
-          <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
+          <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy} title="添加文件">
             <Icon name="plus" size={14} />
-            {busy ? "读取中…" : "添加文件"}
+            <span className="btn-label">{busy ? "读取中…" : "添加文件"}</span>
           </button>
         </div>
         {files.length ? null : <DropZone kind={["audio", "video"]} busy={busy} onPick={pick} />}
@@ -767,9 +767,9 @@ function AudioTrimPanel({
           <div>
             <h1>音频截取</h1>
           </div>
-          <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
+          <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy} title="添加文件">
             <Icon name="plus" size={14} />
-            {busy ? "读取中…" : "添加文件"}
+            <span className="btn-label">{busy ? "读取中…" : "添加文件"}</span>
           </button>
         </div>
         {files.length ? null : <DropZone kind={["audio", "video"]} busy={busy} onPick={pick} />}

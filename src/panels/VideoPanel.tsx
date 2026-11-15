@@ -595,9 +595,9 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
           <div>
             <h1>{methodId === "video-watermark" ? "添加水印" : methodId === "video-subtitle" ? "添加字幕" : methodId === "video-compress" ? "视频压缩" : methodId === "video-crop" ? "画面裁剪" : methodId === "video-split" ? "视频分割" : "视频转码"}</h1>
           </div>
-          <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
+          <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy} title="添加文件">
             <Icon name="plus" size={14} />
-            {busy ? "读取中…" : "添加文件"}
+            <span className="btn-label">{busy ? "读取中…" : "添加文件"}</span>
           </button>
         </div>
         {files.length ? null : <DropZone kind="video" busy={busy} onPick={pick} />}

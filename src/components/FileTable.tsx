@@ -1018,8 +1018,8 @@ export function FileTable({ list, onNotify }: { list: MediaFilesController; onNo
               <tr>
                 <th className="fl-seq">#</th>
                 <th>文件</th>
-                <th>类型</th>
-                <th>时长 / 尺寸</th>
+                <th className="fl-kind">类型</th>
+                <th className="fl-meta">时长 / 尺寸</th>
                 <th className="num">大小</th>
                 <th />
                 <th className="fl-actions" />
@@ -1077,8 +1077,8 @@ export function FileTable({ list, onNotify }: { list: MediaFilesController; onNo
                         <span className="fl-name">{file.name}</span>
                       )}
                     </td>
-                    <td className="muted">{typeLabel(file)}</td>
-                    <td className="muted">{rangeLabel(file)}</td>
+                    <td className="muted fl-kind">{typeLabel(file)}</td>
+                    <td className="muted fl-meta">{rangeLabel(file)}</td>
                     <td className="muted num">{formatBytes(file.sizeBytes)}</td>
                     <td className={file.error ? "err" : "muted"} title={file.error ?? ""}>
                       {file.error ? file.error.slice(0, 42) : ""}

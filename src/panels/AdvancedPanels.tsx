@@ -98,8 +98,8 @@ export function SequencePanel({ outputDir, ffmpegReady, onChangeOutputDir, onEnq
           <div>
             <h1>图片序列转视频</h1>
           </div>
-          <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
-            <Icon name="plus" size={14} />{busy ? "读取中…" : "添加图片"}
+          <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy} title="添加图片">
+            <Icon name="plus" size={14} /><span className="btn-label">{busy ? "读取中…" : "添加图片"}</span>
           </button>
         </div>
         {files.length ? null : <DropZone kind="image" busy={busy} onPick={pick} />}
@@ -219,7 +219,7 @@ export function FramesPanel({ outputDir, ffmpegReady, onChangeOutputDir, onEnque
         <div className="wb-head">
           <button className="btn small ghost" onClick={onBack}>← 方法列表</button>
           <div><h1>视频转图片序列</h1></div>
-          <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
+          <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy} title="添加图片">
             <Icon name="plus" size={14} />{busy ? "读取中…" : "添加视频"}
           </button>
         </div>
@@ -323,8 +323,8 @@ export function CollagePanel({ outputDir, ffmpegReady, onChangeOutputDir, onEnqu
         <div className="wb-head">
           <button className="btn small ghost" onClick={onBack}>← 方法列表</button>
           <div><h1>图片拼图</h1></div>
-          <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
-            <Icon name="plus" size={14} />{busy ? "读取中…" : "添加图片"}
+          <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy} title="添加图片">
+            <Icon name="plus" size={14} /><span className="btn-label">{busy ? "读取中…" : "添加图片"}</span>
           </button>
         </div>
         {files.length ? null : <DropZone kind="image" busy={busy} onPick={pick} />}
@@ -482,8 +482,8 @@ export function ExifPanel({ outputDir, onChangeOutputDir, toast, onBack }: Commo
         <div className="wb-head">
           <button className="btn small ghost" onClick={onBack}>← 方法列表</button>
           <div><h1>EXIF 元数据写入</h1></div>
-          <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
-            <Icon name="plus" size={14} />{busy ? "读取中…" : "添加图片"}
+          <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy} title="添加图片">
+            <Icon name="plus" size={14} /><span className="btn-label">{busy ? "读取中…" : "添加图片"}</span>
           </button>
         </div>
         {files.length ? null : <DropZone kind="image" busy={busy} onPick={pick} />}
@@ -585,8 +585,8 @@ export function AvifPanel({ outputDir, onChangeOutputDir, toast, onBack }: Commo
         <div className="wb-head">
           <button className="btn small ghost" onClick={onBack}>← 方法列表</button>
           <div><h1>图片转 AVIF</h1></div>
-          <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
-            <Icon name="plus" size={14} />{busy ? "读取中…" : "添加图片"}
+          <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy} title="添加图片">
+            <Icon name="plus" size={14} /><span className="btn-label">{busy ? "读取中…" : "添加图片"}</span>
           </button>
         </div>
         {files.length ? null : <DropZone kind="image" busy={busy} onPick={pick} />}

@@ -226,9 +226,9 @@ export function ImagePanel({
           <div>
             <h1>{methodId === "image-watermark" ? "图片加水印" : methodId === "image-resize" ? "图片批量缩放" : methodId === "image-crop" ? "图片批量裁剪" : methodId === "image-compress" ? "图片压缩" : methodId === "image-gif" ? "图片转 GIF" : "图片批量转换"}</h1>
           </div>
-          <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
+          <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy} title="添加图片">
             <Icon name="plus" size={14} />
-            {busy ? "读取中…" : "添加图片"}
+            <span className="btn-label">{busy ? "读取中…" : "添加图片"}</span>
           </button>
         </div>
         {files.length ? null : <DropZone kind="image" busy={busy} onPick={pick} />}
