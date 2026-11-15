@@ -54,18 +54,19 @@ const paths: Record<string, string> = {
   sort: "M8 7h12 M8 12h9 M8 17h6 M4 5v14 M2 17l2 2 2-2",
 };
 
-export function Icon({ name, size = 18, ...rest }: { name: string; size?: number } & SVGProps<SVGSVGElement>) {
+export function Icon({ name, size = 16, ...rest }: { name: string; size?: number } & SVGProps<SVGSVGElement>) {
   const d = paths[name] ?? paths.info;
   return (
     <svg
       width={size}
       height={size}
-      viewBox="0 0 24 24"
+      viewBox="2 2 20 20"
       fill="none"
       stroke="currentColor"
-      strokeWidth={1.6}
+      strokeWidth={1.7}
       strokeLinecap="round"
       strokeLinejoin="round"
+      overflow="visible"
       aria-hidden="true"
       {...rest}
     >

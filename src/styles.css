@@ -861,9 +861,18 @@ select {
 .fl-actions {
   width: var(--ds-space-9);
 }
+.filetable .fl-actions {
+  text-align: right;
+}
+.filetable th.num,
+.filetable td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
 .fl-row-remove {
   display: grid;
   place-items: center;
+  margin-left: auto;
   width: var(--ds-control-h-sm);
   height: var(--ds-control-h-sm);
   padding: 0;
@@ -2465,6 +2474,33 @@ body.fl-marquee {
   transform: rotate(90deg);
   transform-origin: center;
   transition: transform var(--ds-dur-2) ease;
+}
+
+/* ---------- 图标档 ---------- */
+/* 只三档：按钮/导航 16（--ds-icon-md）、紧凑 14（--ds-icon-sm）、表头与行内 12（--ds-icon-xs）。
+   容器在这里统一尺寸，调用点的 size 只是初值，不在 77 处逐个改。 */
+.btn > svg,
+.iconbtn > svg,
+.railbtn > svg,
+.sibtn > svg,
+.collapse > svg,
+.grow > svg,
+.appmark > svg,
+.inspector-head > svg {
+  width: var(--ds-icon-md);
+  height: var(--ds-icon-md);
+}
+.ctx-item > svg,
+.qb-main > svg,
+.searchbox > svg {
+  width: var(--ds-icon-sm);
+  height: var(--ds-icon-sm);
+}
+.fl-sort-state > svg,
+.fl-row-remove > svg,
+.chev {
+  width: var(--ds-icon-xs);
+  height: var(--ds-icon-xs);
 }
 
 /* ---------- 动效开关 ---------- */

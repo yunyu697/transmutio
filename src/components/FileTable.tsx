@@ -1010,7 +1010,7 @@ export function FileTable({ list, onNotify }: { list: MediaFilesController; onNo
                 <th>文件</th>
                 <th>类型</th>
                 <th>时长 / 尺寸</th>
-                <th>大小</th>
+                <th className="num">大小</th>
                 <th />
                 <th className="fl-actions" />
               </tr>
@@ -1069,11 +1069,11 @@ export function FileTable({ list, onNotify }: { list: MediaFilesController; onNo
                     </td>
                     <td className="muted">{typeLabel(file)}</td>
                     <td className="muted">{rangeLabel(file)}</td>
-                    <td className="muted">{formatBytes(file.sizeBytes)}</td>
+                    <td className="muted num">{formatBytes(file.sizeBytes)}</td>
                     <td className={file.error ? "err" : "muted"} title={file.error ?? ""}>
                       {file.error ? file.error.slice(0, 42) : ""}
                     </td>
-                    <td>
+                    <td className="fl-actions">
                       <button
                         className="fl-row-remove"
                         title="从列表移除"
@@ -1094,7 +1094,7 @@ export function FileTable({ list, onNotify }: { list: MediaFilesController; onNo
         ) : (
           <div className="empty">
             <div className="big">
-              <Icon name="film" size={22} />
+              <Icon name="film" size={20} />
             </div>
             <div>拖入文件，或点击「添加文件」。</div>
             <div style={{ fontSize: "var(--ds-type-role-body)", color: "var(--ds-color-text-muted)" }}>文件不会被复制；仅「重命名」会改动磁盘上的文件名</div>

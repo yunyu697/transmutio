@@ -182,7 +182,7 @@ export function SetupWizard({
       <section className="setup-card">
         <div className="setup-head">
           <div className="setup-ico">
-            <Icon name="film" size={22} />
+            <Icon name="film" size={20} />
           </div>
           <div>
             <h1>

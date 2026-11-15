@@ -265,7 +265,7 @@ export function TaskCenter({
         ) : (
           <div className="empty">
             <div className="big">
-              <Icon name="grid" size={22} />
+              <Icon name="grid" size={20} />
             </div>
             <div>还没有任务</div>
             <div style={{ fontSize: "var(--ds-type-role-body)", color: "var(--ds-color-text-muted)" }}>选择一条转换方法并添加文件即可开始</div>

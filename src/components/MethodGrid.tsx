@@ -71,7 +71,7 @@ export function MethodGrid({
         ) : (
           <div className="empty">
             <div className="big">
-              <Icon name="search" size={22} />
+              <Icon name="search" size={20} />
             </div>
             <div>没有匹配的方法</div>
             <div style={{ fontSize: "var(--ds-type-role-body)", color: "var(--ds-color-text-muted)" }}>试试「MP4」「MP3」「缩放」等关键词</div>
