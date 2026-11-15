@@ -941,11 +941,10 @@ export function FileTable({ list, onNotify }: { list: MediaFilesController; onNo
 
   const head = (
     <div className="fl-head">
-      <span className="fl-sort-state">
+      <span className="fl-sort-state" title="拖动整行可调整顺序">
         <Icon name="sort" size={13} />
         {list.sort ? `按${SORT_LABEL[list.sort.key]} · ${list.sort.dir === "asc" ? "升序" : "降序"}` : "自定义顺序"}
       </span>
-      <span className="fl-head-hint">拖动整行可调整顺序</span>
       <button
         className="btn small ghost fl-restore"
         onClick={() => {
@@ -993,7 +992,7 @@ export function FileTable({ list, onNotify }: { list: MediaFilesController; onNo
 
   return (
     <div className={`filetable density-${density}`}>
-      {head}
+      {files.length ? head : null}
       <div
         className="fl-scroll"
         ref={scrollRef}
@@ -1114,7 +1113,7 @@ export function FileTable({ list, onNotify }: { list: MediaFilesController; onNo
         ) : null}
         {drag ? <div className="fl-drop-line" style={{ top: drag.lineTop }} /> : null}
       </div>
-      {status}
+      {selection.ids.size ? status : null}
       {drag ? (
         <div className="fl-ghost" style={{ left: drag.x + 14, top: drag.y + 12 }}>
           <div className="fl-ghost-title">

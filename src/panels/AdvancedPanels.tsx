@@ -97,13 +97,12 @@ export function SequencePanel({ outputDir, ffmpegReady, onChangeOutputDir, onEnq
           <button className="btn small ghost" onClick={onBack}>← 方法列表</button>
           <div>
             <h1>图片序列转视频</h1>
-            <p>文件名末尾必须带编号（如 frame_0001.png）；编号缺号会被明确拒绝，不会生成缺帧视频</p>
           </div>
           <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
             <Icon name="plus" size={14} />{busy ? "读取中…" : "添加图片"}
           </button>
         </div>
-        <DropZone kind="image" busy={busy} onPick={pick} />
+        {files.length ? null : <DropZone kind="image" busy={busy} onPick={pick} />}
         {notice ? <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>{notice}</div> : null}
         <FileTable list={list} onNotify={toast} />
       </div>
@@ -219,12 +218,12 @@ export function FramesPanel({ outputDir, ffmpegReady, onChangeOutputDir, onEnque
       <div className="wb-main">
         <div className="wb-head">
           <button className="btn small ghost" onClick={onBack}>← 方法列表</button>
-          <div><h1>视频转图片序列</h1><p>按固定 fps 抽帧，输出 {video ? video.name.replace(/\.\w+$/, "") : "<源名>"}-0001.png 起</p></div>
+          <div><h1>视频转图片序列</h1></div>
           <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
             <Icon name="plus" size={14} />{busy ? "读取中…" : "添加视频"}
           </button>
         </div>
-        <DropZone kind="video" busy={busy} onPick={pick} />
+        {files.length ? null : <DropZone kind="video" busy={busy} onPick={pick} />}
         {notice ? <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>{notice}</div> : null}
         <FileTable list={{ ...list, files: list.files.slice(0, 1) }} onNotify={toast} />
       </div>
@@ -323,12 +322,12 @@ export function CollagePanel({ outputDir, ffmpegReady, onChangeOutputDir, onEnqu
       <div className="wb-main">
         <div className="wb-head">
           <button className="btn small ghost" onClick={onBack}>← 方法列表</button>
-          <div><h1>图片拼图</h1><p>网格布局 · 单元格等比适配 · 间距与底色可调</p></div>
+          <div><h1>图片拼图</h1></div>
           <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
             <Icon name="plus" size={14} />{busy ? "读取中…" : "添加图片"}
           </button>
         </div>
-        <DropZone kind="image" busy={busy} onPick={pick} />
+        {files.length ? null : <DropZone kind="image" busy={busy} onPick={pick} />}
         {notice ? <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>{notice}</div> : null}
         <FileTable list={list} onNotify={toast} />
       </div>
@@ -482,12 +481,12 @@ export function ExifPanel({ outputDir, onChangeOutputDir, toast, onBack }: Commo
       <div className="wb-main">
         <div className="wb-head">
           <button className="btn small ghost" onClick={onBack}>← 方法列表</button>
-          <div><h1>EXIF 元数据写入</h1><p>只写副本 · 源文件不动 · 写完回读校验</p></div>
+          <div><h1>EXIF 元数据写入</h1></div>
           <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
             <Icon name="plus" size={14} />{busy ? "读取中…" : "添加图片"}
           </button>
         </div>
-        <DropZone kind="image" busy={busy} onPick={pick} />
+        {files.length ? null : <DropZone kind="image" busy={busy} onPick={pick} />}
         {notice ? <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>{notice}</div> : null}
         <FileTable list={list} onNotify={toast} />
         {results ? (
@@ -591,12 +590,12 @@ export function AvifPanel({ outputDir, onChangeOutputDir, toast, onBack }: Commo
       <div className="wb-main">
         <div className="wb-head">
           <button className="btn small ghost" onClick={onBack}>← 方法列表</button>
-          <div><h1>图片转 AVIF</h1><p>纯 Rust 编码 · 只写副本 · 输出校验 ftyp/avif 签名</p></div>
+          <div><h1>图片转 AVIF</h1></div>
           <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
             <Icon name="plus" size={14} />{busy ? "读取中…" : "添加图片"}
           </button>
         </div>
-        <DropZone kind="image" busy={busy} onPick={pick} />
+        {files.length ? null : <DropZone kind="image" busy={busy} onPick={pick} />}
         {notice ? <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>{notice}</div> : null}
         <FileTable list={list} onNotify={toast} />
         {results ? (

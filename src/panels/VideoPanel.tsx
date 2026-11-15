@@ -594,14 +594,13 @@ function VideoWorkbench({ methodId, caps, outputDir, ffmpegReady, onChangeOutput
           </button>
           <div>
             <h1>{methodId === "video-watermark" ? "添加水印" : methodId === "video-subtitle" ? "添加字幕" : methodId === "video-compress" ? "视频压缩" : methodId === "video-crop" ? "画面裁剪" : methodId === "video-split" ? "视频分割" : "视频转码"}</h1>
-            <p>MP4 / MKV / WebM / MOV / TS / AVI · 编码器按容器与探测结果联动 · 硬件编码优先 · 绝不覆盖原文件</p>
           </div>
           <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
             <Icon name="plus" size={14} />
             {busy ? "读取中…" : "添加文件"}
           </button>
         </div>
-        <DropZone kind="video" busy={busy} onPick={pick} />
+        {files.length ? null : <DropZone kind="video" busy={busy} onPick={pick} />}
         {notice ? <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>{notice}</div> : null}
         <FileTable list={list} onNotify={toast} />
       </div>

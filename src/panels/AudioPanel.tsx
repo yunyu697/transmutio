@@ -169,14 +169,13 @@ function AudioTranscode({
           </button>
           <div>
             <h1>{title}</h1>
-            <p>MP3 / AAC（M4A）/ FLAC / WAV / OGG / Opus · 编码器按探测结果可用性灰显 · 从音频或视频提取音轨</p>
           </div>
           <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
             <Icon name="plus" size={14} />
             {busy ? "读取中…" : "添加文件"}
           </button>
         </div>
-        <DropZone kind={["audio", "video"]} busy={busy} onPick={pick} />
+        {files.length ? null : <DropZone kind={["audio", "video"]} busy={busy} onPick={pick} />}
         {notice ? (
           <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>
             {notice}
@@ -639,7 +638,7 @@ function AudioMergePanel({
             {busy ? "读取中…" : "添加文件"}
           </button>
         </div>
-        <DropZone kind={["audio", "video"]} busy={busy} onPick={pick} />
+        {files.length ? null : <DropZone kind={["audio", "video"]} busy={busy} onPick={pick} />}
         {notice ? (
           <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>
             {notice}
@@ -784,14 +783,13 @@ function AudioTrimPanel({
           </button>
           <div>
             <h1>音频截取</h1>
-            <p>按时间区间截取并重编码 · 区间对所有文件生效 · 起点终点单位为秒</p>
           </div>
           <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
             <Icon name="plus" size={14} />
             {busy ? "读取中…" : "添加文件"}
           </button>
         </div>
-        <DropZone kind={["audio", "video"]} busy={busy} onPick={pick} />
+        {files.length ? null : <DropZone kind={["audio", "video"]} busy={busy} onPick={pick} />}
         {notice ? (
           <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>
             {notice}

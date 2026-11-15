@@ -225,14 +225,13 @@ export function ImagePanel({
           </button>
           <div>
             <h1>{methodId === "image-watermark" ? "图片加水印" : methodId === "image-resize" ? "图片批量缩放" : methodId === "image-crop" ? "图片批量裁剪" : methodId === "image-compress" ? "图片压缩" : methodId === "image-gif" ? "图片转 GIF" : "图片批量转换"}</h1>
-            <p>{isGif ? "多张图片按文件名自然排序合成 GIF · 两遍调色板（palettegen + paletteuse）" : "等比缩放不拉伸 · 永不覆盖原图 · 输出目录与源目录相同时自动加序号"}</p>
           </div>
           <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
             <Icon name="plus" size={14} />
             {busy ? "读取中…" : "添加图片"}
           </button>
         </div>
-        <DropZone kind="image" busy={busy} onPick={pick} />
+        {files.length ? null : <DropZone kind="image" busy={busy} onPick={pick} />}
         {notice ? (
           <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>
             {notice}

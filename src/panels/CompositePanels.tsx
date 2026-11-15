@@ -134,14 +134,13 @@ export function MergePanel({ methodId, outputDir, ffmpegReady, onChangeOutputDir
           </button>
           <div>
             <h1>视频合并</h1>
-            <p>按列表顺序拼接 · 同参直接复制流，不同参先统一转码 · 绝不覆盖原文件</p>
           </div>
           <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
             <Icon name="plus" size={14} />
             {busy ? "读取中…" : "添加文件"}
           </button>
         </div>
-        <DropZone kind="video" busy={busy} onPick={pick} />
+        {files.length ? null : <DropZone kind="video" busy={busy} onPick={pick} />}
         {notice ? <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>{notice}</div> : null}
         <div className="note" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>
           文件按添加顺序拼接；需要调整顺序请移除后重新添加。至少需要 2 个文件。
@@ -303,21 +302,20 @@ export function MuxPanel({ methodId, outputDir, ffmpegReady, onChangeOutputDir, 
           </button>
           <div>
             <h1>替换 / 添加音轨</h1>
-            <p>视频流原样复制（不重编码） · 音频替换或追加 · 输出时长以视频为准</p>
           </div>
         </div>
 
         <div style={{ padding: "0 var(--ds-space-6)" }}>
           <div className="note" style={{ marginBottom: 8 }}>视频（画面来源，流复制）</div>
         </div>
-        <DropZone kind="video" busy={video.busy} onPick={video.pick} />
+        {video.files.length ? null : <DropZone kind="video" busy={video.busy} onPick={video.pick} />}
         {video.notice ? <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>{video.notice}</div> : null}
         <FileTable list={video} onNotify={toast} />
 
         <div style={{ padding: "0 var(--ds-space-6)" }}>
           <div className="note" style={{ margin: "var(--ds-space-5) 0 var(--ds-space-4)" }}>音频（音轨来源）</div>
         </div>
-        <DropZone kind="audio" busy={audio.busy} onPick={audio.pick} />
+        {audio.files.length ? null : <DropZone kind="audio" busy={audio.busy} onPick={audio.pick} />}
         {audio.notice ? <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>{audio.notice}</div> : null}
         <FileTable list={audio} onNotify={toast} />
       </div>
@@ -453,14 +451,13 @@ export function GifPanel({ methodId, outputDir, ffmpegReady, onChangeOutputDir, 
           </button>
           <div>
             <h1>视频转 GIF</h1>
-            <p>可配置帧率 / 宽度 / 起点 / 时长 · 可选调色板优化 · 绝不覆盖原文件</p>
           </div>
           <button className="btn" style={{ marginLeft: "auto" }} onClick={pick} disabled={busy}>
             <Icon name="plus" size={14} />
             {busy ? "读取中…" : "添加文件"}
           </button>
         </div>
-        <DropZone kind="video" busy={busy} onPick={pick} />
+        {files.length ? null : <DropZone kind="video" busy={busy} onPick={pick} />}
         {notice ? <div className="note warn" style={{ margin: "var(--ds-space-4) var(--ds-space-6) 0" }}>{notice}</div> : null}
         <FileTable list={list} onNotify={toast} />
       </div>
